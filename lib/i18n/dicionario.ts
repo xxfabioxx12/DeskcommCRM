@@ -14841,6 +14841,20 @@ export const DICIONARIO: Traducoes = {
   "Sem nenhuma destas etiquetas": { es: "Sin ninguna de estas etiquetas" },
   "separe por vírgula": { es: "separe por coma" },
   "Último problema": { es: "Último problema" },
+  "Número sem WhatsApp ou que não aceitou os termos novos": {
+    es: "Número sin WhatsApp o que no aceptó los términos nuevos",
+  },
+  "Fora das 24 horas: só template": { es: "Fuera de las 24 horas: solo plantilla" },
+  "A Meta segurou para proteger a qualidade do número (a pessoa recebeu muitas mensagens de empresas)": {
+    es: "Meta la retuvo para proteger la calidad del número (la persona recibió muchos mensajes de empresas)",
+  },
+  "Variáveis não batem com o template": { es: "Las variables no coinciden con la plantilla" },
+  "Template pausado pela Meta": { es: "Plantilla pausada por Meta" },
+  "Template desativado pela Meta": { es: "Plantilla desactivada por Meta" },
+  "Limite de envio atingido: tente mais tarde": { es: "Límite de envío alcanzado: inténtalo más tarde" },
+  "Template pausado ou não aprovado pela Meta": { es: "Plantilla pausada o no aprobada por Meta" },
+  "O template mudou na Meta: escolha de novo": { es: "La plantilla cambió en Meta: elígela de nuevo" },
+  "O template não existe mais neste número": { es: "La plantilla ya no existe en este número" },
   "O template foi pausado pela Meta ou não está mais aprovado neste número. Escolha outro template.": {
     es: "Meta pausó la plantilla o ya no está aprobada en este número. Elige otra plantilla.",
   },
