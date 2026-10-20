@@ -58,6 +58,10 @@ export function useTemplates() {
     queryKey: ["channel-templates"],
     queryFn: async () => apiClient.get<{ data: TemplatesPayload }>("/api/v1/channels/templates"),
     staleTime: 30_000,
+    // Template "Em análise": a Meta decide em minutos ou horas, e o aviso dela
+    // (webhook de status) atualiza o espelho. A tela reconsulta enquanto houver
+    // um pendente, e para quando não houver — sem polling eterno.
+    refetchInterval: (q) => (q.state.data?.data.templates.some((m) => m.status === "PENDING") ? 30_000 : false),
   });
 }
 

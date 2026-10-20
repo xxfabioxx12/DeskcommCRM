@@ -14841,6 +14841,10 @@ export const DICIONARIO: Traducoes = {
   "Sem nenhuma destas etiquetas": { es: "Sin ninguna de estas etiquetas" },
   "separe por vírgula": { es: "separe por coma" },
   "Último problema": { es: "Último problema" },
+  "Template enviado para a Meta. Ele aparece como Em análise até a Meta decidir.": {
+    es: "Plantilla enviada a Meta. Aparece como En revisión hasta que Meta decida.",
+  },
+  "Adicionar resposta rápida": { es: "Agregar respuesta rápida" },
   "Confira o formulário do template.": { es: "Revisa el formulario de la plantilla." },
   "Não foi possível concluir a operação com o template. Tente de novo.": {
     es: "No se pudo completar la operación con la plantilla. Inténtalo de nuevo.",
