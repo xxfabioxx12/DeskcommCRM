@@ -18,12 +18,14 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
+import { CartaoDaMensagem } from "@/components/campanhas/CartaoDaMensagem";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useCriarCampanha, usePreviaDaAudiencia } from "@/hooks/campanhas/useCampanhas";
+import { useModeloDaCampanha } from "@/hooks/campanhas/useModeloDaCampanha";
 import { channelLabel, useChannelSessions } from "@/hooks/channels/useChannelSessions";
 import { useT } from "@/hooks/i18n/useT";
 import {
@@ -32,6 +34,12 @@ import {
   useFunis,
 } from "@/hooks/campanhas/useDestinoDaCampanha";
 import { VARIAVEIS_DA_CAMPANHA, DESCRICAO_DA_VARIAVEL } from "@/lib/campanhas/renderizador";
+import {
+  canalExigeTemplate,
+  mensagemPronta,
+  payloadDaMensagem,
+  type ModeloEscolhido,
+} from "@/lib/campanhas/template-da-campanha";
 
 export function NovaCampanha() {
   const t = useT();
@@ -49,6 +57,8 @@ export function NovaCampanha() {
   const [semInteracao, setSemInteracao] = useState("");
   const [limite, setLimite] = useState("100");
   const [texto, setTexto] = useState("");
+  const [modelo, setModelo] = useState<ModeloEscolhido | null>(null);
+  const [slotMap, setSlotMap] = useState<Record<string, string>>({});
   const [intervalo, setIntervalo] = useState("");
   const [janelaInicio, setJanelaInicio] = useState("");
   const [janelaFim, setJanelaFim] = useState("");
@@ -65,6 +75,13 @@ export function NovaCampanha() {
   const etapas = useEtapas(funil || null);
   const etapasDoPublico = useEtapas(funilDoPublico || null);
   const agentes = useAgentesPublicados();
+
+  // O NÚMERO decide o tipo de mensagem — pela capacidade do canal, nunca pelo
+  // nome dele. `null` (número ainda não escolhido) mostra o texto, como hoje.
+  const exigeTemplateDe = (id: string) => canalExigeTemplate((canais.data ?? []).find((c) => c.id === id)?.provider);
+  const exigeTemplate = exigeTemplateDe(canal);
+  const modeloDaCampanha = useModeloDaCampanha(exigeTemplate ? canal : null, modelo);
+  const mensagem = { texto, modelo, slotMap };
 
   const filtro = useMemo(
     () => ({
@@ -88,7 +105,7 @@ export function NovaCampanha() {
   const podeSalvar =
     nome.trim() !== "" &&
     canal !== "" &&
-    texto.trim() !== "" &&
+    mensagemPronta(mensagem, exigeTemplate, modeloDaCampanha.preencher) &&
     temCriterio &&
     (baseLegal !== "legitimate_interest" || liaRef.trim() !== "");
 
@@ -96,7 +113,7 @@ export function NovaCampanha() {
     const criada = await criar.mutateAsync({
       name: nome.trim(),
       channel_session_id: canal,
-      message_body: texto.trim(),
+      ...payloadDaMensagem(mensagem, exigeTemplate),
       base_legal: baseLegal,
       lia_ref: liaRef.trim() || null,
       audience_filter: filtro,
@@ -139,7 +156,18 @@ export function NovaCampanha() {
             id="canal"
             className="h-9 w-full rounded-md border border-border bg-surface px-2 text-sm"
             value={canal}
-            onChange={(e) => setCanal(e.target.value)}
+            onChange={(e) => {
+              const novo = e.target.value;
+              setCanal(novo);
+              // Template é do NÚMERO: trocou o número, a escolha anterior não vale.
+              setModelo(null);
+              setSlotMap({});
+              // E o rodízio não mistura tipos: extra marcado de outro tipo sai junto
+              // (a lista abaixo o esconde; sem isto ele seguiria no envio e o
+              // servidor recusaria a campanha por números misturados).
+              const tipo = exigeTemplateDe(novo);
+              if (tipo !== null) setExtras((atual) => atual.filter((id) => exigeTemplateDe(id) === tipo));
+            }}
           >
             <option value="">{t("Escolha um número")}</option>
             {(canais.data ?? []).map((c) => (
@@ -164,7 +192,7 @@ export function NovaCampanha() {
               )}
             </p>
             {(canais.data ?? [])
-              .filter((c) => c.id !== canal)
+              .filter((c) => c.id !== canal && (exigeTemplate === null || canalExigeTemplate(c.provider) === exigeTemplate))
               .map((c) => (
                 <label key={c.id} className="flex items-center gap-2 text-sm">
                   <input
@@ -317,7 +345,11 @@ export function NovaCampanha() {
             variant="outline"
             disabled={!temCriterio || previa.isPending}
             onClick={() =>
-              previa.mutate({ audience_filter: filtro, message_body: texto })
+              previa.mutate({
+                audience_filter: filtro,
+                message_body: texto,
+                ...(exigeTemplate ? { message_mode: "template" as const, template_slot_map: slotMap } : {}),
+              })
             }
           >
             {previa.isPending ? t("Contando…") : t("Ver quantas pessoas")}
@@ -349,38 +381,49 @@ export function NovaCampanha() {
         )}
       </Card>
 
-      <Card className="space-y-4 p-4">
-        <h2 className="font-medium">{t("Mensagem")}</h2>
-        <Textarea
-          rows={6}
-          value={texto}
-          onChange={(e) => setTexto(e.target.value)}
-          placeholder={t("Escreva como você falaria com uma pessoa só.")}
-          aria-label={t("Texto da mensagem")}
-        />
-        <div className="space-y-1 text-sm text-muted-foreground">
-          <p>{t("Você pode usar:")}</p>
-          <ul className="space-y-1">
-            {VARIAVEIS_DA_CAMPANHA.map((v) => (
-              <li key={v}>
-                <button
-                  type="button"
-                  className="rounded-md bg-surface-elevated px-1 font-mono text-xs"
-                  onClick={() => setTexto((atual) => `${atual}{{${v}}}`)}
-                >
-                  {`{{${v}}}`}
-                </button>{" "}
-                — {t(DESCRICAO_DA_VARIAVEL[v])}
-              </li>
-            ))}
-          </ul>
-          <p>
-            {t(
-              "Quem não tiver o dado que a mensagem usa fica de fora, com o motivo na lista — mensagem com buraco não sai.",
-            )}
-          </p>
-        </div>
-      </Card>
+      <CartaoDaMensagem
+        exigeTemplate={exigeTemplate}
+        canal={canal}
+        mensagem={mensagem}
+        onChange={(v) => {
+          setModelo(v.modelo);
+          setSlotMap(v.slotMap);
+        }}
+        exemplo={previa.data?.exemplo ?? null}
+        textoLivre={
+          <>
+            <Textarea
+              rows={6}
+              value={texto}
+              onChange={(e) => setTexto(e.target.value)}
+              placeholder={t("Escreva como você falaria com uma pessoa só.")}
+              aria-label={t("Texto da mensagem")}
+            />
+            <div className="space-y-1 text-sm text-muted-foreground">
+              <p>{t("Você pode usar:")}</p>
+              <ul className="space-y-1">
+                {VARIAVEIS_DA_CAMPANHA.map((v) => (
+                  <li key={v}>
+                    <button
+                      type="button"
+                      className="rounded-md bg-surface-elevated px-1 font-mono text-xs"
+                      onClick={() => setTexto((atual) => `${atual}{{${v}}}`)}
+                    >
+                      {`{{${v}}}`}
+                    </button>{" "}
+                    — {t(DESCRICAO_DA_VARIAVEL[v])}
+                  </li>
+                ))}
+              </ul>
+              <p>
+                {t(
+                  "Quem não tiver o dado que a mensagem usa fica de fora, com o motivo na lista — mensagem com buraco não sai.",
+                )}
+              </p>
+            </div>
+          </>
+        }
+      />
 
       <Card className="space-y-4 p-4">
         <h2 className="font-medium">{t("Quem responder")}</h2>

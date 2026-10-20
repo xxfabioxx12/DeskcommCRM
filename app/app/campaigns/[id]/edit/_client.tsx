@@ -20,6 +20,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
+import { CartaoDaMensagem } from "@/components/campanhas/CartaoDaMensagem";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -27,10 +28,17 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useCampanha, useEditarCampanha, usePreviaDaAudiencia } from "@/hooks/campanhas/useCampanhas";
+import { useModeloDaCampanha } from "@/hooks/campanhas/useModeloDaCampanha";
 import { channelLabel, useChannelSessions } from "@/hooks/channels/useChannelSessions";
 import { useT } from "@/hooks/i18n/useT";
 import { useAgentesPublicados, useEtapas, useFunis } from "@/hooks/campanhas/useDestinoDaCampanha";
 import { DESCRICAO_DA_VARIAVEL, VARIAVEIS_DA_CAMPANHA } from "@/lib/campanhas/renderizador";
+import {
+  canalExigeTemplate,
+  mensagemPronta,
+  payloadDaMensagem,
+  type ModeloEscolhido,
+} from "@/lib/campanhas/template-da-campanha";
 
 export function EditarCampanha({ id }: { id: string }) {
   const t = useT();
@@ -49,6 +57,8 @@ export function EditarCampanha({ id }: { id: string }) {
   const [semInteracao, setSemInteracao] = useState("");
   const [limite, setLimite] = useState("100");
   const [texto, setTexto] = useState("");
+  const [modelo, setModelo] = useState<ModeloEscolhido | null>(null);
+  const [slotMap, setSlotMap] = useState<Record<string, string>>({});
   const [funil, setFunil] = useState("");
   const [etapa, setEtapa] = useState("");
   const [agente, setAgente] = useState("");
@@ -57,6 +67,11 @@ export function EditarCampanha({ id }: { id: string }) {
   const funis = useFunis();
   const etapas = useEtapas(funil || null);
   const agentes = useAgentesPublicados();
+
+  // O NÚMERO decide o tipo de mensagem — pela capacidade do canal, nunca pelo nome.
+  const exigeTemplate = canalExigeTemplate((canais.data ?? []).find((s) => s.id === canal)?.provider);
+  const modeloDaCampanha = useModeloDaCampanha(exigeTemplate ? canal : null, modelo);
+  const mensagem = { texto, modelo, slotMap };
 
   // Uma carga só: depois disso quem manda é o que a pessoa está digitando. Sem
   // a trava, o `refetchInterval` do detalhe apagaria a edição em andamento.
@@ -73,6 +88,12 @@ export function EditarCampanha({ id }: { id: string }) {
     setSemInteracao(f.sem_interacao_ha_dias == null ? "" : String(f.sem_interacao_ha_dias));
     setLimite(f.limite == null ? "100" : String(f.limite));
     setTexto(c.message_body ?? "");
+    setModelo(
+      c.message_mode === "template" && c.template_name
+        ? { name: c.template_name, language: c.template_language ?? "", contractHash: c.template_contract_hash ?? "" }
+        : null,
+    );
+    setSlotMap(c.template_slot_map ?? {});
     setFunil(c.pipeline_id ?? "");
     setEtapa(c.stage_id ?? "");
     setAgente(c.agent_id ?? "");
@@ -138,7 +159,7 @@ export function EditarCampanha({ id }: { id: string }) {
   const podeSalvar =
     nome.trim() !== "" &&
     canal !== "" &&
-    texto.trim() !== "" &&
+    mensagemPronta(mensagem, exigeTemplate, modeloDaCampanha.preencher) &&
     temCriterio &&
     (baseLegal !== "legitimate_interest" || liaRef.trim() !== "");
 
@@ -163,7 +184,12 @@ export function EditarCampanha({ id }: { id: string }) {
             id="e-canal"
             className="h-9 w-full rounded-md border border-border bg-surface px-2 text-sm"
             value={canal}
-            onChange={(e) => setCanal(e.target.value)}
+            onChange={(e) => {
+              setCanal(e.target.value);
+              // Template é do NÚMERO: trocou o número, a escolha anterior não vale.
+              setModelo(null);
+              setSlotMap({});
+            }}
           >
             {(canais.data ?? []).map((s) => (
               <option key={s.id} value={s.id}>
@@ -248,7 +274,14 @@ export function EditarCampanha({ id }: { id: string }) {
             type="button"
             variant="outline"
             disabled={!temCriterio || previa.isPending}
-            onClick={() => previa.mutate({ audience_filter: filtro, message_body: texto, campaign_id: id })}
+            onClick={() =>
+              previa.mutate({
+                audience_filter: filtro,
+                message_body: texto,
+                campaign_id: id,
+                ...(exigeTemplate ? { message_mode: "template" as const, template_slot_map: slotMap } : {}),
+              })
+            }
           >
             {previa.isPending ? t("Contando…") : t("Ver quantas pessoas")}
           </Button>
@@ -331,29 +364,40 @@ export function EditarCampanha({ id }: { id: string }) {
         </div>
       </Card>
 
-      <Card className="space-y-4 p-4">
-        <h2 className="font-medium">{t("Mensagem")}</h2>
-        <Textarea
-          rows={6}
-          value={texto}
-          onChange={(e) => setTexto(e.target.value)}
-          aria-label={t("Texto da mensagem")}
-        />
-        <ul className="space-y-1 text-sm text-muted-foreground">
-          {VARIAVEIS_DA_CAMPANHA.map((v) => (
-            <li key={v}>
-              <button
-                type="button"
-                className="rounded-md bg-surface-elevated px-1 font-mono text-xs"
-                onClick={() => setTexto((atual) => `${atual}{{${v}}}`)}
-              >
-                {`{{${v}}}`}
-              </button>{" "}
-              — {t(DESCRICAO_DA_VARIAVEL[v])}
-            </li>
-          ))}
-        </ul>
-      </Card>
+      <CartaoDaMensagem
+        exigeTemplate={exigeTemplate}
+        canal={canal}
+        mensagem={mensagem}
+        onChange={(v) => {
+          setModelo(v.modelo);
+          setSlotMap(v.slotMap);
+        }}
+        exemplo={previa.data?.exemplo ?? null}
+        textoLivre={
+          <>
+            <Textarea
+              rows={6}
+              value={texto}
+              onChange={(e) => setTexto(e.target.value)}
+              aria-label={t("Texto da mensagem")}
+            />
+            <ul className="space-y-1 text-sm text-muted-foreground">
+              {VARIAVEIS_DA_CAMPANHA.map((v) => (
+                <li key={v}>
+                  <button
+                    type="button"
+                    className="rounded-md bg-surface-elevated px-1 font-mono text-xs"
+                    onClick={() => setTexto((atual) => `${atual}{{${v}}}`)}
+                  >
+                    {`{{${v}}}`}
+                  </button>{" "}
+                  — {t(DESCRICAO_DA_VARIAVEL[v])}
+                </li>
+              ))}
+            </ul>
+          </>
+        }
+      />
 
       <div className="flex items-center justify-end gap-2">
         <Button variant="outline" onClick={() => router.push(`/app/campaigns/${id}`)}>
@@ -365,7 +409,7 @@ export function EditarCampanha({ id }: { id: string }) {
             await salvar.mutateAsync({
               name: nome.trim(),
               channel_session_id: canal,
-              message_body: texto.trim(),
+              ...payloadDaMensagem(mensagem, exigeTemplate),
               base_legal: baseLegal,
               lia_ref: liaRef.trim() || null,
               audience_filter: filtro,

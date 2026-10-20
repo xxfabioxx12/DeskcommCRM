@@ -14841,6 +14841,26 @@ export const DICIONARIO: Traducoes = {
   "Sem nenhuma destas etiquetas": { es: "Sin ninguna de estas etiquetas" },
   "separe por vírgula": { es: "separe por coma" },
   "Último problema": { es: "Último problema" },
+  "Este número é oficial: para quem não falou com você nas últimas 24 horas, a Meta só entrega template aprovado.": {
+    es: "Este número es oficial: para quien no habló contigo en las últimas 24 horas, Meta solo entrega plantillas aprobadas.",
+  },
+  "Template aprovado pela Meta": { es: "Plantilla aprobada por Meta" },
+  "Escolha um template": { es: "Elige una plantilla" },
+  "Nenhum template aprovado neste número. Sincronize os templates em Configurações › Templates.": {
+    es: "Ninguna plantilla aprobada en este número. Sincroniza las plantillas en Configuración › Plantillas.",
+  },
+  "Usar a versão atual": { es: "Usar la versión actual" },
+  "Variáveis do template": { es: "Variables de la plantilla" },
+  "Texto fixo ou {{primeiro_nome}}, {{contato.campo}}…": { es: "Texto fijo o {{primeiro_nome}}, {{contato.campo}}…" },
+  "Primeiro nome": { es: "Primer nombre" },
+  "Você pode usar {{primeiro_nome}}, {{nome}}, {{saudacao}}, {{contato.campo}} e {{lead.campo}}. Quem ficar sem o dado fica de fora, com o motivo na lista.": {
+    es: "Puedes usar {{primeiro_nome}}, {{nome}}, {{saudacao}}, {{contato.campo}} y {{lead.campo}}. Quien no tenga el dato queda fuera, con el motivo en la lista.",
+  },
+  "Como chega para uma pessoa da lista": { es: "Cómo le llega a una persona de la lista" },
+  "Prévia do template": { es: "Vista previa de la plantilla" },
+  "A Meta cobra por mensagem entregue de template. O valor depende da categoria do template.": {
+    es: "Meta cobra por cada mensaje de plantilla entregado. El valor depende de la categoría de la plantilla.",
+  },
   "Faltam valores do template para esta pessoa": { es: "Faltan valores de la plantilla para esta persona" },
   "channel_session_id inválido": { es: "channel_session_id inválido" },
   "conexão não encontrada": { es: "conexión no encontrada" },
