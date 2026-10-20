@@ -22,6 +22,8 @@ const FRASES_POR_CODIGO: Readonly<Record<string, string>> = {
   "131049":
     "A Meta segurou para proteger a qualidade do número (a pessoa recebeu muitas mensagens de empresas)",
   "132000": "Variáveis não batem com o template",
+  // O nome do template não existe (mais) na conta, naquele idioma.
+  "132001": "O template não existe mais neste número",
   "132012": "Variáveis não batem com o template",
   "132015": "Template pausado pela Meta",
   "132016": "Template desativado pela Meta",
@@ -35,6 +37,9 @@ const FRASES_DO_PRE_VOO: ReadonlyArray<readonly [prefixo: string, frase: string]
   ["template_not_approved:", "Template pausado ou não aprovado pela Meta"],
   ["template_stale:", "O template mudou na Meta: escolha de novo"],
   ["template_missing:", "O template não existe mais neste número"],
+  // Da campanha (`envio-por-template.ts`): a preparação não deixou valor para UMA
+  // pessoa. Não é falha do template — não pausa (fora de `falhaDeTemplate`).
+  ["Faltam valores do template para esta pessoa", "Faltam valores do template para esta pessoa"],
 ];
 
 /** Toda frase que este módulo pode devolver traduzível — o teste cobra o espanhol de cada uma. */
@@ -42,7 +47,7 @@ export const FRASES_PARA_OPERADOR: readonly string[] = [
   ...new Set([...Object.values(FRASES_POR_CODIGO), ...FRASES_DO_PRE_VOO.map(([, frase]) => frase)]),
 ];
 
-const PARADO = new Set(["132015", "132016"]);
+const PARADO = new Set(["132001", "132015", "132016"]);
 const DESATUALIZADO = new Set(["132000", "132012"]);
 
 /** `<transporte>_<código>: …` — o formato da falha síncrona. */

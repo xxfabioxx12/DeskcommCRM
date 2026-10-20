@@ -57,7 +57,7 @@ import { hashDoEndereco } from "./exclusoes";
 import { renderizar } from "./renderizador";
 import { escolherNumero, poolDaCampanha, type NumeroDisponivel } from "./rodizio";
 import { intervaloDoCanalCumprido, podeMandarAgora, proximaTentativa, type RitmoDaCampanha } from "./ritmo";
-import { intervaloMinimoDoCanal, lerValoresPreparados } from "./template-da-campanha";
+import { intervaloMinimoDoCanal, lerValoresPreparados, limparMapaDeSlots } from "./template-da-campanha";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { TEXTO_DA_EXCLUSAO } from "./tipos";
 
@@ -100,6 +100,7 @@ interface CampanhaRow {
   template_name: string | null;
   template_language: string | null;
   template_contract_hash: string | null;
+  template_slot_map: unknown;
   intervalo_segundos: number | null;
   janela_inicio_hora: number | null;
   janela_fim_hora: number | null;
@@ -109,7 +110,7 @@ interface CampanhaRow {
 
 const COLUNAS_DA_CAMPANHA =
   "id, organization_id, channel_session_id, name, message_body, content_version, " +
-  "message_mode, template_name, template_language, template_contract_hash, " +
+  "message_mode, template_name, template_language, template_contract_hash, template_slot_map, " +
   "intervalo_segundos, janela_inicio_hora, janela_fim_hora, teto_diario, teto_horario";
 
 /**
@@ -459,12 +460,23 @@ async function rodarUmaCampanha(
         templateName: campanha.template_name,
         templateLanguage: campanha.template_language,
         templateContractHash: campanha.template_contract_hash,
+        slotMap: limparMapaDeSlots(campanha.template_slot_map),
       },
       linha: modelo,
       preparados: lerValoresPreparados(alvo.variables),
       nome: nomeDoContato(contato),
       quando: { agora, fuso: knobs.timezone },
     });
+    if (!montagem.ok && montagem.alcance === "pessoa") {
+      // Só ESTA pessoa ficou sem valor: ela falha sem ser reservada (nada sai com
+      // o slot em branco) e sai da fila — a campanha segue com a próxima.
+      await admin
+        .from("campaign_recipients")
+        .update({ status: "failed", last_error_code: "valores_faltando", last_error_detail: montagem.detalhe })
+        .eq("id", alvo.id)
+        .eq("status", "pending");
+      return { enviadas: 0, pulados: 0, concluidas: 0, detalhe: "falhou:valores_faltando" };
+    }
     if (!montagem.ok) {
       await pausarPorTemplate(admin, campanha.id, montagem.falha, montagem.detalhe, agora);
       return { enviadas: 0, pulados: 0, concluidas: 0, detalhe: `pausada:${montagem.falha}` };
@@ -543,6 +555,30 @@ async function rodarUmaCampanha(
     const status = (mensagem as { status?: string }).status;
     const falhou = status === "failed";
     const erroDoEnvio = mensagem as { error_code?: string | null; error_message?: string | null };
+
+    // Template parado ou desatualizado na hora do envio: a campanha PAUSA, em vez
+    // de falhar cliente por cliente pelo resto da lista — e esta pessoa VOLTA à
+    // fila (`pending`), porque o problema não era dela: na retomada ela recebe.
+    // A mensagem que falhou não fica ligada a ela; o reenvio nasce com outro id.
+    const falhaDaCampanha =
+      falhou && envioDoTemplate
+        ? falhaDoEnvioParaACampanha(erroDoEnvio.error_code ?? null, erroDoEnvio.error_message ?? null)
+        : null;
+    if (falhaDaCampanha) {
+      await pausarPorTemplate(admin, campanha.id, falhaDaCampanha, erroDoEnvio.error_message ?? falhaDaCampanha, agora);
+      await admin
+        .from("campaign_recipients")
+        .update({
+          status: "pending",
+          sending_at: null,
+          last_error_code: "send_failed",
+          last_error_detail: (erroDoEnvio.error_message ?? falhaDaCampanha).slice(0, 300),
+        })
+        .eq("id", alvo.id)
+        .eq("status", "sending");
+      return { enviadas: 0, pulados: 0, concluidas: 0, detalhe: `pausada:${falhaDaCampanha}` };
+    }
+
     // `.eq("status","sending")` porque o ack pode ter chegado ANTES desta linha:
     // o trigger já teria avançado o destinatário para `sent`/`delivered`, e
     // escrever por cima o rebaixaria.
@@ -563,13 +599,6 @@ async function rodarUmaCampanha(
       })
       .eq("id", alvo.id)
       .eq("status", "sending");
-
-    // Template parado ou desatualizado na hora do envio: a campanha PAUSA, em vez
-    // de falhar cliente por cliente pelo resto da lista.
-    if (falhou && envioDoTemplate) {
-      const falha = falhaDoEnvioParaACampanha(erroDoEnvio.error_code ?? null, erroDoEnvio.error_message ?? null);
-      if (falha) await pausarPorTemplate(admin, campanha.id, falha, erroDoEnvio.error_message ?? falha, agora);
-    }
 
     return {
       enviadas: falhou ? 0 : 1,

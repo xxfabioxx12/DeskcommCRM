@@ -38,6 +38,7 @@ describe("explicarFalhaDoEnvio — a tabela da especificação", () => {
       "A Meta segurou para proteger a qualidade do número (a pessoa recebeu muitas mensagens de empresas)",
     ],
     ["132000", "Variáveis não batem com o template"],
+    ["132001", "O template não existe mais neste número"],
     ["132012", "Variáveis não batem com o template"],
     ["132015", "Template pausado pela Meta"],
     ["132016", "Template desativado pela Meta"],
@@ -62,6 +63,16 @@ describe("explicarFalhaDoEnvio — a tabela da especificação", () => {
     expect(explicarFalhaDoEnvio("send_failed", "template_missing: promo (pt_BR) não está no espelho")?.frase).toBe(
       "O template não existe mais neste número",
     );
+  });
+
+  it("valores que faltam para UMA pessoa viram frase traduzível e não pausam a campanha", () => {
+    const detalhe = "Faltam valores do template para esta pessoa: contato.cidade";
+    expect(explicarFalhaDoEnvio("valores_faltando", detalhe)).toEqual({
+      frase: "Faltam valores do template para esta pessoa",
+      traduzivel: true,
+      codigo: null,
+    });
+    expect(falhaDeTemplate("valores_faltando", detalhe)).toBeNull();
   });
 
   it("código desconhecido mostra o texto ORIGINAL da plataforma, sem o prefixo", () => {
@@ -89,6 +100,11 @@ describe("falhaDeTemplate — o que pausa a campanha", () => {
     expect(falhaDeTemplate("send_failed", "meta_132016: disabled")).toBe("template_parado");
     expect(falhaDeTemplate("send_failed", "template_not_approved: x (pt_BR)")).toBe("template_parado");
     expect(falhaDeTemplate("send_failed", "template_missing: x (pt_BR) não está no espelho")).toBe("template_parado");
+    // 132001 = o nome não existe (mais) na conta: vale para a lista inteira.
+    expect(falhaDeTemplate("send_failed", "meta_132001: Template name does not exist in the translation")).toBe(
+      "template_parado",
+    );
+    expect(falhaDeTemplate("132001", null)).toBe("template_parado");
   });
   it("parâmetros que não batem → template_desatualizado", () => {
     expect(falhaDeTemplate("132000", null)).toBe("template_desatualizado");

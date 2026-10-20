@@ -37,12 +37,29 @@ export interface EnvioDoTemplate {
   body: string;
 }
 
+/**
+ * A frase gravada em `last_error_detail` quando faltou valor para UMA pessoa. É
+ * prefixo reconhecido por `explicarFalhaDoEnvio` (frase traduzível) e não pausa.
+ */
+export const FALTAM_VALORES_DA_PESSOA = "Faltam valores do template para esta pessoa";
+
+/**
+ * `alcance: "campanha"` = vale para a lista inteira (pausa); `"pessoa"` = só este
+ * destinatário não tem como receber (ele falha, a campanha segue).
+ */
 export type MontagemDoEnvio =
   | { ok: true; envio: EnvioDoTemplate }
-  | { ok: false; falha: FalhaDeTemplateDaCampanha; detalhe: string };
+  | { ok: false; alcance: "campanha"; falha: FalhaDeTemplateDaCampanha; detalhe: string }
+  | { ok: false; alcance: "pessoa"; detalhe: string };
 
 export function montarEnvioDoTemplate(entrada: {
-  campanha: { templateName: string | null; templateLanguage: string | null; templateContractHash: string | null };
+  campanha: {
+    templateName: string | null;
+    templateLanguage: string | null;
+    templateContractHash: string | null;
+    /** O mapa de slots da campanha: as chaves que a preparação pode preencher. */
+    slotMap: Readonly<Record<string, string>>;
+  };
   linha: LinhaDoModelo | null;
   preparados: Readonly<Record<string, string>>;
   nome: string | null;
@@ -55,17 +72,35 @@ export function montarEnvioDoTemplate(entrada: {
   if (!conferida.ok) {
     return {
       ok: false,
+      alcance: "campanha",
       falha: conferida.estado === "stale" ? "template_mudou" : "template_nao_aprovado",
       detalhe: `${alvo}: ${conferida.estado}`,
     };
   }
   const { linha, contrato, salvos } = conferida;
 
+  // Lacuna de CONTRATO (vale para todos): nem o link salvo nem tudo o que o mapa
+  // da campanha pode preencher cobre o slot — link de mídia apagado depois da
+  // preparação, ou mapa que não cobre mais o template. Pausa.
+  const cobertos: Record<string, string> = { ...salvos };
+  for (const chave of Object.keys(entrada.campanha.slotMap)) cobertos[chave] ??= "-";
+  const doContrato = missingSlots(contrato, cobertos).map((s) => s.key);
+  if (doContrato.length > 0) {
+    return {
+      ok: false,
+      alcance: "campanha",
+      falha: "template_mudou",
+      detalhe: `${alvo}: faltam valores (${doContrato.join(", ")})`,
+    };
+  }
+
+  // Lacuna da PESSOA: o valor dela não foi preparado ou não resolveu agora. Só
+  // ela não recebe — nunca sai com o slot em branco, e a campanha segue.
   const finais = finalizarValores(entrada.preparados, entrada.nome, entrada.quando);
   const valores = { ...salvos, ...finais.valores };
-  const faltando = [...missingSlots(contrato, valores).map((s) => s.key), ...finais.faltando];
+  const faltando = [...new Set([...missingSlots(contrato, valores).map((s) => s.key), ...finais.faltando])];
   if (faltando.length > 0) {
-    return { ok: false, falha: "template_mudou", detalhe: `${alvo}: faltam valores (${faltando.join(", ")})` };
+    return { ok: false, alcance: "pessoa", detalhe: `${FALTAM_VALORES_DA_PESSOA}: ${faltando.join(", ")}`.slice(0, 300) };
   }
   const body = renderTemplateBody(linha.components, valores, {
     name,

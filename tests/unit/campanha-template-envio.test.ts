@@ -23,7 +23,13 @@ const LINHA: LinhaDoModelo = {
   parameter_format: "POSITIONAL",
   saved_values: { "header:1": "https://cdn.example/capa.png" },
 };
-const CAMPANHA = { templateName: "chegou", templateLanguage: "pt_BR", templateContractHash: "h1" };
+const CAMPANHA = {
+  templateName: "chegou",
+  templateLanguage: "pt_BR",
+  templateContractHash: "h1",
+  // O que a campanha preenche (o cabeçalho de imagem vem do link salvo).
+  slotMap: { "1": "{{saudacao}}, {{nome}}", "2": "Super Presell" },
+};
 // 15h em São Paulo.
 const QUANDO = { agora: new Date("2026-10-20T18:00:00.000Z"), fuso: "America/Sao_Paulo" };
 const PREPARADOS = { "1": "{{saudacao}}, Ana", "2": "Super Presell" };
@@ -60,7 +66,41 @@ describe("montarEnvioDoTemplate", () => {
   it("link do cabeçalho apagado depois da preparação pausa em vez de mandar sem mídia", () => {
     expect(
       montarEnvioDoTemplate({ campanha: CAMPANHA, linha: { ...LINHA, saved_values: {} }, preparados: PREPARADOS, nome: "Ana", quando: QUANDO }),
-    ).toMatchObject({ ok: false, falha: "template_mudou" });
+    ).toMatchObject({ ok: false, alcance: "campanha", falha: "template_mudou" });
+  });
+  it("mapa da campanha que não cobre mais um slot do contrato pausa (vale para todos)", () => {
+    expect(
+      montarEnvioDoTemplate({
+        campanha: { ...CAMPANHA, slotMap: { "1": "{{saudacao}}, {{nome}}" } },
+        linha: LINHA,
+        preparados: { "1": "{{saudacao}}, Ana" },
+        nome: "Ana",
+        quando: QUANDO,
+      }),
+    ).toMatchObject({ ok: false, alcance: "campanha", falha: "template_mudou" });
+  });
+  it("valor que falta só para ESTA pessoa não pausa: falha a pessoa", () => {
+    const r = montarEnvioDoTemplate({
+      campanha: CAMPANHA,
+      linha: LINHA,
+      preparados: { "1": "{{saudacao}}, Ana" },
+      nome: "Ana",
+      quando: QUANDO,
+    });
+    expect(r).toMatchObject({ ok: false, alcance: "pessoa" });
+    expect(r.ok === false && r.detalhe.startsWith("Faltam valores do template para esta pessoa")).toBe(true);
+    expect(r).not.toHaveProperty("falha");
+  });
+  it("variável que só resolve no envio e falta para a pessoa (sem nome) também é da pessoa", () => {
+    expect(
+      montarEnvioDoTemplate({
+        campanha: CAMPANHA,
+        linha: LINHA,
+        preparados: { "1": "{{saudacao}}, {{nome}}", "2": "x" },
+        nome: null,
+        quando: QUANDO,
+      }),
+    ).toMatchObject({ ok: false, alcance: "pessoa" });
   });
   it("valor do cadastro com cara de variável sai literal (blindagem da preparação)", () => {
     const r = montarEnvioDoTemplate({
@@ -80,6 +120,11 @@ describe("falhaDoEnvioParaACampanha", () => {
   });
   it("parâmetros que não batem pausam (template_mudou)", () => {
     expect(falhaDoEnvioParaACampanha("meta_error", "template_missing_values: 2")).toBe("template_mudou");
+  });
+  it("template que não existe na conta (132001) pausa (template_nao_aprovado)", () => {
+    expect(falhaDoEnvioParaACampanha("meta_error", "meta_132001: Template name does not exist in the translation")).toBe(
+      "template_nao_aprovado",
+    );
   });
   it("falha da pessoa não pausa a campanha", () => {
     expect(falhaDoEnvioParaACampanha("meta_error", "meta_131026: undeliverable")).toBeNull();
