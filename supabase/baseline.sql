@@ -58596,7 +58596,7 @@ on conflict (model) do update set
   notes = excluded.notes,
   superseded_at = null;
 
--- ---- campanha com template aprovado (migration 0704, fatia 4 da #1330) ----
+-- ---- campanha com template aprovado (migration 9001, fatia 4 da #1330) ----
 -- Não cria função, então pode ficar depois da VARREDURA anon. Sem este bloco,
 -- clones novos (install.sh) e clones atualizando (update.sh) ficam sem as
 -- colunas, e criar campanha recusa com 42703. Constraint nova sem correção de

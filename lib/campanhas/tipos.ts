@@ -98,7 +98,7 @@ export const TEXTO_DA_EXCLUSAO: Record<MotivoDeExclusao, string> = {
 };
 
 /**
- * Como a mensagem da campanha é montada (migration 0704, fatia 4 da #1330).
+ * Como a mensagem da campanha é montada (migration 9001, fatia 4 da #1330).
  *
  * `text` é o texto livre de sempre — o default de toda campanha que já existia.
  * `template` é o modelo aprovado pela plataforma, obrigatório no número que exige

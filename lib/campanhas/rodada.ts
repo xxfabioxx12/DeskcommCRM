@@ -95,7 +95,7 @@ interface CampanhaRow {
   name: string;
   message_body: string | null;
   content_version: number;
-  /** Migration 0704: `template` manda a definição aprovada em vez do texto. */
+  /** Migration 9001: `template` manda a definição aprovada em vez do texto. */
   message_mode: string;
   template_name: string | null;
   template_language: string | null;

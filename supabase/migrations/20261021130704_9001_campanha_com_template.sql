@@ -1,6 +1,6 @@
 -- manifest: **Campanha com template aprovado (fatia 4 da #1330).** `campaigns` ganha `message_mode` ('text' | 'template', default 'text'), `template_name`, `template_language`, `template_contract_hash` (o carimbo do contrato no momento da escolha, para detectar mudança na plataforma) e `template_slot_map` (jsonb: chave do slot → expressão com as variáveis da campanha), com CHECK de vocabulário, de coerência (template exige nome, idioma e carimbo; texto exige os três nulos) e de forma do mapa. `campaign_recipients` não muda: `variables` guarda os valores resolvidos por pessoa e `rendered_body` a prévia. Toda campanha existente fica `text` e nada muda para ela. Aditiva e idempotente; apêndice igual no `supabase/baseline.sql`; par de `MODOS_DA_MENSAGEM` em `lib/campanhas/tipos.ts`. Gate: `tests/unit/campanha-template-migration.test.ts`.
 -- ============================================================================
--- 0704 — CAMPANHA COM TEMPLATE APROVADO (fatia 4 da #1330)
+-- 9001 — CAMPANHA COM TEMPLATE APROVADO (fatia 4 da #1330)
 --
 -- A 0375 deixou de fora `message_mode`/`provider_template_*` ("quando o canal
 -- oficial entrar, entra com a migration dele"). Esta é a migration dele.

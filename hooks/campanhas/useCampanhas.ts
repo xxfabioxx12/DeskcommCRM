@@ -50,7 +50,7 @@ export interface CampanhaDetalhada extends CampanhaDaLista {
   janela_fim_hora: number | null;
   teto_diario: number | null;
   teto_horario: number | null;
-  /** Migration 0704. Ausente em resposta antiga = texto. */
+  /** Migration 9001. Ausente em resposta antiga = texto. */
   message_mode?: ModoDaMensagem;
   template_name?: string | null;
   template_language?: string | null;

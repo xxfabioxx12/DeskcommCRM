@@ -25,7 +25,7 @@ export const ritmoSchema = z.object({
 });
 
 /**
- * O mapa slot → expressão de uma campanha por template (migration 0704).
+ * O mapa slot → expressão de uma campanha por template (migration 9001).
  *
  * A chave é a de `slotKey` (`1`, `nome`, `header:1`, `button0:1`,
  * `card0:header:1`) — só palavra e dois-pontos. O teto de 50 é folga sobre o

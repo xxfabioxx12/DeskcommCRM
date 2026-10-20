@@ -505,7 +505,7 @@ const PARES: Array<{
   {
     tabela: "campaigns",
     coluna: "message_mode",
-    // lib/campanhas/tipos.ts → MODOS_DA_MENSAGEM. Migration 0704 (fatia 4 da
+    // lib/campanhas/tipos.ts → MODOS_DA_MENSAGEM. Migration 9001 (fatia 4 da
     // #1330): texto livre ou template aprovado. Um modo só no CHECK seria 23514
     // na rota de criar; só no TypeScript, campanha que o banco recusa.
     arquivo: "lib/campanhas/tipos.ts",

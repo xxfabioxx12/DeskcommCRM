@@ -83,7 +83,7 @@ export function conteudoMesclado(atual: ConteudoDaCampanha, entrada: EntradaDeCo
   };
 }
 
-/** A linha de `campaigns` como conteúdo. Coluna ausente (base anterior à 0704) = texto. */
+/** A linha de `campaigns` como conteúdo. Coluna ausente (base anterior à 9001) = texto. */
 export function conteudoDaLinha(c: {
   message_mode?: string | null;
   template_name?: string | null;
@@ -116,7 +116,7 @@ export function conteudoDoTemplateMudou(antes: ConteudoDaCampanha, depois: Conte
   );
 }
 
-/** As colunas da migration 0704, prontas para insert/update. */
+/** As colunas da migration 9001, prontas para insert/update. */
 export function colunasDoConteudo(c: ConteudoDaCampanha): {
   message_mode: ModoDaMensagem;
   template_name: string | null;

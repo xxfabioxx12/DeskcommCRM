@@ -51,7 +51,7 @@ export interface CampanhaCarregada {
   teto_diario: number | null;
   teto_horario: number | null;
   description: string | null;
-  /** Migration 0704. Base sem a migration devolve `undefined`, lido como texto. */
+  /** Migration 9001. Base sem a migration devolve `undefined`, lido como texto. */
   message_mode: ModoDaMensagem;
   template_name: string | null;
   template_language: string | null;

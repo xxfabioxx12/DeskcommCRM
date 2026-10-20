@@ -1,5 +1,5 @@
 /**
- * A MIGRATION 0704 (campanha com template aprovado) É TRIPLA E FALA A LÍNGUA DO TYPESCRIPT.
+ * A MIGRATION 9001 (campanha com template aprovado) É TRIPLA E FALA A LÍNGUA DO TYPESCRIPT.
  *
  * O kit self-host aplica SÓ o `supabase/baseline.sql`: migration sem apêndice não
  * chega a quem instalou numa VPS, e a rota de campanhas passaria a gravar colunas
@@ -23,7 +23,7 @@ import {
 } from "@/lib/campanhas/tipos";
 
 const RAIZ = join(__dirname, "..", "..");
-const MIGRATION = "supabase/migrations/20261021130000_0704_campanha_com_template.sql";
+const MIGRATION = "supabase/migrations/20261021130704_9001_campanha_com_template.sql";
 
 function ler(caminho: string): string {
   return readFileSync(join(RAIZ, caminho), "utf8");
@@ -37,7 +37,7 @@ function corpoSql(texto: string): string {
   return inicio >= 0 && j > inicio ? texto.slice(inicio, j + fim.length) : "";
 }
 
-describe("migration 0704 — campanha com template aprovado", () => {
+describe("migration 9001 — campanha com template aprovado", () => {
   it("existe e a primeira linha é a descrição `-- manifest:`", () => {
     expect(existsSync(join(RAIZ, MIGRATION))).toBe(true);
     expect(ler(MIGRATION).split("\n")[0]).toMatch(/^-- manifest: \S/);
@@ -68,8 +68,16 @@ describe("migration 0704 — campanha com template aprovado", () => {
     // Guarda de vacuidade: um recorte vazio estaria "contido" em qualquer arquivo.
     expect(corpo.length).toBeGreaterThan(400);
     const baseline = ler("supabase/baseline.sql");
-    expect(baseline).toContain("(migration 0704");
+    expect(baseline).toContain("(migration 9001");
     expect(baseline.includes(corpo)).toBe(true);
+  });
+
+  it("a cópia do fork (supabase/fork/9001.sql) é o fim exato do baseline", () => {
+    // O script scripts/fork/reaplicar-bloco-do-fork.sh reacrescenta esta cópia
+    // depois de cada atualização do oficial; cópia diferente reaplicaria outro SQL.
+    const copia = ler("supabase/fork/9001.sql");
+    expect(copia.startsWith("-- ---- campanha com template aprovado (migration 9001")).toBe(true);
+    expect(ler("supabase/baseline.sql").endsWith(copia)).toBe(true);
   });
 
   it("toda falha de template da campanha tem frase, e a frase tem espanhol", () => {

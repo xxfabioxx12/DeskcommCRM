@@ -216,7 +216,7 @@ describe("mesclar e comparar o conteúdo", () => {
     expect(conteudoDoTemplateMudou(TEMPLATE, { ...TEMPLATE, templateContractHash: "h2" })).toBe(true);
     expect(conteudoDoTemplateMudou(CONTEUDO_EM_TEXTO, CONTEUDO_EM_TEXTO)).toBe(false);
   });
-  it("as colunas gravadas são as da migration 0704", () => {
+  it("as colunas gravadas são as da migration 9001", () => {
     expect(Object.keys(colunasDoConteudo(TEMPLATE)).sort()).toEqual(
       ["message_mode", "template_contract_hash", "template_language", "template_name", "template_slot_map"],
     );
