@@ -14,6 +14,14 @@ import type { NextRequest } from "next/server";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { carregarCampanha } from "@/lib/campanhas/acoes";
+import {
+  colunasDoConteudo,
+  conferirConteudoDaCampanha,
+  conteudoDaLinha,
+  conteudoDoTemplateMudou,
+  conteudoMesclado,
+  type ConferenciaDoConteudo,
+} from "@/lib/campanhas/conferir-template";
 import { ehEditavel, ehTerminal } from "@/lib/campanhas/maquina-de-estados";
 import { gravarPool, lerPoolExtra } from "@/lib/campanhas/pool-de-numeros";
 import { editarCampanhaSchema } from "@/lib/campanhas/schemas";
@@ -29,7 +37,8 @@ const COLUNAS =
   "audience_filter, audience_version, content_version, snapshot_total, snapshot_eligible, " +
   "snapshot_excluded, scheduled_at, prepared_at, started_at, paused_at, completed_at, " +
   "cancelled_at, failure_code, intervalo_segundos, janela_inicio_hora, janela_fim_hora, " +
-  "teto_diario, teto_horario, pipeline_id, stage_id, agent_id, created_at, created_by";
+  "teto_diario, teto_horario, pipeline_id, stage_id, agent_id, created_at, created_by, "+
+  "message_mode, template_name, template_language, template_contract_hash, template_slot_map";
 
 export async function GET(
   _req: NextRequest,
@@ -159,9 +168,30 @@ export async function PATCH(
   }
   if (entrada.base_legal !== undefined) mudanca.base_legal = entrada.base_legal;
   if (entrada.lia_ref !== undefined) mudanca.lia_ref = entrada.lia_ref;
-  // Mexer no TEXTO sobe a versão do conteúdo: é ela que o destinatário carrega,
-  // e é por ela que se sabe se a mensagem preparada é a mensagem de hoje.
-  if (entrada.message_body !== undefined && entrada.message_body !== campanha.message_body) {
+  // O conteúdo do TEMPLATE é conteúdo como o texto: trocar o template, o idioma,
+  // o carimbo ou uma expressão do mapa muda o que cada pessoa recebe. O pedido é
+  // juntado à linha salva ANTES de conferir (mapa enviado substitui, não mescla).
+  const conteudoAntes = conteudoDaLinha(campanha);
+  const conteudoDepois = conteudoMesclado(conteudoAntes, entrada);
+  const CAMPOS_DA_MENSAGEM = [
+    "channel_session_id",
+    "channel_session_ids",
+    "message_mode",
+    "template_name",
+    "template_language",
+    "template_contract_hash",
+    "template_slot_map",
+  ] as const;
+  const mexeNaMensagem = CAMPOS_DA_MENSAGEM.some((campo) => entrada[campo] !== undefined);
+  if (mexeNaMensagem) Object.assign(mudanca, colunasDoConteudo(conteudoDepois));
+
+  // Mexer no TEXTO (ou no template) sobe a versão do conteúdo: é ela que o
+  // destinatário carrega, e é por ela que se sabe se a mensagem preparada é a
+  // mensagem de hoje.
+  if (
+    (entrada.message_body !== undefined && entrada.message_body !== campanha.message_body) ||
+    conteudoDoTemplateMudou(conteudoAntes, conteudoDepois)
+  ) {
     mudanca.content_version = campanha.content_version + 1;
   }
 
@@ -179,6 +209,25 @@ export async function PATCH(
         409,
         { requestId },
       );
+    }
+  }
+
+  // O número (ou o rodízio) e a mensagem precisam combinar: conferido no
+  // servidor sempre que um dos dois muda.
+  if (mexeNaMensagem) {
+    let conferencia: ConferenciaDoConteudo;
+    try {
+      const extras = entrada.channel_session_ids ?? (await lerPoolExtra(supabase, authz.org.orgId, id));
+      conferencia = await conferirConteudoDaCampanha(supabase, {
+        organizationId: authz.org.orgId,
+        channelSessionIds: [entrada.channel_session_id ?? campanha.channel_session_id, ...extras],
+        conteudo: conteudoDepois,
+      });
+    } catch (err) {
+      return fail("internal_error", err instanceof Error ? err.message : String(err), 500, { requestId });
+    }
+    if (!conferencia.ok) {
+      return fail(conferencia.codigo, t(conferencia.mensagem), conferencia.status, { requestId });
     }
   }
 

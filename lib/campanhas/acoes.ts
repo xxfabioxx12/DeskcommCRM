@@ -26,7 +26,7 @@ import { prepararCampanha } from "./preparacao";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { camposDoDestinatario } from "./consulta-de-audiencia";
 import { renderizar } from "./renderizador";
-import type { StatusDaCampanha } from "./tipos";
+import type { ModoDaMensagem, StatusDaCampanha } from "./tipos";
 
 export interface CampanhaCarregada {
   id: string;
@@ -47,6 +47,13 @@ export interface CampanhaCarregada {
   teto_diario: number | null;
   teto_horario: number | null;
   description: string | null;
+  /** Migration 0704. Base sem a migration devolve `undefined`, lido como texto. */
+  message_mode: ModoDaMensagem;
+  template_name: string | null;
+  template_language: string | null;
+  template_contract_hash: string | null;
+  template_slot_map: Record<string, string> | null;
+  failure_code: string | null;
 }
 
 export type Recusa = { ok: false; codigo: ApiErrorCode; mensagem: string; status: number };
@@ -55,7 +62,8 @@ export type Desfecho<T = unknown> = ({ ok: true } & T) | Recusa;
 const COLUNAS =
   "id, organization_id, name, status, channel_session_id, message_body, base_legal, lia_ref, " +
   "audience_filter, audience_version, content_version, scheduled_at, description, " +
-  "intervalo_segundos, janela_inicio_hora, janela_fim_hora, teto_diario, teto_horario";
+  "intervalo_segundos, janela_inicio_hora, janela_fim_hora, teto_diario, teto_horario, " +
+  "message_mode, template_name, template_language, template_contract_hash, template_slot_map, failure_code";
 
 export async function carregarCampanha(
   admin: SupabaseClient,

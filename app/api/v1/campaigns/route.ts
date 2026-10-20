@@ -17,6 +17,13 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { FILTRO_VAZIO } from "@/lib/campanhas/audiencia";
+import {
+  CONTEUDO_EM_TEXTO,
+  colunasDoConteudo,
+  conferirConteudoDaCampanha,
+  conteudoMesclado,
+  type ConferenciaDoConteudo,
+} from "@/lib/campanhas/conferir-template";
 import { gravarPool } from "@/lib/campanhas/pool-de-numeros";
 import {
   codificarCursor,
@@ -128,6 +135,24 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   }
 
+  // O NÚMERO decide o tipo de mensagem (capacidade do canal), conferido aqui e
+  // não só na tela: texto livre num número oficial passava calado e voltava como
+  // falha para quase todo mundo (131047).
+  const conteudo = conteudoMesclado(CONTEUDO_EM_TEXTO, entrada);
+  let conferencia: ConferenciaDoConteudo;
+  try {
+    conferencia = await conferirConteudoDaCampanha(supabase, {
+      organizationId: org.orgId,
+      channelSessionIds: [entrada.channel_session_id, ...(entrada.channel_session_ids ?? [])],
+      conteudo,
+    });
+  } catch (err) {
+    return fail("internal_error", err instanceof Error ? err.message : String(err), 500, { requestId });
+  }
+  if (!conferencia.ok) {
+    return fail(conferencia.codigo, t(conferencia.mensagem), conferencia.status, { requestId });
+  }
+
   const { data, error } = await supabase
     .from("campaigns")
     .insert({
@@ -135,7 +160,9 @@ export async function POST(req: NextRequest): Promise<Response> {
       name: entrada.name,
       description: entrada.description ?? null,
       channel_session_id: entrada.channel_session_id,
-      message_body: entrada.message_body ?? null,
+      // Em template o texto livre não existe: a mensagem é a definição aprovada.
+      message_body: conteudo.messageMode === "template" ? null : (entrada.message_body ?? null),
+      ...colunasDoConteudo(conteudo),
       base_legal: entrada.base_legal,
       lia_ref: entrada.lia_ref ?? null,
       audience_filter: entrada.audience_filter ?? FILTRO_VAZIO,
