@@ -11,7 +11,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { apiClient } from "@/lib/api/client";
 import type { ContagemDaCampanha, TaxasDaCampanha } from "@/lib/campanhas/metricas";
-import type { StatusDaCampanha } from "@/lib/campanhas/tipos";
+import type { ModoDaMensagem, StatusDaCampanha } from "@/lib/campanhas/tipos";
 
 export interface CampanhaDaLista {
   id: string;
@@ -50,6 +50,12 @@ export interface CampanhaDetalhada extends CampanhaDaLista {
   janela_fim_hora: number | null;
   teto_diario: number | null;
   teto_horario: number | null;
+  /** Migration 0704. Ausente em resposta antiga = texto. */
+  message_mode?: ModoDaMensagem;
+  template_name?: string | null;
+  template_language?: string | null;
+  template_contract_hash?: string | null;
+  template_slot_map?: Record<string, string> | null;
 }
 
 export interface Destinatario {
@@ -65,6 +71,10 @@ export interface Destinatario {
   delivered_at: string | null;
   read_at: string | null;
   replied_at: string | null;
+  last_error_code: string | null;
+  last_error_detail?: string | null;
+  /** A frase da falha, já traduzida pela rota. `null` = não falhou ou nada a explicar. */
+  motivo_da_falha: string | null;
   contacts: { name: string | null; display_name: string | null } | null;
 }
 
@@ -84,6 +94,8 @@ export interface PreviaDaAudiencia {
   truncado: boolean;
   amostra: Array<{ nome: string | null; motivo: string | null }>;
   legenda: Record<string, string>;
+  /** Campanha por template: os valores de uma pessoa da lista, para a prévia "como chega". */
+  exemplo?: Record<string, string> | null;
 }
 
 /** Campanha que ainda vai mudar sozinha — é quem justifica reconsultar. */
@@ -184,6 +196,8 @@ export function usePreviaDaAudiencia() {
       audience_filter: Record<string, unknown>;
       message_body: string;
       campaign_id?: string;
+      message_mode?: ModoDaMensagem;
+      template_slot_map?: Record<string, string>;
     }) => (await apiClient.post<{ data: PreviaDaAudiencia }>("/api/v1/campaigns/preview", corpo)).data,
     onError: (err) => showApiError(err),
   });
