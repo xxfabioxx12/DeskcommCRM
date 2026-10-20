@@ -14856,8 +14856,15 @@ export const DICIONARIO: Traducoes = {
   "A Meta não aceitou a categoria escolhida para este texto. Confira se é Marketing ou Utilidade.": {
     es: "Meta no aceptó la categoría elegida para este texto. Revisa si es Marketing o Utilidad.",
   },
-  "A Meta recusou o formato do template: confira o nome, as variáveis e os exemplos.": {
-    es: "Meta rechazó el formato de la plantilla: revisa el nombre, las variables y los ejemplos.",
+  "Os exemplos não podem ter quebra de linha, tab ou 4 espaços seguidos.": {
+    es: "Los ejemplos no pueden tener salto de línea, tab ni 4 espacios seguidos.",
+  },
+  "Não deixe duas variáveis coladas: escreva texto entre elas.": {
+    es: "No dejes dos variables pegadas: escribe texto entre ellas.",
+  },
+  "As variáveis começam em {{1}}; {{0}} não existe.": { es: "Las variables empiezan en {{1}}; {{0}} no existe." },
+  "A Meta achou variáveis demais para o tamanho do texto. Escreva mais texto entre as variáveis.": {
+    es: "Meta encontró demasiadas variables para el tamaño del texto. Escribe más texto entre las variables.",
   },
   "A Meta recusou o template.": { es: "Meta rechazó la plantilla." },
   "A Meta considerou o conteúdo abusivo": { es: "Meta consideró el contenido abusivo" },

@@ -48,14 +48,23 @@ export const MENSAGENS_DO_FORMULARIO = {
   variaveis_com_buraco: "As variáveis precisam ir de {{1}} em diante, sem pular número.",
   variavel_na_ponta: "O texto não pode começar nem terminar com uma variável.",
   exemplos_nao_batem: "Preencha um exemplo para cada variável.",
+  exemplo_invalido: "Os exemplos não podem ter quebra de linha, tab ou 4 espaços seguidos.",
+  variaveis_coladas: "Não deixe duas variáveis coladas: escreva texto entre elas.",
+  variavel_zero: "As variáveis começam em {{1}}; {{0}} não existe.",
 } as const;
 
 /** Todos os `{{1}}…{{n}}` presentes (repetir pode; pular não). */
 export function variaveisEmSequencia(texto: string): boolean {
+  if (/\{\{\s*0+\s*\}\}/.test(texto)) return false;
   const usados = new Set([...texto.matchAll(/\{\{\s*(\d+)\s*\}\}/g)].map((m) => Number(m[1])));
   const n = contarVariaveis(texto);
   for (let i = 1; i <= n; i += 1) if (!usados.has(i)) return false;
   return true;
+}
+
+/** Duas variáveis sem texto entre elas (só espaço, se tanto). */
+export function variaveisColadas(texto: string): boolean {
+  return /\}\}\s*\{\{/.test(texto);
 }
 
 /** A plataforma recusa corpo que começa ou termina numa variável. */
@@ -72,11 +81,19 @@ export function problemasDoFormulario(
   if (contarVariaveis(c.cabecalho) > 0) {
     problemas.push({ campo: "cabecalho", mensagem: MENSAGENS_DO_FORMULARIO.cabecalho_com_variavel });
   }
-  if (!variaveisEmSequencia(c.corpo)) problemas.push({ campo: "corpo", mensagem: MENSAGENS_DO_FORMULARIO.variaveis_com_buraco });
+  if (/\{\{\s*0+\s*\}\}/.test(c.corpo)) {
+    problemas.push({ campo: "corpo", mensagem: MENSAGENS_DO_FORMULARIO.variavel_zero });
+  } else if (!variaveisEmSequencia(c.corpo)) {
+    problemas.push({ campo: "corpo", mensagem: MENSAGENS_DO_FORMULARIO.variaveis_com_buraco });
+  }
+  if (variaveisColadas(c.corpo)) problemas.push({ campo: "corpo", mensagem: MENSAGENS_DO_FORMULARIO.variaveis_coladas });
   if (variavelNaPonta(c.corpo)) problemas.push({ campo: "corpo", mensagem: MENSAGENS_DO_FORMULARIO.variavel_na_ponta });
   const n = contarVariaveis(c.corpo);
   if (c.exemplos.length !== n || c.exemplos.some((e) => e.trim() === "")) {
     problemas.push({ campo: "exemplos", mensagem: MENSAGENS_DO_FORMULARIO.exemplos_nao_batem });
+  }
+  if (c.exemplos.some((e) => /[\n\r\t]| {4,}/.test(e))) {
+    problemas.push({ campo: "exemplos", mensagem: MENSAGENS_DO_FORMULARIO.exemplo_invalido });
   }
   return problemas;
 }

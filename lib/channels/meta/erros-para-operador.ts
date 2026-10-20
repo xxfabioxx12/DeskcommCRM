@@ -121,21 +121,37 @@ export function falhaDeTemplate(
  * texto — e o que não casa volta como a Meta escreveu.
  */
 const ERROS_DA_CRIACAO: ReadonlyArray<readonly [RegExp, string]> = [
-  [/already exists|duplicate/i, "Já existe um template com este nome e idioma nesta conta. Use outro nome."],
-  [/categor/i, "A Meta não aceitou a categoria escolhida para este texto. Confira se é Marketing ou Utilidade."],
-  [/invalid parameter|invalid format|format/i, "A Meta recusou o formato do template: confira o nome, as variáveis e os exemplos."],
+  [/already exists/i, "Já existe um template com este nome e idioma nesta conta. Use outro nome."],
+  [
+    /categor\w*.*(invalid|not allowed|mismatch|doesn'?t match)|(invalid|not allowed|mismatch|doesn'?t match).*categor/i,
+    "A Meta não aceitou a categoria escolhida para este texto. Confira se é Marketing ou Utilidade.",
+  ],
+  [
+    /too many variables|variables?[- ]to[- ]text ratio|number of (parameters|variables)/i,
+    "A Meta achou variáveis demais para o tamanho do texto. Escreva mais texto entre as variáveis.",
+  ],
 ];
 
 export const FRASES_DA_CRIACAO: readonly string[] = ERROS_DA_CRIACAO.map(([, frase]) => frase);
 
 const PREFIXO_DA_CRIACAO = /^[a-z_]+_template_(failed|variante_ausente):\s*(\d{3}\s+)?/i;
 
-export function explicarErroDaCriacao(mensagem: string | null | undefined): FalhaExplicada {
+export interface FalhaDaCriacao extends FalhaExplicada {
+  /** O texto original da Meta, quando a frase é nossa leitura dele — a tela o mostra depois da frase, para um acerto errado nunca ser silencioso. */
+  originalDaMeta: string | null;
+}
+
+export function explicarErroDaCriacao(mensagem: string | null | undefined): FalhaDaCriacao {
   const texto = (mensagem ?? "").trim().replace(PREFIXO_DA_CRIACAO, "");
   for (const [padrao, frase] of ERROS_DA_CRIACAO) {
-    if (padrao.test(texto)) return { frase, traduzivel: true, codigo: null };
+    if (padrao.test(texto)) return { frase, traduzivel: true, codigo: null, originalDaMeta: texto };
   }
-  return { frase: texto || "A Meta recusou o template.", traduzivel: texto === "", codigo: null };
+  return {
+    frase: texto || "A Meta recusou o template.",
+    traduzivel: texto === "",
+    codigo: null,
+    originalDaMeta: null,
+  };
 }
 
 /** `rejected_reason` da revisão (vocabulário da plataforma), como o operador lê. */

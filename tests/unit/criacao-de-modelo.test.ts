@@ -52,14 +52,23 @@ describe("criarModeloSchema", () => {
     ["cabeçalho com variável", { cabecalho: "Oi {{1}}", corpo: "Seu pedido chegou.", exemplos: [] }],
     ["quatro respostas rápidas", { respostasRapidas: ["a", "b", "c", "d"] }],
     ["resposta rápida longa demais", { respostasRapidas: ["x".repeat(26)] }],
+    ["exemplo com quebra de linha", { exemplos: ["Ana", "a\nb"] }],
+    ["exemplo com tab", { exemplos: ["Ana", "a\tb"] }],
+    ["exemplo com 4 espaços", { exemplos: ["Ana", "a    b"] }],
+    ["variáveis coladas", { corpo: "Oi {{1}}{{2}} tchau", exemplos: ["Ana", "x"] }],
+    ["variáveis separadas só por espaço", { corpo: "Oi {{1}} {{2}} tchau", exemplos: ["Ana", "x"] }],
+    ["variável {{0}}", { corpo: "Oi {{0}} tchau", exemplos: ["Ana"] }],
     ["rodapé longo demais", { rodape: "x".repeat(61) }],
   ])("recusa: %s", (_caso, troca) => {
     expect(criarModeloSchema.safeParse({ ...CRIAR, ...troca }).success).toBe(false);
   });
+  it("variáveis separadas por texto passam; 3 espaços no exemplo passa", () => {
+    expect(criarModeloSchema.safeParse({ ...CRIAR, corpo: "Oi {{1}}, seu {{2}} chegou.", exemplos: ["Ana", "a   b"] }).success).toBe(true);
+  });
   it("só Marketing e Utilidade", () => {
     expect([...CATEGORIAS_DA_CRIACAO]).toEqual(["MARKETING", "UTILITY"]);
   });
-  it("corpo vazio de pedido é sincronizar (compatível com o botão de hoje)", () => {
+  it("sincronizar (o botão de hoje) e apagar continuam valendo na união", () => {
     expect(acaoDoModeloOficialSchema.safeParse({ acao: "sincronizar" }).success).toBe(true);
     expect(acaoDoModeloOficialSchema.safeParse({ acao: "apagar", name: "x", language: "pt_BR" }).success).toBe(true);
   });
@@ -108,16 +117,27 @@ describe("components para a Meta", () => {
 describe("erros da criação em português", () => {
   it.each([
     ["meta_template_failed: 400 Message template already exists", "Já existe um template com este nome e idioma nesta conta. Use outro nome."],
+    ["meta_template_failed: 400 Content in this language already exists", "Já existe um template com este nome e idioma nesta conta. Use outro nome."],
     ["meta_template_failed: 400 Invalid category for this content", "A Meta não aceitou a categoria escolhida para este texto. Confira se é Marketing ou Utilidade."],
-    ["meta_template_failed: 400 Invalid parameter", "A Meta recusou o formato do template: confira o nome, as variáveis e os exemplos."],
+    ["meta_template_failed: 400 Category mismatch with the template content", "A Meta não aceitou a categoria escolhida para este texto. Confira se é Marketing ou Utilidade."],
+    ["meta_template_failed: 400 Too many variables for the text length", "A Meta achou variáveis demais para o tamanho do texto. Escreva mais texto entre as variáveis."],
+    ["meta_template_failed: 400 Variables-to-text ratio is too high", "A Meta achou variáveis demais para o tamanho do texto. Escreva mais texto entre as variáveis."],
   ])("%s", (mensagem, frase) => {
-    expect(explicarErroDaCriacao(mensagem)).toMatchObject({ frase, traduzivel: true });
+    const r = explicarErroDaCriacao(mensagem);
+    expect(r).toMatchObject({ frase, traduzivel: true });
+    // a leitura nossa nunca é silenciosa: o original da Meta acompanha
+    expect(r.originalDaMeta).toBe(mensagem.replace(/^meta_template_failed: 400 /, ""));
   });
-  it("erro desconhecido devolve o texto da Meta, sem o prefixo", () => {
-    expect(explicarErroDaCriacao("meta_template_failed: 500 Something odd")).toMatchObject({
-      frase: "Something odd",
-      traduzivel: false,
-    });
+  it.each([
+    "meta_template_failed: 400 Invalid parameter",
+    "meta_template_failed: 400 Invalid parameter: components[0].format",
+    "meta_template_failed: 400 Duplicate button text",
+    "meta_template_failed: 500 Something odd",
+  ])("não adivinha: %s volta como a Meta escreveu", (mensagem) => {
+    const r = explicarErroDaCriacao(mensagem);
+    expect(r.traduzivel).toBe(false);
+    expect(r.originalDaMeta).toBeNull();
+    expect(r.frase).toBe(mensagem.replace(/^meta_template_failed: \d{3} /, ""));
   });
 });
 
