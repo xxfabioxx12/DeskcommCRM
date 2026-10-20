@@ -14841,6 +14841,32 @@ export const DICIONARIO: Traducoes = {
   "Sem nenhuma destas etiquetas": { es: "Sin ninguna de estas etiquetas" },
   "separe por vírgula": { es: "separe por coma" },
   "Último problema": { es: "Último problema" },
+  "Este número é oficial: para quem não falou com você nas últimas 24 horas, a Meta só entrega template aprovado. Escolha um template.": {
+    es: "Este número es oficial: para quien no habló contigo en las últimas 24 horas, Meta solo entrega plantillas aprobadas. Elige una plantilla.",
+  },
+  "Este número não trabalha com template aprovado: escreva a mensagem em texto.": {
+    es: "Este número no trabaja con plantillas aprobadas: escribe el mensaje en texto.",
+  },
+  "Todos os números da campanha precisam ser do mesmo tipo: todos oficiais (template) ou todos por QR Code (texto).": {
+    es: "Todos los números de la campaña deben ser del mismo tipo: todos oficiales (plantilla) o todos por código QR (texto).",
+  },
+  "Escolha uma conexão de WhatsApp desta organização.": { es: "Elige una conexión de WhatsApp de esta organización." },
+  "O template não existe mais neste número. Escolha outro template.": {
+    es: "La plantilla ya no existe en este número. Elige otra plantilla.",
+  },
+  "Este template tem cabeçalho com imagem, vídeo ou documento sem link salvo. Salve o link na tela de Templates ou escolha outro.": {
+    es: "Esta plantilla tiene un encabezado con imagen, video o documento sin enlace guardado. Guarda el enlace en la pantalla de Plantillas o elige otra.",
+  },
+  "Este template usa variável de data ou valor em dinheiro, que a campanha ainda não sabe preencher. Escolha outro.": {
+    es: "Esta plantilla usa una variable de fecha o de valor en dinero, que la campaña todavía no sabe completar. Elige otra.",
+  },
+  "Preencha todas as variáveis do template.": { es: "Completa todas las variables de la plantilla." },
+  "O mapa de variáveis tem campos que este template não tem. Escolha o template de novo.": {
+    es: "El mapa de variables tiene campos que esta plantilla no tiene. Elige la plantilla de nuevo.",
+  },
+  "Há uma variável desconhecida no preenchimento do template. Use {{nome}}, {{primeiro_nome}}, {{saudacao}}, {{contato.campo}} ou {{lead.campo}}.": {
+    es: "Hay una variable desconocida en el llenado de la plantilla. Usa {{nome}}, {{primeiro_nome}}, {{saudacao}}, {{contato.campo}} o {{lead.campo}}.",
+  },
   "Cabeçalho com imagem, vídeo ou documento sem link salvo": {
     es: "Encabezado con imagen, video o documento sin enlace guardado",
   },

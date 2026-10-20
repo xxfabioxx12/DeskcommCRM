@@ -333,6 +333,13 @@ export const ApiErrorCodes = {
   campanha_agenda_invalida: "campanha_agenda_invalida", // 422: data no passado
   campanha_conteudo_invalido: "campanha_conteudo_invalido", // 422: texto vazio ou variável que não existe
   campanha_base_legal_invalida: "campanha_base_legal_invalida", // 422: interesse legítimo sem referência da LIA
+  // 422: o número exige template aprovado e a campanha veio em texto livre (fatia 4 da #1330).
+  // Distinto de `campanha_conteudo_invalido` porque a tela faz outra coisa com ele: troca o
+  // campo de texto pelo seletor de template.
+  campanha_exige_template: "campanha_exige_template",
+  // 422: template ausente no número, não aprovado, mudado na plataforma, com variável que a
+  // campanha não sabe preencher, ou mapa de variáveis incompleto/com sobra.
+  campanha_template_invalido: "campanha_template_invalido",
 
   // 500 / upstream
   internal_error: "internal_error",
