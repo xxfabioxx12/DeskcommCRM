@@ -166,6 +166,31 @@ describe("editar e apagar", () => {
     expect(h.gestao.mock.calls[0]?.[2]).toEqual({ orgId: "org-1", sessionId: "s-1", sessionRef: "PN-1", wabaDoOficial: "WABA-1" });
   });
 
+  it("apagar o template de uma campanha rodando devolve 409 listando a campanha", async () => {
+    h.gestao.mockResolvedValue({ ok: false, codigo: "em_uso", usos: [{ tipo: "campanha", nome: "Black Friday" }] });
+    const res = await pedir({ acao: "apagar", name: "pedido_chegou", language: "pt_BR" });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: { code: "template_in_use", details: { usos: ["Campanha «Black Friday»"] } } });
+  });
+
+  it("falha LOCAL (banco do espelho) é 500 com frase fixa, nunca 502 nem o texto do banco", async () => {
+    for (const local of ["modelo_espelho_apagar: permission denied for table meta_templates", "usos_fluxos: timeout", "modelo_espelho: boom"]) {
+      h.gestao.mockRejectedValueOnce(new Error(local));
+      const res = await pedir({ acao: "apagar", name: "pedido_chegou", language: "pt_BR", confirmado: true });
+      expect(res.status).toBe(500);
+      const corpo = (await res.json()) as { error: { code: string; message: string } };
+      expect(corpo.error.code).toBe("internal_error");
+      expect(corpo.error.message).toBe("Não foi possível concluir a operação com o template. Tente de novo.");
+    }
+  });
+
+  it("recusa da PLATAFORMA no editar continua 502 com a frase", async () => {
+    h.gestao.mockRejectedValueOnce(new Error("meta_template_failed: 400 Message template already exists"));
+    const res = await pedir({ acao: "editar", name: "pedido_chegou", language: "pt_BR", corpo: "Oi {{1}}, chegou.", exemplos: ["Ana"] });
+    expect(res.status).toBe(502);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("upstream_error");
+  });
+
   it("editar monta os components no servidor e sincroniza depois", async () => {
     h.gestao.mockResolvedValue({ ok: true, acao: "editar" });
     const res = await pedir({ acao: "editar", name: "pedido_chegou", language: "pt_BR", corpo: "Oi {{1}}, chegou.", exemplos: ["Ana"] });

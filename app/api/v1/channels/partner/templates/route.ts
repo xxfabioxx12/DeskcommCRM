@@ -52,7 +52,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import type { Idioma } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { acaoApagarSchema, acaoEditarSchema, executarGestao } from "@/lib/channels/gestao-de-modelos";
+import { acaoApagarSchema, acaoEditarSchema, executarGestao, ROTULO_DO_USO } from "@/lib/channels/gestao-de-modelos";
 
 export const dynamic = "force-dynamic";
 
@@ -211,7 +211,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         return fail("template_in_use", t("Este modelo está em uso. Confirme para apagar assim mesmo."), 409, {
           requestId,
           details: {
-            usos: gestao.usos.map((u) => `${u.tipo === "fluxo" ? t("Follow-up") : t("Agente")} «${u.nome}»`),
+            usos: gestao.usos.map((u) => `${t(ROTULO_DO_USO[u.tipo])} «${u.nome}»`),
           },
         });
       }

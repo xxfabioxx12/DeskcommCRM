@@ -141,6 +141,16 @@ export interface FalhaDaCriacao extends FalhaExplicada {
   originalDaMeta: string | null;
 }
 
+/**
+ * O erro veio da PLATAFORMA (a fábrica `modelos-graph.ts` prefixa
+ * `<prefixo>_template_failed:` / `_template_variante_ausente:`)? Fora disso é
+ * falha nossa — banco, configuração, rede — e não deve ser lida como recusa da
+ * Meta nem chegar crua à tela.
+ */
+export function ehErroDaPlataformaNoModelo(mensagem: string | null | undefined): boolean {
+  return PREFIXO_DA_CRIACAO.test((mensagem ?? "").trim());
+}
+
 export function explicarErroDaCriacao(mensagem: string | null | undefined): FalhaDaCriacao {
   const texto = (mensagem ?? "").trim().replace(PREFIXO_DA_CRIACAO, "");
   for (const [padrao, frase] of ERROS_DA_CRIACAO) {

@@ -14842,6 +14842,9 @@ export const DICIONARIO: Traducoes = {
   "separe por vírgula": { es: "separe por coma" },
   "Último problema": { es: "Último problema" },
   "Confira o formulário do template.": { es: "Revisa el formulario de la plantilla." },
+  "Não foi possível concluir a operação com o template. Tente de novo.": {
+    es: "No se pudo completar la operación con la plantilla. Inténtalo de nuevo.",
+  },
   "Use só letras minúsculas, números e _ no nome.": { es: "Usa solo letras minúsculas, números y _ en el nombre." },
   "O cabeçalho não pode ter variável nesta versão.": { es: "El encabezado no puede tener variable en esta versión." },
   "As variáveis precisam ir de {{1}} em diante, sem pular número.": {

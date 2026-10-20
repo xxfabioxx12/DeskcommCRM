@@ -31,8 +31,8 @@ import type { Idioma } from "@/lib/i18n/idiomas";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { audit } from "@/lib/audit";
 import { acaoDoModeloOficialSchema, componentsDoFormulario } from "@/lib/channels/criacao-de-modelo";
-import { executarGestao } from "@/lib/channels/gestao-de-modelos";
-import { explicarErroDaCriacao } from "@/lib/channels/meta/erros-para-operador";
+import { executarGestao, ROTULO_DO_USO } from "@/lib/channels/gestao-de-modelos";
+import { ehErroDaPlataformaNoModelo, explicarErroDaCriacao } from "@/lib/channels/meta/erros-para-operador";
 import { opsDeModelosDaContaOficial } from "@/lib/channels/modelos-do-canal";
 import { logger } from "@/lib/logger";
 
@@ -356,7 +356,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       // o envio, em silêncio. A tela mostra ONDE e pede a confirmação.
       return fail("template_in_use", t("Este modelo está em uso. Confirme para apagar assim mesmo."), 409, {
         requestId,
-        details: { usos: gestao.usos.map((u) => `${u.tipo === "fluxo" ? t("Follow-up") : t("Agente")} «${u.nome}»`) },
+        details: { usos: gestao.usos.map((u) => `${t(ROTULO_DO_USO[u.tipo])} «${u.nome}»`) },
       });
     }
     if (gestao.acao === "editar") {
@@ -379,7 +379,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     });
     return ok({ acao: gestao.acao }, { requestId });
   } catch (err) {
-    const explicada = explicarErroDaCriacao(err instanceof Error ? err.message : String(err));
+    const mensagem = err instanceof Error ? err.message : String(err);
+    if (!ehErroDaPlataformaNoModelo(mensagem)) {
+      // Falha NOSSA (banco do espelho, leitura dos usos, configuração, rede): não
+      // é recusa da Meta, e o texto cru do banco não vai para a tela.
+      logger.error("[templates] falha local ao gerenciar template", { requestId, detail: mensagem });
+      return fail("internal_error", t("Não foi possível concluir a operação com o template. Tente de novo."), 500, {
+        requestId,
+      });
+    }
+    const explicada = explicarErroDaCriacao(mensagem);
     logger.warn("[templates] a Meta recusou", { requestId, detail: explicada.originalDaMeta ?? explicada.frase });
     // A frase é a nossa LEITURA do texto da Meta; o original vai junto para a tela
     // mostrar "<frase> (Meta: <original>)" — uma leitura errada nunca fica
