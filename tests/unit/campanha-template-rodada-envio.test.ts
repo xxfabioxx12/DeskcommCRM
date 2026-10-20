@@ -9,12 +9,12 @@
  *   - recusa síncrona que é do TEMPLATE pausa e devolve a pessoa à fila (ninguém
  *     se perde); recusa que é da pessoa só falha a pessoa.
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 
 const dubles = vi.hoisted(() => ({
   linha: null as unknown,
   resposta: { id: "m-1", status: "sent" } as Record<string, unknown>,
-  enviar: null as unknown as ReturnType<typeof vi.fn>,
+  enviar: null as unknown as Mock<(...args: unknown[]) => unknown>,
 }));
 
 vi.mock("@/lib/logger", () => ({ logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() } }));
@@ -188,7 +188,7 @@ describe("rodada × template (comportamento)", () => {
     const { admin, destinatario } = cenario();
     await rodarUmaRodadaDeCampanha(admin, AGORA);
     expect(dubles.enviar).toHaveBeenCalledTimes(1);
-    expect(dubles.enviar.mock.calls[0][2]).toMatchObject({
+    expect(dubles.enviar.mock.calls[0]?.[2]).toMatchObject({
       type: "template",
       template_name: "chegou",
       template_values: { "header:1": "https://cdn.example/capa.png", "1": "Boa tarde, Ana", "2": "Super Presell" },
