@@ -14841,6 +14841,13 @@ export const DICIONARIO: Traducoes = {
   "Sem nenhuma destas etiquetas": { es: "Sin ninguna de estas etiquetas" },
   "separe por vírgula": { es: "separe por coma" },
   "Último problema": { es: "Último problema" },
+  "Cabeçalho com imagem, vídeo ou documento sem link salvo": {
+    es: "Encabezado con imagen, video o documento sin enlace guardado",
+  },
+  "Variável de data ou valor em dinheiro": { es: "Variable de fecha o valor en dinero" },
+  Marketing: { es: "Marketing" },
+  Utilidade: { es: "Utilidad" },
+  "Autenticação": { es: "Autenticación" },
   "Número sem WhatsApp ou que não aceitou os termos novos": {
     es: "Número sin WhatsApp o que no aceptó los términos nuevos",
   },

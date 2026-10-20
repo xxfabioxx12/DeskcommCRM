@@ -162,6 +162,15 @@ function blindar(valor: string): string {
   return valor.replaceAll("{", CHAVE_BLINDADA);
 }
 
+/**
+ * O texto SEM a blindagem, para exibir. Só para a TELA (a prévia mostra o valor
+ * preparado de uma pessoa): o caminho do envio tira a blindagem pela renderização
+ * final, com instante, e não por aqui.
+ */
+export function semBlindagem(texto: string): string {
+  return texto.replaceAll(CHAVE_BLINDADA, "{");
+}
+
 function marcarFalta(destino: Set<string>, variavel: string, literal: string): string {
   destino.add(variavel);
   return literal;
