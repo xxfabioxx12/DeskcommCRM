@@ -23,6 +23,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { metaContactsPayload } from "@/lib/channels/meta/contact-card";
 import { graphBaseUrl } from "@/lib/channels/meta/graph-base";
 import { resolveMetaCreds } from "../meta/credentials";
+import { metaCloudTemplateOps } from "../meta/template-ops";
 import type {
   ChannelAdapter,
   ChannelHealth,
@@ -188,6 +189,9 @@ export const metaCloudAdapter: ChannelAdapter = {
     sendFailed: "meta_error",
     unknownError: "meta_unknown",
   },
+
+  /** Gestão das definições aprovadas pela Cloud API (`canManageTemplates`). */
+  templates: metaCloudTemplateOps,
 
   async fetchInboundMedia(input): Promise<{ buffer: Buffer; mime: string }> {
     const creds = await resolveMetaCreds(createAdminClient(), {
