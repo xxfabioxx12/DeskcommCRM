@@ -78,6 +78,11 @@ export const MOTIVOS_DE_EXCLUSAO = [
   "suprimido",
   /** Spec 21: o contato virou pessoal e saiu da campanha com a saída própria. */
   "contato_pessoal",
+  /**
+   * Cópia de campanha (Duplicar): já recebeu a campanha de onde a cópia saiu.
+   * `exclusion_reason` não tem CHECK no banco, então não pede migration.
+   */
+  "ja_recebeu_na_original",
 ] as const;
 
 export type MotivoDeExclusao = (typeof MOTIVOS_DE_EXCLUSAO)[number];
@@ -95,6 +100,7 @@ export const TEXTO_DA_EXCLUSAO: Record<MotivoDeExclusao, string> = {
   ja_em_campanha: "Já está em outra campanha ainda não concluída",
   suprimido: "Está na lista de exclusão de campanhas",
   contato_pessoal: "Contato marcado como pessoal",
+  ja_recebeu_na_original: "Já recebeu a campanha original",
 };
 
 /**
@@ -123,10 +129,18 @@ export const FALHAS_DE_TEMPLATE_DA_CAMPANHA = ["template_nao_aprovado", "templat
 export type FalhaDeTemplateDaCampanha = (typeof FALHAS_DE_TEMPLATE_DA_CAMPANHA)[number];
 
 /** O que o operador lê quando a campanha não começa ou pausa por causa do template. */
+/**
+ * Campanha que já começou não se edita (só o rascunho). A saída real é cancelar,
+ * duplicar e escolher o template na cópia — a cópia pula quem já recebeu
+ * (`duplicated_from_campaign_id`, `contatosQueJaReceberamNaOrigem`). Cancelar
+ * antes devolve os pendentes da original para a cópia; sem cancelar, eles
+ * continuam "já em outra campanha" e nunca recebem duas vezes.
+ */
 export const TEXTO_DA_FALHA_DA_CAMPANHA: Record<FalhaDeTemplateDaCampanha, string> = {
   template_nao_aprovado:
-    "O template foi pausado pela Meta ou não está mais aprovado neste número. Escolha outro template.",
-  template_mudou: "O template mudou na Meta: escolha de novo.",
+    "O template foi pausado pela Meta ou não está mais aprovado neste número. Cancele esta campanha, duplique a campanha e escolha o template de novo: a cópia pula quem já recebeu.",
+  template_mudou:
+    "O template mudou na Meta. Cancele esta campanha, duplique a campanha e escolha o template de novo: a cópia pula quem já recebeu.",
 };
 
 export function ehFalhaDeTemplateDaCampanha(

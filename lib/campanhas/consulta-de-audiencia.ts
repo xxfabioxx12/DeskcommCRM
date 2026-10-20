@@ -438,6 +438,69 @@ export async function contatosJaEmCampanha(
   return new Set((data ?? []).map((r) => (r as { contact_id: string }).contact_id));
 }
 
+/**
+ * Quem já recebeu a campanha: a mensagem saiu (ou pode ter saído — `sending` está
+ * na borda externa). Pendente, falha e cancelado não recebeu.
+ */
+export const STATUS_QUE_JA_RECEBERAM = ["sending", "sent", "delivered", "read", "replied"] as const;
+
+/** Teto da cadeia cópia → original → ... (e guarda contra ciclo). */
+const TETO_DA_CADEIA_DE_COPIAS = 20;
+
+/**
+ * Cópia de campanha (Duplicar): quem já recebeu a campanha de onde ela saiu — e a
+ * de onde AQUELA saiu, se também for cópia. A cópia pula essas pessoas.
+ *
+ * Os pendentes da original NÃO entram aqui: enquanto a original está viva eles
+ * saem como "já em campanha" (`contatosJaEmCampanha`); cancelar a original os
+ * devolve, e aí a cópia os alcança sem risco de envio duplo.
+ */
+export async function contatosQueJaReceberamNaOrigem(
+  admin: SupabaseClient,
+  organizationId: string,
+  campanhaId: string,
+): Promise<Set<string>> {
+  const origens: string[] = [];
+  const vistas = new Set<string>([campanhaId]);
+  let atual = campanhaId;
+  for (let i = 0; i < TETO_DA_CADEIA_DE_COPIAS; i++) {
+    const { data, error } = await admin
+      .from("campaigns")
+      .select("duplicated_from_campaign_id")
+      .eq("organization_id", organizationId)
+      .eq("id", atual)
+      .maybeSingle();
+    if (error) throw new Error(`audiência: origem da cópia — ${error.message}`);
+    const origem = (data as { duplicated_from_campaign_id: string | null } | null)?.duplicated_from_campaign_id ?? null;
+    if (!origem || vistas.has(origem)) break;
+    vistas.add(origem);
+    origens.push(origem);
+    atual = origem;
+  }
+  const receberam = new Set<string>();
+  if (origens.length === 0) return receberam;
+
+  // Keyset por `id`: só a página VAZIA prova o fim (o `max_rows` da instalação
+  // pode ser menor que a página pedida — #2404).
+  let depoisDe: string | null = null;
+  for (;;) {
+    let consulta = admin
+      .from("campaign_recipients")
+      .select("id, contact_id")
+      .eq("organization_id", organizationId)
+      .in("campaign_id", origens)
+      .in("status", [...STATUS_QUE_JA_RECEBERAM]);
+    if (depoisDe) consulta = consulta.gt("id", depoisDe);
+    const { data, error } = await consulta.order("id", { ascending: true }).limit(PAGINA_DO_POSTGREST);
+    if (error) throw new Error(`audiência: quem já recebeu a original — ${error.message}`);
+    const linhas = (data ?? []) as Array<{ id: string; contact_id: string }>;
+    if (linhas.length === 0) break;
+    for (const l of linhas) receberam.add(l.contact_id);
+    depoisDe = linhas[linhas.length - 1]!.id;
+  }
+  return receberam;
+}
+
 function ordinal(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }

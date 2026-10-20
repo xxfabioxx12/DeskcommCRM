@@ -99,6 +99,11 @@ export interface ContextoDaClassificacao {
   /** Contatos já comprometidos com outra campanha não concluída. */
   jaEmCampanha: ReadonlySet<string>;
   /**
+   * Cópia de campanha (Duplicar): quem já recebeu a campanha de onde ela saiu
+   * (`contatosQueJaReceberamNaOrigem`). Ausente = a campanha não é cópia.
+   */
+  jaReceberamNaOrigem?: ReadonlySet<string>;
+  /**
    * Hashes da lista de exclusão da operação (migration 0376). Decisão de quem
    * opera, diferente do opt-out: aqui não se silencia o atendimento.
    */
@@ -152,6 +157,10 @@ export function classificarAudiencia(
     }
     if (ctx.jaEmCampanha.has(candidato.contactId)) {
       excluir("ja_em_campanha");
+      continue;
+    }
+    if (ctx.jaReceberamNaOrigem?.has(candidato.contactId)) {
+      excluir("ja_recebeu_na_original");
       continue;
     }
     const endereco = candidato.telefone!.trim();

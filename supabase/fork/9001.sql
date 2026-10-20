@@ -8,7 +8,8 @@ alter table public.campaigns
   add column if not exists template_name text,
   add column if not exists template_language text,
   add column if not exists template_contract_hash text,
-  add column if not exists template_slot_map jsonb not null default '{}'::jsonb;
+  add column if not exists template_slot_map jsonb not null default '{}'::jsonb,
+  add column if not exists duplicated_from_campaign_id uuid;
 
 -- Num bloco DO: o update.sh aplica o baseline sem ON_ERROR_STOP e em
 -- autocommit; soltos, um `add` que falhasse deixaria a tabela sem as três.
@@ -42,5 +43,7 @@ comment on column public.campaigns.template_contract_hash is
   'Hash do contrato (meta_templates.contract_hash) quando o template foi escolhido. Divergente no envio = definição mudou: a campanha pausa com failure_code template_mudou.';
 comment on column public.campaigns.template_slot_map is
   'Chave do slot (slotKey: "1", "header:1", "button0:1") → expressão com {{nome}}, {{primeiro_nome}}, {{saudacao}}, {{contato.x}}, {{lead.x}} ou texto fixo.';
+comment on column public.campaigns.duplicated_from_campaign_id is
+  'Campanha de onde esta saiu pelo Duplicar. A preparação da cópia pula quem já recebeu a original (status sending/sent/delivered/read/replied). Sem FK de propósito: apagar a original não mexe na cópia; toda leitura filtra organization_id.';
 
 notify pgrst, 'reload schema';

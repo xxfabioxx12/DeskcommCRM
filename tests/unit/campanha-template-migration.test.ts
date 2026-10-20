@@ -43,7 +43,7 @@ describe("migration 9001 — campanha com template aprovado", () => {
     expect(ler(MIGRATION).split("\n")[0]).toMatch(/^-- manifest: \S/);
   });
 
-  it("acrescenta as cinco colunas com `add column if not exists`", () => {
+  it("acrescenta as seis colunas com `add column if not exists`", () => {
     const sql = ler(MIGRATION);
     for (const coluna of [
       "message_mode text not null default 'text'",
@@ -51,6 +51,7 @@ describe("migration 9001 — campanha com template aprovado", () => {
       "template_language text",
       "template_contract_hash text",
       "template_slot_map jsonb not null default '{}'::jsonb",
+      "duplicated_from_campaign_id uuid",
     ]) {
       expect(sql, coluna).toContain(`add column if not exists ${coluna}`);
     }

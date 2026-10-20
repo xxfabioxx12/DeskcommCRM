@@ -14967,6 +14967,13 @@ export const DICIONARIO: Traducoes = {
     es: "Meta pausó la plantilla o ya no está aprobada en este número. Elige otra plantilla.",
   },
   "O template mudou na Meta: escolha de novo.": { es: "La plantilla cambió en Meta: elígela de nuevo." },
+  "O template foi pausado pela Meta ou não está mais aprovado neste número. Cancele esta campanha, duplique a campanha e escolha o template de novo: a cópia pula quem já recebeu.": {
+    es: "Meta pausó la plantilla o ya no está aprobada en este número. Cancela esta campaña, duplica la campaña y elige la plantilla de nuevo: la copia omite a quien ya la recibió.",
+  },
+  "O template mudou na Meta. Cancele esta campanha, duplique a campanha e escolha o template de novo: a cópia pula quem já recebeu.": {
+    es: "La plantilla cambió en Meta. Cancela esta campaña, duplica la campaña y elige la plantilla de nuevo: la copia omite a quien ya la recibió.",
+  },
+  "Já recebeu a campanha original": { es: "Ya recibió la campaña original" },
   "Uma campanha fala com uma lista de contatos que você escolhe, no ritmo do número — nunca em rajada.": {
     es: "Una campaña habla con una lista de contactos que eliges, al ritmo del número — nunca en ráfaga.",
   },

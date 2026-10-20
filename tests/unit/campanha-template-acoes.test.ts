@@ -30,6 +30,7 @@ vi.mock("@/lib/campanhas/conferir-template", async (original) => ({
 }));
 
 import { duplicarAcao, iniciarAcao, prepararAcao, testarAcao, type CampanhaCarregada } from "@/lib/campanhas/acoes";
+import { TEXTO_DA_FALHA_DA_CAMPANHA } from "@/lib/campanhas/tipos";
 
 type Escrita = { tabela: string; op: "insert" | "update"; valor: Record<string, unknown> };
 
@@ -94,6 +95,7 @@ const CAMPANHA: CampanhaCarregada = {
   template_contract_hash: "h1",
   template_slot_map: { "1": "{{primeiro_nome}}", "2": "{{contato.cidade}}" },
   failure_code: null,
+  duplicated_from_campaign_id: null,
 };
 
 const CONTATO = {
@@ -178,6 +180,38 @@ describe("iniciar e duplicar", () => {
     const b = fakeAdmin({}, 5);
     await iniciarAcao(b.admin, { ...pausada, failure_code: "sem_elegiveis" }, AGORA);
     expect(b.escritas.find((e) => e.tabela === "campaigns")?.valor).not.toHaveProperty("failure_code");
+  });
+  it("duplicar grava de qual campanha a cópia saiu (para pular quem já recebeu)", async () => {
+    const { admin, escritas } = fakeAdmin({});
+    await duplicarAcao(admin, CAMPANHA, "u-1");
+    expect(escritas[0]?.valor).toMatchObject({ duplicated_from_campaign_id: "c-1", organization_id: "org-1" });
+  });
+  it("retomar pausada com o template ainda com problema: a recusa manda duplicar", async () => {
+    h.conferir.mockResolvedValue({
+      ok: false,
+      codigo: "campanha_template_invalido",
+      mensagem: "O template mudou na Meta: escolha de novo.",
+      status: 422,
+      falha: "template_mudou",
+    });
+    const pausada = { ...CAMPANHA, status: "paused" as const, failure_code: "template_mudou" };
+    const { admin, escritas } = fakeAdmin({}, 5);
+    const r = await iniciarAcao(admin, pausada, AGORA);
+    expect(r).toMatchObject({ ok: false, codigo: "campanha_template_invalido", status: 422 });
+    expect(!r.ok && r.mensagem).toBe(TEXTO_DA_FALHA_DA_CAMPANHA.template_mudou);
+    expect(escritas).toEqual([]);
+  });
+  it("no rascunho a recusa continua pedindo para escolher outro template", async () => {
+    h.conferir.mockResolvedValue({
+      ok: false,
+      codigo: "campanha_template_invalido",
+      mensagem: "O template mudou na Meta: escolha de novo.",
+      status: 422,
+      falha: "template_mudou",
+    });
+    const { admin } = fakeAdmin({});
+    const r = await prepararAcao(admin, CAMPANHA, AGORA);
+    expect(!r.ok && r.mensagem).toBe("O template mudou na Meta: escolha de novo.");
   });
   it("duplicar copia o template e o mapa", async () => {
     const { admin, escritas } = fakeAdmin({});

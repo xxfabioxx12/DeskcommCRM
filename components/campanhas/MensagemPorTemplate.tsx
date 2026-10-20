@@ -22,7 +22,6 @@ import {
   resumoDoCorpo,
   type MensagemDoFormulario,
 } from "@/lib/campanhas/template-da-campanha";
-import { TEXTO_DA_FALHA_DA_CAMPANHA } from "@/lib/campanhas/tipos";
 
 const chaveDe = (o: OpcaoDeModelo) => `${o.modelo.name}|${o.modelo.language}`;
 
@@ -126,7 +125,7 @@ export function MensagemPorTemplate({
 
       {desatualizado && atual && (
         <div className="flex flex-wrap items-center gap-2 text-sm text-warning-fg">
-          <span>{t(TEXTO_DA_FALHA_DA_CAMPANHA.template_mudou)}</span>
+          <span>{t("O template mudou na Meta: escolha de novo.")}</span>
           <Button type="button" size="sm" variant="outline" onClick={() => escolher(chaveDe(atual))}>
             {t("Usar a versão atual")}
           </Button>

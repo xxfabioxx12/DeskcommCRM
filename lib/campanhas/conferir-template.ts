@@ -38,7 +38,6 @@ import {
 } from "./template-da-campanha";
 import { renderizar, temChaveSolta } from "./renderizador";
 import {
-  TEXTO_DA_FALHA_DA_CAMPANHA,
   type FalhaDeTemplateDaCampanha,
   type ModoDaMensagem,
 } from "./tipos";
@@ -176,8 +175,11 @@ export const MENSAGENS_DA_CONFERENCIA = {
     "Todos os números da campanha precisam ser do mesmo tipo: todos oficiais (template) ou todos por QR Code (texto).",
   canal_desconhecido: "Escolha uma conexão de WhatsApp desta organização.",
   template_inexistente: "O template não existe mais neste número. Escolha outro template.",
-  template_nao_aprovado: TEXTO_DA_FALHA_DA_CAMPANHA.template_nao_aprovado,
-  template_mudou: TEXTO_DA_FALHA_DA_CAMPANHA.template_mudou,
+  // No rascunho dá para escolher outro template ali mesmo. Campanha que já
+  // começou não se edita: quem a retoma recebe TEXTO_DA_FALHA_DA_CAMPANHA (duplicar).
+  template_nao_aprovado:
+    "O template foi pausado pela Meta ou não está mais aprovado neste número. Escolha outro template.",
+  template_mudou: "O template mudou na Meta: escolha de novo.",
   midia_sem_link:
     "Este template tem cabeçalho com imagem, vídeo ou documento sem link salvo. Salve o link na tela de Templates ou escolha outro.",
   tipo_nao_suportado:

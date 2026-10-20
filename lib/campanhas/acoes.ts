@@ -30,7 +30,12 @@ import { renderizar } from "./renderizador";
 import { conferirConteudoDaCampanha, conteudoDaLinha, type DefinicaoDaCampanha } from "./conferir-template";
 import { lerPoolExtra } from "./pool-de-numeros";
 import { resolverSlots, textoDasExpressoes } from "./template-da-campanha";
-import { ehFalhaDeTemplateDaCampanha, type ModoDaMensagem, type StatusDaCampanha } from "./tipos";
+import {
+  TEXTO_DA_FALHA_DA_CAMPANHA,
+  ehFalhaDeTemplateDaCampanha,
+  type ModoDaMensagem,
+  type StatusDaCampanha,
+} from "./tipos";
 
 export interface CampanhaCarregada {
   id: string;
@@ -58,6 +63,8 @@ export interface CampanhaCarregada {
   template_contract_hash: string | null;
   template_slot_map: Record<string, string> | null;
   failure_code: string | null;
+  /** Migration 9001: a campanha de onde esta cópia saiu (Duplicar), ou `null`. */
+  duplicated_from_campaign_id?: string | null;
 }
 
 export type Recusa = { ok: false; codigo: ApiErrorCode; mensagem: string; status: number };
@@ -67,7 +74,8 @@ const COLUNAS =
   "id, organization_id, name, status, channel_session_id, message_body, base_legal, lia_ref, " +
   "audience_filter, audience_version, content_version, scheduled_at, description, " +
   "intervalo_segundos, janela_inicio_hora, janela_fim_hora, teto_diario, teto_horario, " +
-  "message_mode, template_name, template_language, template_contract_hash, template_slot_map, failure_code";
+  "message_mode, template_name, template_language, template_contract_hash, template_slot_map, failure_code, " +
+  "duplicated_from_campaign_id";
 
 export async function carregarCampanha(
   admin: SupabaseClient,
@@ -146,7 +154,12 @@ async function conferirMensagem(
       channelSessionIds: [c.channel_session_id, ...extras],
       conteudo: conteudoDaLinha(c),
     });
-    if (!r.ok) return { ok: false, codigo: r.codigo, mensagem: r.mensagem, status: r.status };
+    if (!r.ok) {
+      // Campanha que já começou não se edita: "escolha outro template" seria um
+      // beco sem saída. A frase da falha manda cancelar, duplicar e escolher na cópia.
+      const mensagem = r.falha && c.status !== "draft" ? TEXTO_DA_FALHA_DA_CAMPANHA[r.falha] : r.mensagem;
+      return { ok: false, codigo: r.codigo, mensagem, status: r.status };
+    }
     return { ok: true, definicao: r.definicao };
   } catch (err) {
     // Exceção inesperada (banco fora etc.) não é recusa de negócio: 500.
@@ -421,6 +434,9 @@ export async function duplicarAcao(
       teto_diario: c.teto_diario,
       teto_horario: c.teto_horario,
       created_by: autorId,
+      // A cópia pula quem já recebeu esta campanha (`contatosQueJaReceberamNaOrigem`,
+      // na preparação): é a saída de uma campanha pausada por template.
+      duplicated_from_campaign_id: c.id,
       // Nada de destinatário, resultado, agenda ou carimbo de execução: a cópia
       // é uma INTENÇÃO nova, e herdar números faria a tela mostrar entrega de
       // mensagem que esta campanha nunca mandou.

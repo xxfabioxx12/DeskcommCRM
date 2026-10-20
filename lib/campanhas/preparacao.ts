@@ -34,7 +34,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { FILTRO_VAZIO, filtroDeAudienciaSchema, type FiltroDeAudiencia } from "./audiencia";
-import { buscarCandidatos, contatosJaEmCampanha } from "./consulta-de-audiencia";
+import { buscarCandidatos, contatosJaEmCampanha, contatosQueJaReceberamNaOrigem } from "./consulta-de-audiencia";
 import { hashDoEndereco, hashesExcluidos } from "./exclusoes";
 import {
   classificarAudiencia,
@@ -197,11 +197,16 @@ async function classificar(
     entrada.organizationId,
     entrada.campanhaId,
   );
+  // Cópia (Duplicar): quem já recebeu a original não recebe de novo.
+  const jaReceberamNaOrigem = entrada.campanhaId
+    ? await contatosQueJaReceberamNaOrigem(admin, entrada.organizationId, entrada.campanhaId)
+    : undefined;
   const suprimidos = await hashesExcluidos(admin, entrada.organizationId);
   return {
     linhas: classificarAudiencia(candidatos, {
       excluidosAMao: new Set(entrada.filtro.excluir_contatos),
       jaEmCampanha,
+      jaReceberamNaOrigem,
       suprimidos,
       hashDoEndereco,
       // A saudação NÃO é resolvida aqui: ela é da hora do envio. O token fica no

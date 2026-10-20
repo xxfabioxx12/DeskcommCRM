@@ -25,7 +25,6 @@ import {
   type ConteudoDaCampanha,
   type LinhaDoModelo,
 } from "@/lib/campanhas/conferir-template";
-import { TEXTO_DA_FALHA_DA_CAMPANHA } from "@/lib/campanhas/tipos";
 
 const OFICIAL = { id: "s-oficial", provider: CHANNEL_PROVIDER_META };
 const OFICIAL_2 = { id: "s-oficial-2", provider: CHANNEL_PROVIDER_META };
@@ -100,12 +99,12 @@ describe("o vínculo com o template, em cada número", () => {
   it("template pausado pela Meta", () => {
     const r = avaliarConteudoDaCampanha(TEMPLATE, [OFICIAL], linhas([[OFICIAL.id, linha({ status: "PAUSED" })]]));
     expect(r).toMatchObject({ ok: false, falha: "template_nao_aprovado" });
-    expect(!r.ok && r.mensagem).toBe(TEXTO_DA_FALHA_DA_CAMPANHA.template_nao_aprovado);
+    expect(!r.ok && r.mensagem).toBe(MENSAGENS_DA_CONFERENCIA.template_nao_aprovado);
   });
   it("template que mudou na Meta (carimbo diferente)", () => {
     const r = avaliarConteudoDaCampanha(TEMPLATE, [OFICIAL], linhas([[OFICIAL.id, linha({ contract_hash: "h2" })]]));
     expect(r).toMatchObject({ ok: false, falha: "template_mudou" });
-    expect(!r.ok && r.mensagem).toBe(TEXTO_DA_FALHA_DA_CAMPANHA.template_mudou);
+    expect(!r.ok && r.mensagem).toBe(MENSAGENS_DA_CONFERENCIA.template_mudou);
   });
   it("número extra sem o template recusa", () => {
     const r = avaliarConteudoDaCampanha(
