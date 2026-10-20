@@ -184,6 +184,8 @@ export const MENSAGENS_DA_CONFERENCIA = {
     "Este template usa variável de data ou valor em dinheiro, que a campanha ainda não sabe preencher. Escolha outro.",
   variaveis_faltando: "Preencha todas as variáveis do template.",
   variaveis_sobrando: "O mapa de variáveis tem campos que este template não tem. Escolha o template de novo.",
+  problema_em_numero_extra:
+    "Um dos números extras da campanha tem este template com problema (link de mídia salvo ou variáveis diferentes). Confira o template em cada número.",
   variavel_desconhecida:
     "Há uma variável desconhecida no preenchimento do template. Use {{nome}}, {{primeiro_nome}}, {{saudacao}}, {{contato.campo}} ou {{lead.campo}}.",
 } as const;
@@ -234,7 +236,8 @@ export function avaliarConteudoDaCampanha(
     contractHash: conteudo.templateContractHash ?? "",
     values: {},
   };
-  let principal: LinhaDoModelo | null = null;
+  let principal: { linha: LinhaDoModelo; contrato: ReturnType<typeof deriveTemplateContract>; salvos: Record<string, string> } | null =
+    null;
   for (const sessao of sessoes) {
     const atual = linhas.get(sessao.id) ?? null;
     const estado = bindingState(
@@ -244,30 +247,43 @@ export function avaliarConteudoDaCampanha(
         : null,
     );
     if (estado !== "ok") return recusaDoVinculo(estado);
-    principal ??= atual;
+    if (!atual) return recusaDoVinculo("missing");
+
+    // Cada número tem a SUA linha (parceiro: por conexão) e pode ter outro link de mídia salvo.
+    const contrato = deriveTemplateContract({
+      name: atual.name,
+      language: atual.language,
+      parameter_format: atual.parameter_format ?? undefined,
+      components: atual.components as never,
+    });
+    const mescla = mesclarValoresSalvos(contrato, (atual.saved_values ?? {}) as Record<string, unknown>, {});
+    const salvos = mescla.ok ? mescla.valores : {};
+    const avaliacao = avaliarModeloParaCampanha(slotsDoContrato(contrato), salvos);
+    const doExtra = principal !== null;
+    if (!avaliacao.usavel) {
+      return recusa(
+        "campanha_template_invalido",
+        doExtra ? MENSAGENS_DA_CONFERENCIA.problema_em_numero_extra : MENSAGENS_DA_CONFERENCIA[avaliacao.motivo],
+        422,
+      );
+    }
+    const mapa = conferirMapaDeSlots(avaliacao.preencher, conteudo.slotMap);
+    if (mapa) {
+      return recusa(
+        "campanha_template_invalido",
+        doExtra
+          ? MENSAGENS_DA_CONFERENCIA.problema_em_numero_extra
+          : mapa.tipo === "faltando"
+            ? MENSAGENS_DA_CONFERENCIA.variaveis_faltando
+            : MENSAGENS_DA_CONFERENCIA.variaveis_sobrando,
+        422,
+      );
+    }
+    principal ??= { linha: atual, contrato, salvos };
   }
   if (!principal) return recusaDoVinculo("missing");
+  const { linha: linhaPrincipal, contrato, salvos } = principal;
 
-  const contrato = deriveTemplateContract({
-    name: principal.name,
-    language: principal.language,
-    parameter_format: principal.parameter_format ?? undefined,
-    components: principal.components as never,
-  });
-  const mescla = mesclarValoresSalvos(contrato, (principal.saved_values ?? {}) as Record<string, unknown>, {});
-  const salvos = mescla.ok ? mescla.valores : {};
-  const avaliacao = avaliarModeloParaCampanha(slotsDoContrato(contrato), salvos);
-  if (!avaliacao.usavel) {
-    return recusa("campanha_template_invalido", MENSAGENS_DA_CONFERENCIA[avaliacao.motivo], 422);
-  }
-  const mapa = conferirMapaDeSlots(avaliacao.preencher, conteudo.slotMap);
-  if (mapa) {
-    return recusa(
-      "campanha_template_invalido",
-      mapa.tipo === "faltando" ? MENSAGENS_DA_CONFERENCIA.variaveis_faltando : MENSAGENS_DA_CONFERENCIA.variaveis_sobrando,
-      422,
-    );
-  }
   // P17: variável que o renderizador não conhece sairia literal para o cliente.
   for (const expressao of Object.values(conteudo.slotMap)) {
     if (renderizar(expressao, { nome: "x" }).desconhecidas.length > 0) {
@@ -277,10 +293,10 @@ export function avaliarConteudoDaCampanha(
   return {
     ok: true,
     definicao: {
-      name: principal.name,
-      language: principal.language,
+      name: linhaPrincipal.name,
+      language: linhaPrincipal.language,
       parameterFormat: contrato.parameterFormat,
-      components: principal.components,
+      components: linhaPrincipal.components,
       salvos,
     },
   };
@@ -299,6 +315,7 @@ export async function conferirConteudoDaCampanha(
     .from("channel_sessions")
     .select("id, provider")
     .eq("organization_id", entrada.organizationId)
+    .is("archived_at", null)
     .in("id", ids);
   if (error) throw new Error(`conferência do conteúdo: conexões — ${error.message}`);
   const porId = new Map(((data ?? []) as Array<{ id: string; provider: string | null }>).map((s) => [s.id, s]));

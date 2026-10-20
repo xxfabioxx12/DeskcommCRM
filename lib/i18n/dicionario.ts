@@ -14841,6 +14841,9 @@ export const DICIONARIO: Traducoes = {
   "Sem nenhuma destas etiquetas": { es: "Sin ninguna de estas etiquetas" },
   "separe por vírgula": { es: "separe por coma" },
   "Último problema": { es: "Último problema" },
+  "Um dos números extras da campanha tem este template com problema (link de mídia salvo ou variáveis diferentes). Confira o template em cada número.": {
+    es: "Uno de los números extra de la campaña tiene esta plantilla con problemas (enlace de medios guardado o variables diferentes). Revisa la plantilla en cada número.",
+  },
   "Este número é oficial: para quem não falou com você nas últimas 24 horas, a Meta só entrega template aprovado. Escolha um template.": {
     es: "Este número es oficial: para quien no habló contigo en las últimas 24 horas, Meta solo entrega plantillas aprobadas. Elige una plantilla.",
   },

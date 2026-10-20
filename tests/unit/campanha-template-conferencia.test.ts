@@ -20,6 +20,7 @@ import {
   colunasDoConteudo,
   conteudoDaLinha,
   conteudoDoTemplateMudou,
+  conferirConteudoDaCampanha,
   conteudoMesclado,
   type ConteudoDaCampanha,
   type LinhaDoModelo,
@@ -137,6 +138,58 @@ describe("o vínculo com o template, em cada número", () => {
       linhas([[OFICIAL.id, linha()]]),
     );
     expect(!sobra.ok && sobra.mensagem).toBe(MENSAGENS_DA_CONFERENCIA.variaveis_sobrando);
+  });
+});
+
+describe("o pool inteiro é conferido", () => {
+  const comImagem = [{ type: "HEADER", format: "IMAGE" }, { type: "BODY", text: "Oi {{1}}, o {{2}} chegou." }];
+  const link = { "header:1": "https://cdn.example/capa.png" };
+  it("extra com o mesmo carimbo mas sem o link de mídia é recusado", () => {
+    const r = avaliarConteudoDaCampanha(
+      TEMPLATE,
+      [OFICIAL, OFICIAL_2],
+      linhas([
+        [OFICIAL.id, linha({ components: comImagem, saved_values: link })],
+        [OFICIAL_2.id, linha({ components: comImagem, saved_values: {} })],
+      ]),
+    );
+    expect(r).toMatchObject({ ok: false, codigo: "campanha_template_invalido", status: 422 });
+    expect(!r.ok && r.mensagem).toBe(MENSAGENS_DA_CONFERENCIA.problema_em_numero_extra);
+  });
+  it("extra com o link também passa", () => {
+    const r = avaliarConteudoDaCampanha(
+      TEMPLATE,
+      [OFICIAL, OFICIAL_2],
+      linhas([
+        [OFICIAL.id, linha({ components: comImagem, saved_values: link })],
+        [OFICIAL_2.id, linha({ components: comImagem, saved_values: link })],
+      ]),
+    );
+    expect(r.ok).toBe(true);
+  });
+});
+
+describe("a busca no banco (conferirConteudoDaCampanha)", () => {
+  function fakeDb(resposta: { data: unknown; error: { message: string } | null }) {
+    const filtros: Array<[string, string, unknown]> = [];
+    const cadeia: Record<string, unknown> = {};
+    cadeia.select = () => cadeia;
+    cadeia.eq = (c: string, v: unknown) => (filtros.push(["eq", c, v]), cadeia);
+    cadeia.is = (c: string, v: unknown) => (filtros.push(["is", c, v]), cadeia);
+    cadeia.in = (c: string, v: unknown) => (filtros.push(["in", c, v]), Promise.resolve(resposta));
+    return { db: { from: () => cadeia } as never, filtros };
+  }
+  const entrada = { organizationId: "org-1", channelSessionIds: ["s-oficial"], conteudo: CONTEUDO_EM_TEXTO };
+  it("filtra pela organização e ignora número arquivado", async () => {
+    const { db, filtros } = fakeDb({ data: [], error: null });
+    const r = await conferirConteudoDaCampanha(db, entrada);
+    expect(filtros).toContainEqual(["eq", "organization_id", "org-1"]);
+    expect(filtros).toContainEqual(["is", "archived_at", null]);
+    expect(r).toMatchObject({ ok: false, codigo: "campanha_canal_indisponivel", status: 409 });
+  });
+  it("erro de banco lança", async () => {
+    const { db } = fakeDb({ data: null, error: { message: "boom" } });
+    await expect(conferirConteudoDaCampanha(db, entrada)).rejects.toThrow(/boom/);
   });
 });
 
