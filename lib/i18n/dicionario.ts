@@ -14841,6 +14841,7 @@ export const DICIONARIO: Traducoes = {
   "Sem nenhuma destas etiquetas": { es: "Sin ninguna de estas etiquetas" },
   "separe por vírgula": { es: "separe por coma" },
   "Último problema": { es: "Último problema" },
+  "Confira o formulário do template.": { es: "Revisa el formulario de la plantilla." },
   "Use só letras minúsculas, números e _ no nome.": { es: "Usa solo letras minúsculas, números y _ en el nombre." },
   "O cabeçalho não pode ter variável nesta versão.": { es: "El encabezado no puede tener variable en esta versión." },
   "As variáveis precisam ir de {{1}} em diante, sem pular número.": {

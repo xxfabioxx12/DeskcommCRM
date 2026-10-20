@@ -41,6 +41,8 @@ export interface TemplateView {
 export interface TemplatesPayload {
   /** `null` = canal oficial não conectado. Distinto de "conectado e sem template". */
   waba: string | null;
+  /** O canal gerencia definições pela API: a tela mostra "Criar template", editar e apagar. */
+  podeGerenciar?: boolean;
   templates: TemplateView[];
 }
 
