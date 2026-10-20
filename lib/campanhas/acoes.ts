@@ -32,7 +32,7 @@ import { lerPoolExtra } from "./pool-de-numeros";
 import { resolverSlots, textoDasExpressoes } from "./template-da-campanha";
 import {
   TEXTO_DA_FALHA_DA_CAMPANHA,
-  ehFalhaDeTemplateDaCampanha,
+  ehFalhaQuePausaACampanha,
   type ModoDaMensagem,
   type StatusDaCampanha,
 } from "./tipos";
@@ -324,8 +324,9 @@ export async function iniciarAcao(
       started_at: agora.toISOString(),
       paused_at: null,
       scheduled_at: null,
-      // O motivo da pausa por template sai junto com a pausa; outro motivo fica.
-      ...(ehFalhaDeTemplateDaCampanha(c.failure_code) ? { failure_code: null, failure_detail: null } : {}),
+      // O motivo da pausa automática (template, conta do número, falhas seguidas)
+      // sai junto com a pausa; outro motivo fica.
+      ...(ehFalhaQuePausaACampanha(c.failure_code) ? { failure_code: null, failure_detail: null } : {}),
     })
     .eq("id", c.id)
     .eq("status", c.status)

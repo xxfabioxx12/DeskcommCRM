@@ -27,6 +27,11 @@ const FRASES_POR_CODIGO: Readonly<Record<string, string>> = {
   "132012": "Variáveis não batem com o template",
   "132015": "Template pausado pela Meta",
   "132016": "Template desativado pela Meta",
+  // Da CONTA do número, não da pessoa nem do template: valem para a lista inteira.
+  "131031": "A Meta bloqueou a conta deste número",
+  "131042": "Problema de pagamento ou de cadastro na conta da Meta",
+  "131048": "A Meta limitou o número por suspeita de spam",
+  "368": "A Meta bloqueou o número por violar as regras dela",
   "130429": "Limite de envio atingido: tente mais tarde",
   "131056": "Limite de envio atingido: tente mais tarde",
 };
@@ -49,6 +54,8 @@ export const FRASES_PARA_OPERADOR: readonly string[] = [
 
 const PARADO = new Set(["132001", "132015", "132016"]);
 const DESATUALIZADO = new Set(["132000", "132012"]);
+/** Conta bloqueada, pagamento/elegibilidade, limite por spam, bloqueio por política. */
+const CONTA_COM_PROBLEMA = new Set(["131031", "131042", "131048", "368"]);
 
 /** `<transporte>_<código>: …` — o formato da falha síncrona. */
 const CODIGO_NO_TEXTO = /^[a-z][a-z0-9]*_(\d{3,6})\s*:\s*/i;
@@ -112,6 +119,19 @@ export function falhaDeTemplate(
     return "template_desatualizado";
   }
   return null;
+}
+
+/**
+ * A recusa é da CONTA do número (bloqueio, pagamento, spam, política)? Então
+ * vale para a lista inteira: seguir mandando só acumula recusas. Venha do
+ * webhook ou do envio síncrono.
+ */
+export function problemaNaContaDoNumero(
+  codigo: string | null | undefined,
+  detalhe: string | null | undefined,
+): boolean {
+  const daPlataforma = codigoDaPlataforma(codigo, detalhe);
+  return !!daPlataforma && CONTA_COM_PROBLEMA.has(daPlataforma);
 }
 
 /**

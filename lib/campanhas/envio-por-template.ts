@@ -19,13 +19,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { missingSlots } from "@/lib/channels/meta/build-components";
-import { falhaDeTemplate } from "@/lib/channels/meta/erros-para-operador";
+import { falhaDeTemplate, problemaNaContaDoNumero } from "@/lib/channels/meta/erros-para-operador";
 import { renderTemplateBody } from "@/lib/channels/meta/render-template";
 import { logger } from "@/lib/logger";
 
 import { conferirLinhaDoModelo, type LinhaDoModelo } from "./conferir-template";
 import { finalizarValores } from "./template-da-campanha";
-import type { FalhaDeTemplateDaCampanha } from "./tipos";
+import type { FalhaDeTemplateDaCampanha, FalhaQuePausaACampanha } from "./tipos";
 
 /** O pedaço do input da porta de saída que muda em template (o resto é o de sempre). */
 export interface EnvioDoTemplate {
@@ -114,13 +114,14 @@ export function montarEnvioDoTemplate(entrada: {
 }
 
 /**
- * Pausa a campanha por causa do template, em compare-and-set (só quem está
- * `running`). Nunca lança: a rodada não pode cair por uma campanha.
+ * Pausa a campanha sozinha (template, conta do número ou falhas seguidas), em
+ * compare-and-set (só quem está `running`). Nunca lança: a rodada não pode cair
+ * por uma campanha.
  */
-export async function pausarPorTemplate(
+export async function pausarACampanha(
   admin: SupabaseClient,
   campanhaId: string,
-  falha: FalhaDeTemplateDaCampanha,
+  falha: FalhaQuePausaACampanha,
   detalhe: string,
   agora: Date,
 ): Promise<boolean> {
@@ -136,14 +137,18 @@ export async function pausarPorTemplate(
     .eq("status", "running")
     .select("id");
   if (error) {
-    logger.warn("[campanha] pausa por template falhou", { campanha: campanhaId, motivo: error.message });
+    logger.warn("[campanha] pausa automática falhou", { campanha: campanhaId, falha, motivo: error.message });
     return false;
   }
   return (data ?? []).length > 0;
 }
 
-/** A falha síncrona do envio é do TEMPLATE (pausa a campanha) ou da pessoa (`null`)? */
-export function falhaDoEnvioParaACampanha(codigo: string | null, detalhe: string | null): FalhaDeTemplateDaCampanha | null {
+/**
+ * A falha síncrona do envio vale para a lista inteira (pausa a campanha) ou só
+ * para a pessoa (`null`)? Do template ou da CONTA do número (`numero_com_problema`).
+ */
+export function falhaDoEnvioParaACampanha(codigo: string | null, detalhe: string | null): FalhaQuePausaACampanha | null {
+  if (problemaNaContaDoNumero(codigo, detalhe)) return "numero_com_problema";
   const falha = falhaDeTemplate(codigo, detalhe);
   if (falha === "template_parado") return "template_nao_aprovado";
   if (falha === "template_desatualizado") return "template_mudou";

@@ -50,14 +50,19 @@ import { COLUNAS_DO_MODELO, type LinhaDoModelo } from "./conferir-template";
 import {
   falhaDoEnvioParaACampanha,
   montarEnvioDoTemplate,
-  pausarPorTemplate,
+  pausarACampanha,
   type EnvioDoTemplate,
 } from "./envio-por-template";
 import { hashDoEndereco } from "./exclusoes";
 import { renderizar } from "./renderizador";
 import { escolherNumero, poolDaCampanha, type NumeroDisponivel } from "./rodizio";
 import { intervaloDoCanalCumprido, podeMandarAgora, proximaTentativa, type RitmoDaCampanha } from "./ritmo";
-import { intervaloMinimoDoCanal, lerValoresPreparados, limparMapaDeSlots } from "./template-da-campanha";
+import {
+  canalExigeTemplate,
+  intervaloMinimoDoCanal,
+  lerValoresPreparados,
+  limparMapaDeSlots,
+} from "./template-da-campanha";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { TEXTO_DA_EXCLUSAO } from "./tipos";
 
@@ -106,12 +111,17 @@ interface CampanhaRow {
   janela_fim_hora: number | null;
   teto_diario: number | null;
   teto_horario: number | null;
+  /** Início (ou última retomada): o disjuntor de falhas seguidas só conta daqui em diante. */
+  started_at: string | null;
 }
 
 const COLUNAS_DA_CAMPANHA =
   "id, organization_id, channel_session_id, name, message_body, content_version, " +
   "message_mode, template_name, template_language, template_contract_hash, template_slot_map, " +
-  "intervalo_segundos, janela_inicio_hora, janela_fim_hora, teto_diario, teto_horario";
+  "intervalo_segundos, janela_inicio_hora, janela_fim_hora, teto_diario, teto_horario, started_at";
+
+/** Falhas seguidas que pausam a campanha num número que exige template. */
+export const FALHAS_SEGUIDAS_QUE_PAUSAM = 5;
 
 /**
  * O status da organização embutido com `!inner` no `select`, e filtrado na
@@ -389,6 +399,7 @@ async function rodarUmaCampanha(
   // ─── O RODÍZIO: qual número fala com esta pessoa ───
   const disponiveis: NumeroDisponivel[] = [];
   const knobsPorNumero = new Map<string, Awaited<ReturnType<typeof loadChannelKnobs>>>();
+  const exigeTemplatePorNumero = new Map<string, boolean>();
   for (const sessionId of numeros) {
     const k =
       sessionId === campanha.channel_session_id
@@ -406,6 +417,7 @@ async function rodarUmaCampanha(
     // Número fora do ar não entra no rodízio: mandar por ele seria fabricar uma
     // mensagem presa em `sending` que o recovery depois marca como falha.
     if (!linha || linha.status !== "WORKING") continue;
+    exigeTemplatePorNumero.set(sessionId, canalExigeTemplate(linha.provider) === true);
 
     const estadoDoNumero = await loadPacingState(pool, campanha.organization_id, sessionId, {
       now: agora,
@@ -439,6 +451,23 @@ async function rodarUmaCampanha(
   }
   const sessionEscolhida = escolha.sessionId;
   const knobs = knobsPorNumero.get(sessionEscolhida)!.knobs;
+
+  // ─── O disjuntor, num número que exige template ───
+  // Template, ou texto de campanha antiga num número oficial. Cinco falhas
+  // seguidas (síncronas ou vindas do webhook, qualquer código) dizem que o
+  // problema não é da pessoa: seguir só queima a lista. Número por QR Code não
+  // entra — o comportamento dele não muda.
+  const exigeTemplate = campanha.message_mode === "template" || exigeTemplatePorNumero.get(sessionEscolhida) === true;
+  if (exigeTemplate && (await ultimasFalharamTodas(admin, campanha))) {
+    await pausarACampanha(
+      admin,
+      campanha.id,
+      "falhas_seguidas",
+      `as últimas ${FALHAS_SEGUIDAS_QUE_PAUSAM} mensagens falharam`,
+      agora,
+    );
+    return { enviadas: 0, pulados: 0, concluidas: 0, detalhe: "pausada:falhas_seguidas" };
+  }
 
   // ─── Campanha por template: a definição é conferida ANTES de reservar ───
   // No número ESCOLHIDO (cada número do rodízio tem o seu espelho). Sumiu,
@@ -478,7 +507,7 @@ async function rodarUmaCampanha(
       return { enviadas: 0, pulados: 0, concluidas: 0, detalhe: "falhou:valores_faltando" };
     }
     if (!montagem.ok) {
-      await pausarPorTemplate(admin, campanha.id, montagem.falha, montagem.detalhe, agora);
+      await pausarACampanha(admin, campanha.id, montagem.falha, montagem.detalhe, agora);
       return { enviadas: 0, pulados: 0, concluidas: 0, detalhe: `pausada:${montagem.falha}` };
     }
     envioDoTemplate = montagem.envio;
@@ -556,16 +585,18 @@ async function rodarUmaCampanha(
     const falhou = status === "failed";
     const erroDoEnvio = mensagem as { error_code?: string | null; error_message?: string | null };
 
-    // Template parado ou desatualizado na hora do envio: a campanha PAUSA, em vez
-    // de falhar cliente por cliente pelo resto da lista — e esta pessoa VOLTA à
-    // fila (`pending`), porque o problema não era dela: na retomada ela recebe.
-    // A mensagem que falhou não fica ligada a ela; o reenvio nasce com outro id.
+    // Template parado ou desatualizado, ou a CONTA do número com problema
+    // (bloqueio, pagamento, spam — também no texto de campanha antiga num número
+    // oficial), na hora do envio: a campanha PAUSA, em vez de falhar cliente por
+    // cliente pelo resto da lista — e esta pessoa VOLTA à fila (`pending`),
+    // porque o problema não era dela: na retomada ela recebe. A mensagem que
+    // falhou não fica ligada a ela; o reenvio nasce com outro id.
     const falhaDaCampanha =
-      falhou && envioDoTemplate
+      falhou && exigeTemplate
         ? falhaDoEnvioParaACampanha(erroDoEnvio.error_code ?? null, erroDoEnvio.error_message ?? null)
         : null;
     if (falhaDaCampanha) {
-      await pausarPorTemplate(admin, campanha.id, falhaDaCampanha, erroDoEnvio.error_message ?? falhaDaCampanha, agora);
+      await pausarACampanha(admin, campanha.id, falhaDaCampanha, erroDoEnvio.error_message ?? falhaDaCampanha, agora);
       await admin
         .from("campaign_recipients")
         .update({
@@ -685,6 +716,32 @@ export async function reservarDestinatario(
     return { reservado: false, erro: error.message };
   }
   return { reservado: (data ?? []).length > 0 };
+}
+
+/**
+ * As últimas `FALHAS_SEGUIDAS_QUE_PAUSAM` pessoas processadas (pela hora da
+ * reserva) desde o início ou a última retomada falharam TODAS? Uma consulta só,
+ * no índice `idx_campaign_recipients_ultimos_processados`. Quem nunca foi
+ * reservado (valor que faltava só para a pessoa) não conta: não houve envio.
+ * Erro do banco não pausa: na dúvida, segue.
+ */
+async function ultimasFalharamTodas(admin: SupabaseClient, campanha: CampanhaRow): Promise<boolean> {
+  let consulta = admin
+    .from("campaign_recipients")
+    .select("status")
+    .eq("organization_id", campanha.organization_id)
+    .eq("campaign_id", campanha.id)
+    .not("sending_at", "is", null);
+  if (campanha.started_at) consulta = consulta.gte("sending_at", campanha.started_at);
+  const { data, error } = await consulta
+    .order("sending_at", { ascending: false })
+    .limit(FALHAS_SEGUIDAS_QUE_PAUSAM);
+  if (error) {
+    logger.warn("[campanha] conferência de falhas seguidas falhou", { campanha: campanha.id, motivo: error.message });
+    return false;
+  }
+  const ultimas = (data ?? []) as Array<{ status: string }>;
+  return ultimas.length >= FALHAS_SEGUIDAS_QUE_PAUSAM && ultimas.every((l) => l.status === "failed");
 }
 
 /**

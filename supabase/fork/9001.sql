@@ -43,6 +43,12 @@ comment on column public.campaigns.template_contract_hash is
   'Hash do contrato (meta_templates.contract_hash) quando o template foi escolhido. Divergente no envio = definição mudou: a campanha pausa com failure_code template_mudou.';
 comment on column public.campaigns.template_slot_map is
   'Chave do slot (slotKey: "1", "header:1", "button0:1") → expressão com {{nome}}, {{primeiro_nome}}, {{saudacao}}, {{contato.x}}, {{lead.x}} ou texto fixo.';
+-- O disjuntor da rodada (5 falhas seguidas pausam a campanha num número que
+-- exige template) lê as últimas pessoas processadas pela hora da reserva.
+create index if not exists idx_campaign_recipients_ultimos_processados
+  on public.campaign_recipients (campaign_id, sending_at desc)
+  where sending_at is not null;
+
 comment on column public.campaigns.duplicated_from_campaign_id is
   'Campanha de onde esta saiu pelo Duplicar. A preparação da cópia pula quem já recebeu a original (status sending/sent/delivered/read/replied). Sem FK de propósito: apagar a original não mexe na cópia; toda leitura filtra organization_id.';
 

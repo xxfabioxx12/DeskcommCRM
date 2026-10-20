@@ -14,6 +14,7 @@ import {
   codigoDaPlataforma,
   explicarFalhaDoEnvio,
   falhaDeTemplate,
+  problemaNaContaDoNumero,
 } from "./erros-para-operador";
 
 describe("codigoDaPlataforma", () => {
@@ -122,4 +123,26 @@ describe("falhaDeTemplate — o que pausa a campanha", () => {
 it("toda frase do tradutor tem espanhol no dicionário", () => {
   expect(FRASES_PARA_OPERADOR.length).toBeGreaterThanOrEqual(10);
   for (const frase of FRASES_PARA_OPERADOR) expect(DICIONARIO[frase]?.es, frase).toBeTruthy();
+});
+
+describe("problemaNaContaDoNumero — códigos de CONTA, que valem para a lista inteira", () => {
+  it.each([
+    ["131031", "A Meta bloqueou a conta deste número"],
+    ["131042", "Problema de pagamento ou de cadastro na conta da Meta"],
+    ["131048", "A Meta limitou o número por suspeita de spam"],
+    ["368", "A Meta bloqueou o número por violar as regras dela"],
+  ])("%s → pausa a campanha e tem frase traduzível", (codigo, frase) => {
+    // Pelo webhook (número puro) e pelo envio síncrono (dentro do texto).
+    expect(problemaNaContaDoNumero(codigo, "Account locked")).toBe(true);
+    expect(problemaNaContaDoNumero("send_failed", `meta_${codigo}: texto original`)).toBe(true);
+    expect(explicarFalhaDoEnvio(codigo, "texto original")).toEqual({ frase, traduzivel: true, codigo });
+    expect(DICIONARIO[frase]?.es, frase).toBeTruthy();
+    // Não é falha do template: a pausa tem motivo próprio.
+    expect(falhaDeTemplate(codigo, null)).toBeNull();
+  });
+  it("falha da pessoa ou do template não é problema da conta", () => {
+    expect(problemaNaContaDoNumero("131026", null)).toBe(false);
+    expect(problemaNaContaDoNumero("send_failed", "meta_132015: paused")).toBe(false);
+    expect(problemaNaContaDoNumero(null, null)).toBe(false);
+  });
 });

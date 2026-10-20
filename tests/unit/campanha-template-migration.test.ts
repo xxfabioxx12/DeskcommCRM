@@ -16,10 +16,12 @@ import { describe, expect, it } from "vitest";
 
 import { DICIONARIO } from "@/lib/i18n/dicionario";
 import {
+  FALHAS_QUE_PAUSAM_A_CAMPANHA,
   FALHAS_DE_TEMPLATE_DA_CAMPANHA,
   MODOS_DA_MENSAGEM,
   TEXTO_DA_FALHA_DA_CAMPANHA,
   ehFalhaDeTemplateDaCampanha,
+  ehFalhaQuePausaACampanha,
 } from "@/lib/campanhas/tipos";
 
 const RAIZ = join(__dirname, "..", "..");
@@ -89,6 +91,17 @@ describe("migration 9001 — campanha com template aprovado", () => {
       expect(ehFalhaDeTemplateDaCampanha(falha)).toBe(true);
     }
     expect(ehFalhaDeTemplateDaCampanha("audiencia_vazia")).toBe(false);
+    // O disjuntor pausa por motivo que NÃO é do template, e também tem frase.
+    expect(FALHAS_QUE_PAUSAM_A_CAMPANHA).toEqual(
+      expect.arrayContaining([...FALHAS_DE_TEMPLATE_DA_CAMPANHA, "numero_com_problema", "falhas_seguidas"]),
+    );
+    for (const falha of FALHAS_QUE_PAUSAM_A_CAMPANHA) {
+      const frase = TEXTO_DA_FALHA_DA_CAMPANHA[falha];
+      expect(DICIONARIO[frase]?.es, frase).toBeTruthy();
+      expect(ehFalhaQuePausaACampanha(falha)).toBe(true);
+    }
+    expect(ehFalhaDeTemplateDaCampanha("falhas_seguidas")).toBe(false);
+    expect(ehFalhaQuePausaACampanha("audiencia_vazia")).toBe(false);
     expect(ehFalhaDeTemplateDaCampanha(null)).toBe(false);
   });
 });

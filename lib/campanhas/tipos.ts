@@ -136,15 +136,40 @@ export type FalhaDeTemplateDaCampanha = (typeof FALHAS_DE_TEMPLATE_DA_CAMPANHA)[
  * antes devolve os pendentes da original para a cópia; sem cancelar, eles
  * continuam "já em outra campanha" e nunca recebem duas vezes.
  */
-export const TEXTO_DA_FALHA_DA_CAMPANHA: Record<FalhaDeTemplateDaCampanha, string> = {
+/**
+ * O disjuntor da rodada, num número que exige template: a conta do número com
+ * problema na plataforma (bloqueio, pagamento, spam, política) e cinco falhas
+ * seguidas, de qualquer código. Não é do template — a saída é conferir o número
+ * ou o motivo das falhas, e retomar.
+ */
+export const FALHAS_DO_ENVIO_DA_CAMPANHA = ["numero_com_problema", "falhas_seguidas"] as const;
+
+export type FalhaDoEnvioDaCampanha = (typeof FALHAS_DO_ENVIO_DA_CAMPANHA)[number];
+
+/** Todo motivo pelo qual a campanha pausa SOZINHA. Retomar limpa qualquer um deles. */
+export const FALHAS_QUE_PAUSAM_A_CAMPANHA = [...FALHAS_DE_TEMPLATE_DA_CAMPANHA, ...FALHAS_DO_ENVIO_DA_CAMPANHA] as const;
+
+export type FalhaQuePausaACampanha = (typeof FALHAS_QUE_PAUSAM_A_CAMPANHA)[number];
+
+export const TEXTO_DA_FALHA_DA_CAMPANHA: Record<FalhaQuePausaACampanha, string> = {
   template_nao_aprovado:
     "O template foi pausado pela Meta ou não está mais aprovado neste número. Cancele esta campanha, duplique a campanha e escolha o template de novo: a cópia pula quem já recebeu.",
   template_mudou:
     "O template mudou na Meta. Cancele esta campanha, duplique a campanha e escolha o template de novo: a cópia pula quem já recebeu.",
+  numero_com_problema:
+    "Pausada: a Meta recusou o envio por um problema na conta deste número (bloqueio, pagamento ou spam). Confira o número no Gerenciador do WhatsApp da Meta antes de retomar.",
+  falhas_seguidas:
+    "Pausada: as últimas 5 mensagens falharam. Confira o motivo nas pessoas abaixo antes de retomar.",
 };
 
 export function ehFalhaDeTemplateDaCampanha(
   codigo: string | null | undefined,
 ): codigo is FalhaDeTemplateDaCampanha {
   return (FALHAS_DE_TEMPLATE_DA_CAMPANHA as readonly string[]).includes(codigo ?? "");
+}
+
+export function ehFalhaQuePausaACampanha(
+  codigo: string | null | undefined,
+): codigo is FalhaQuePausaACampanha {
+  return (FALHAS_QUE_PAUSAM_A_CAMPANHA as readonly string[]).includes(codigo ?? "");
 }

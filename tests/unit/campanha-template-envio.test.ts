@@ -10,7 +10,7 @@ import type { LinhaDoModelo } from "@/lib/campanhas/conferir-template";
 import {
   falhaDoEnvioParaACampanha,
   montarEnvioDoTemplate,
-  pausarPorTemplate,
+  pausarACampanha,
 } from "@/lib/campanhas/envio-por-template";
 import { intervaloDoCanalCumprido } from "@/lib/campanhas/ritmo";
 
@@ -129,9 +129,14 @@ describe("falhaDoEnvioParaACampanha", () => {
   it("falha da pessoa não pausa a campanha", () => {
     expect(falhaDoEnvioParaACampanha("meta_error", "meta_131026: undeliverable")).toBeNull();
   });
+  it("conta do número com problema (131031, 131042, 131048, 368) pausa (numero_com_problema)", () => {
+    for (const codigo of ["131031", "131042", "131048", "368"]) {
+      expect(falhaDoEnvioParaACampanha("meta_error", `meta_${codigo}: x`), codigo).toBe("numero_com_problema");
+    }
+  });
 });
 
-describe("pausarPorTemplate", () => {
+describe("pausarACampanha", () => {
   function fakeAdmin(linhas: unknown[] | null, erro: { message: string } | null = null) {
     const chamadas: { update?: Record<string, unknown>; eq: Array<[string, unknown]> } = { eq: [] };
     const b: Record<string, unknown> = {
@@ -149,7 +154,7 @@ describe("pausarPorTemplate", () => {
   }
   it("pausa só campanha em andamento, com o código e o detalhe", async () => {
     const { admin, chamadas } = fakeAdmin([{ id: "c-1" }]);
-    expect(await pausarPorTemplate(admin, "c-1", "template_mudou", "chegou (pt_BR): stale", QUANDO.agora)).toBe(true);
+    expect(await pausarACampanha(admin, "c-1", "template_mudou", "chegou (pt_BR): stale", QUANDO.agora)).toBe(true);
     expect(chamadas.update).toEqual({
       status: "paused",
       paused_at: QUANDO.agora.toISOString(),
@@ -160,7 +165,7 @@ describe("pausarPorTemplate", () => {
   });
   it("erro do banco não lança (a rodada não pode cair) e devolve false", async () => {
     const { admin } = fakeAdmin(null, { message: "boom" });
-    expect(await pausarPorTemplate(admin, "c-1", "template_mudou", "x", QUANDO.agora)).toBe(false);
+    expect(await pausarACampanha(admin, "c-1", "template_mudou", "x", QUANDO.agora)).toBe(false);
   });
 });
 

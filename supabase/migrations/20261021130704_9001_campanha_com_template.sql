@@ -1,4 +1,4 @@
--- manifest: **Campanha com template aprovado (fatia 4 da #1330).** `campaigns` ganha `message_mode` ('text' | 'template', default 'text'), `template_name`, `template_language`, `template_contract_hash` (o carimbo do contrato no momento da escolha, para detectar mudança na plataforma), `template_slot_map` (jsonb: chave do slot → expressão com as variáveis da campanha) e `duplicated_from_campaign_id` (a campanha de onde a cópia saiu, para a cópia pular quem já recebeu), com CHECK de vocabulário, de coerência (template exige nome, idioma e carimbo; texto exige os três nulos) e de forma do mapa. `campaign_recipients` não muda: `variables` guarda os valores resolvidos por pessoa e `rendered_body` a prévia. Toda campanha existente fica `text` e nada muda para ela. Aditiva e idempotente; apêndice igual no `supabase/baseline.sql`; par de `MODOS_DA_MENSAGEM` em `lib/campanhas/tipos.ts`. Gate: `tests/unit/campanha-template-migration.test.ts`.
+-- manifest: **Campanha com template aprovado (fatia 4 da #1330).** `campaigns` ganha `message_mode` ('text' | 'template', default 'text'), `template_name`, `template_language`, `template_contract_hash` (o carimbo do contrato no momento da escolha, para detectar mudança na plataforma), `template_slot_map` (jsonb: chave do slot → expressão com as variáveis da campanha) e `duplicated_from_campaign_id` (a campanha de onde a cópia saiu, para a cópia pular quem já recebeu), com CHECK de vocabulário, de coerência (template exige nome, idioma e carimbo; texto exige os três nulos) e de forma do mapa. `campaign_recipients` não ganha coluna (só o índice parcial `idx_campaign_recipients_ultimos_processados`, do disjuntor de falhas seguidas): `variables` guarda os valores resolvidos por pessoa e `rendered_body` a prévia. Toda campanha existente fica `text` e nada muda para ela. Aditiva e idempotente; apêndice igual no `supabase/baseline.sql`; par de `MODOS_DA_MENSAGEM` em `lib/campanhas/tipos.ts`. Gate: `tests/unit/campanha-template-migration.test.ts`.
 -- ============================================================================
 -- 9001 — CAMPANHA COM TEMPLATE APROVADO (fatia 4 da #1330)
 --
@@ -61,6 +61,12 @@ comment on column public.campaigns.template_contract_hash is
   'Hash do contrato (meta_templates.contract_hash) quando o template foi escolhido. Divergente no envio = definição mudou: a campanha pausa com failure_code template_mudou.';
 comment on column public.campaigns.template_slot_map is
   'Chave do slot (slotKey: "1", "header:1", "button0:1") → expressão com {{nome}}, {{primeiro_nome}}, {{saudacao}}, {{contato.x}}, {{lead.x}} ou texto fixo.';
+-- O disjuntor da rodada (5 falhas seguidas pausam a campanha num número que
+-- exige template) lê as últimas pessoas processadas pela hora da reserva.
+create index if not exists idx_campaign_recipients_ultimos_processados
+  on public.campaign_recipients (campaign_id, sending_at desc)
+  where sending_at is not null;
+
 comment on column public.campaigns.duplicated_from_campaign_id is
   'Campanha de onde esta saiu pelo Duplicar. A preparação da cópia pula quem já recebeu a original (status sending/sent/delivered/read/replied). Sem FK de propósito: apagar a original não mexe na cópia; toda leitura filtra organization_id.';
 

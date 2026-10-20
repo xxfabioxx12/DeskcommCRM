@@ -39,7 +39,7 @@ vi.mock("@/app/api/v1/messages/_handler", () => {
 
 import type { LinhaDoModelo } from "@/lib/campanhas/conferir-template";
 import { rodarUmaRodadaDeCampanha } from "@/lib/campanhas/rodada";
-import { CHANNEL_PROVIDER_META } from "@/lib/channels/capabilities";
+import { CHANNEL_PROVIDER_META, CHANNEL_PROVIDER_WAHA } from "@/lib/channels/capabilities";
 
 type Linha = Record<string, unknown>;
 
@@ -50,8 +50,17 @@ function bancoEmMemoria(tabelas: Record<string, Linha[]>) {
     const filtros: Array<(l: Linha) => boolean> = [];
     let limite = Infinity;
     let patch: Linha | null = null;
+    const ordens: Array<{ coluna: string; asc: boolean }> = [];
     const resolver = () => {
-      const linhas = (tabelas[tabela] ?? []).filter((l) => filtros.every((f) => f(l))).slice(0, limite);
+      const filtradas = (tabelas[tabela] ?? []).filter((l) => filtros.every((f) => f(l)));
+      for (const { coluna, asc } of [...ordens].reverse()) {
+        filtradas.sort((a, z) => {
+          const x = String(a[coluna] ?? "");
+          const y = String(z[coluna] ?? "");
+          return x === y ? 0 : (x < y ? -1 : 1) * (asc ? 1 : -1);
+        });
+      }
+      const linhas = filtradas.slice(0, limite);
       if (patch) {
         updates.push({ tabela, valor: patch });
         for (const l of linhas) Object.assign(l, patch);
@@ -81,6 +90,16 @@ function bancoEmMemoria(tabelas: Record<string, Linha[]>) {
             case "in":
               return (coluna: string, valores: unknown[]) => {
                 filtros.push((l) => !(coluna in l) || valores.includes(l[coluna]));
+                return b;
+              };
+            case "gte":
+              return (coluna: string, valor: string) => {
+                filtros.push((l) => !(coluna in l) || (l[coluna] != null && String(l[coluna]) >= valor));
+                return b;
+              };
+            case "order":
+              return (coluna: string, opcoes?: { ascending?: boolean }) => {
+                ordens.push({ coluna, asc: opcoes?.ascending !== false });
                 return b;
               };
             case "lte":
@@ -245,5 +264,108 @@ describe("rodada × template (comportamento)", () => {
     await rodarUmaRodadaDeCampanha(admin, AGORA);
     expect(campanha.status).toBe("running");
     expect(destinatario).toMatchObject({ status: "failed", last_error_detail: "meta_131026: undeliverable" });
+  });
+});
+
+/** Destinatário já processado antes (para o disjuntor de falhas seguidas). */
+const processado = (i: number, status: string, sendingAt: string): Linha => ({
+  id: `r-antes-${i}`,
+  campaign_id: "c-1",
+  organization_id: "o-1",
+  status,
+  contact_id: `k-antes-${i}`,
+  sending_at: sendingAt,
+});
+
+describe("disjuntor: conta do número com problema", () => {
+  it("template + 131031 no envio: pausa (numero_com_problema) e a pessoa volta à fila", async () => {
+    dubles.resposta = { id: "m-1", status: "failed", error_code: "meta_error", error_message: "meta_131031: Account locked" };
+    const { admin, campanha, destinatario } = cenario();
+    await rodarUmaRodadaDeCampanha(admin, AGORA);
+    expect(campanha).toMatchObject({ status: "paused", failure_code: "numero_com_problema" });
+    expect(destinatario).toMatchObject({ status: "pending", sending_at: null });
+  });
+
+  it("texto em número oficial (campanha antiga) + 368: pausa também", async () => {
+    dubles.resposta = { id: "m-1", status: "failed", error_code: "meta_error", error_message: "meta_368: Temporarily blocked" };
+    const { admin, campanha, destinatario } = cenario();
+    Object.assign(campanha, { message_mode: "text", message_body: "Oi {{nome}}", template_name: null, template_language: null, template_contract_hash: null, template_slot_map: {} });
+    Object.assign(destinatario, { rendered_body: "Oi Ana", variables: { nome: "Ana" } });
+    await rodarUmaRodadaDeCampanha(admin, AGORA);
+    expect(dubles.enviar.mock.calls[0]?.[2]).toMatchObject({ type: "text" });
+    expect(campanha).toMatchObject({ status: "paused", failure_code: "numero_com_problema" });
+    expect(destinatario.status).toBe("pending");
+  });
+
+  it("texto por QR Code: a mesma recusa só falha a pessoa (nada muda)", async () => {
+    dubles.resposta = { id: "m-1", status: "failed", error_code: "send_failed", error_message: "meta_131031: x" };
+    const { admin, campanha, destinatario, tabelas } = cenario();
+    Object.assign(campanha, { message_mode: "text", message_body: "Oi", template_name: null, template_language: null, template_contract_hash: null, template_slot_map: {} });
+    Object.assign(destinatario, { rendered_body: "Oi", variables: { nome: "Ana" } });
+    Object.assign(tabelas.channel_sessions![0]!, { provider: CHANNEL_PROVIDER_WAHA });
+    await rodarUmaRodadaDeCampanha(admin, AGORA);
+    expect(campanha.status).toBe("running");
+    expect(destinatario.status).toBe("failed");
+  });
+});
+
+describe("disjuntor: 5 falhas seguidas", () => {
+  const antes = (status: string[], base = "2026-10-20T17:5") =>
+    status.map((st, i) => processado(i, st, `${base}${i}:00.000Z`));
+
+  it("template: as últimas 5 processadas falharam → pausa (falhas_seguidas) sem reservar nem enviar", async () => {
+    const { admin, updates, campanha, destinatario, tabelas } = cenario();
+    tabelas.campaign_recipients!.push(...antes(["sent", "failed", "failed", "failed", "failed", "failed"]));
+    await rodarUmaRodadaDeCampanha(admin, AGORA);
+    expect(campanha).toMatchObject({ status: "paused", failure_code: "falhas_seguidas" });
+    expect(reservou(updates)).toBe(false);
+    expect(dubles.enviar).not.toHaveBeenCalled();
+    expect(destinatario.status).toBe("pending");
+  });
+
+  it("uma das 5 mais recentes não falhou → segue enviando", async () => {
+    const { admin, campanha, tabelas } = cenario();
+    tabelas.campaign_recipients!.push(...antes(["failed", "failed", "failed", "delivered", "failed", "failed"]));
+    await rodarUmaRodadaDeCampanha(admin, AGORA);
+    expect(campanha.status).toBe("running");
+    expect(dubles.enviar).toHaveBeenCalledTimes(1);
+  });
+
+  it("menos de 5 processadas → segue", async () => {
+    const { admin, campanha, tabelas } = cenario();
+    tabelas.campaign_recipients!.push(...antes(["failed", "failed", "failed", "failed"]));
+    await rodarUmaRodadaDeCampanha(admin, AGORA);
+    expect(campanha.status).toBe("running");
+    expect(dubles.enviar).toHaveBeenCalledTimes(1);
+  });
+
+  it("falhas de ANTES da retomada não contam (o disjuntor recomeça ao retomar)", async () => {
+    const { admin, campanha, tabelas } = cenario();
+    campanha.started_at = "2026-10-20T17:59:30.000Z";
+    tabelas.campaign_recipients!.push(...antes(["failed", "failed", "failed", "failed", "failed"]));
+    await rodarUmaRodadaDeCampanha(admin, AGORA);
+    expect(campanha.status).toBe("running");
+    expect(dubles.enviar).toHaveBeenCalledTimes(1);
+  });
+
+  it("texto em número oficial também tem o disjuntor", async () => {
+    const { admin, campanha, destinatario, tabelas } = cenario();
+    Object.assign(campanha, { message_mode: "text", message_body: "Oi", template_name: null, template_language: null, template_contract_hash: null, template_slot_map: {} });
+    Object.assign(destinatario, { rendered_body: "Oi", variables: { nome: "Ana" } });
+    tabelas.campaign_recipients!.push(...antes(["failed", "failed", "failed", "failed", "failed"]));
+    await rodarUmaRodadaDeCampanha(admin, AGORA);
+    expect(campanha).toMatchObject({ status: "paused", failure_code: "falhas_seguidas" });
+    expect(dubles.enviar).not.toHaveBeenCalled();
+  });
+
+  it("texto por QR Code: 5 falhas seguidas NÃO pausam (comportamento de antes)", async () => {
+    const { admin, campanha, destinatario, tabelas } = cenario();
+    Object.assign(campanha, { message_mode: "text", message_body: "Oi", template_name: null, template_language: null, template_contract_hash: null, template_slot_map: {} });
+    Object.assign(destinatario, { rendered_body: "Oi", variables: { nome: "Ana" } });
+    Object.assign(tabelas.channel_sessions![0]!, { provider: CHANNEL_PROVIDER_WAHA });
+    tabelas.campaign_recipients!.push(...antes(["failed", "failed", "failed", "failed", "failed"]));
+    await rodarUmaRodadaDeCampanha(admin, AGORA);
+    expect(campanha.status).toBe("running");
+    expect(dubles.enviar).toHaveBeenCalledTimes(1);
   });
 });

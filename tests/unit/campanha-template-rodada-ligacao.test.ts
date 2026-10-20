@@ -28,7 +28,7 @@ describe("rodada × template", () => {
     expect(FONTE).toMatch(/podeAgora:\s*decisao\.allow\s*&&\s*intervaloDoCanalCumprido\(/);
   });
   it("template parado pausa a campanha nos dois pontos (antes e depois do envio)", () => {
-    expect(FONTE.match(/pausarPorTemplate\(/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+    expect(FONTE.match(/pausarACampanha\(/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
     expect(FONTE).toMatch(/falhaDoEnvioParaACampanha\(/);
   });
   it("agendada que vira running na rodada passa pela mesma conferência na hora do envio", () => {

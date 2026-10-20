@@ -41,7 +41,7 @@ import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import {
   TEXTO_DA_EXCLUSAO,
   TEXTO_DA_FALHA_DA_CAMPANHA,
-  ehFalhaDeTemplateDaCampanha,
+  ehFalhaQuePausaACampanha,
 } from "@/lib/campanhas/tipos";
 
 export function DetalheDaCampanha({ id }: { id: string }) {
@@ -114,7 +114,7 @@ export function DetalheDaCampanha({ id }: { id: string }) {
           {c.failure_code && (
             <p className="mt-1 text-sm text-warning-fg">
               {t("Último problema")}:{" "}
-              {ehFalhaDeTemplateDaCampanha(c.failure_code)
+              {ehFalhaQuePausaACampanha(c.failure_code)
                 ? t(TEXTO_DA_FALHA_DA_CAMPANHA[c.failure_code])
                 : c.failure_code}
             </p>

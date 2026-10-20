@@ -181,6 +181,16 @@ describe("iniciar e duplicar", () => {
     await iniciarAcao(b.admin, { ...pausada, failure_code: "sem_elegiveis" }, AGORA);
     expect(b.escritas.find((e) => e.tabela === "campaigns")?.valor).not.toHaveProperty("failure_code");
   });
+  it("retomar limpa também as pausas do disjuntor (numero_com_problema, falhas_seguidas)", async () => {
+    for (const codigo of ["numero_com_problema", "falhas_seguidas"]) {
+      const a = fakeAdmin({}, 5);
+      await iniciarAcao(a.admin, { ...CAMPANHA, status: "paused", failure_code: codigo }, AGORA);
+      expect(a.escritas.find((e) => e.tabela === "campaigns")?.valor, codigo).toMatchObject({
+        failure_code: null,
+        failure_detail: null,
+      });
+    }
+  });
   it("duplicar grava de qual campanha a cópia saiu (para pular quem já recebeu)", async () => {
     const { admin, escritas } = fakeAdmin({});
     await duplicarAcao(admin, CAMPANHA, "u-1");

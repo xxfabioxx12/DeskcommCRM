@@ -14959,6 +14959,16 @@ export const DICIONARIO: Traducoes = {
   "Variáveis não batem com o template": { es: "Las variables no coinciden con la plantilla" },
   "Template pausado pela Meta": { es: "Plantilla pausada por Meta" },
   "Template desativado pela Meta": { es: "Plantilla desactivada por Meta" },
+  "A Meta bloqueou a conta deste número": { es: "Meta bloqueó la cuenta de este número" },
+  "Problema de pagamento ou de cadastro na conta da Meta": { es: "Problema de pago o de registro en la cuenta de Meta" },
+  "A Meta limitou o número por suspeita de spam": { es: "Meta limitó el número por sospecha de spam" },
+  "A Meta bloqueou o número por violar as regras dela": { es: "Meta bloqueó el número por violar sus reglas" },
+  "Pausada: a Meta recusou o envio por um problema na conta deste número (bloqueio, pagamento ou spam). Confira o número no Gerenciador do WhatsApp da Meta antes de retomar.": {
+    es: "En pausa: Meta rechazó el envío por un problema en la cuenta de este número (bloqueo, pago o spam). Revisa el número en el Administrador de WhatsApp de Meta antes de reanudar.",
+  },
+  "Pausada: as últimas 5 mensagens falharam. Confira o motivo nas pessoas abaixo antes de retomar.": {
+    es: "En pausa: los últimos 5 mensajes fallaron. Revisa el motivo en las personas de abajo antes de reanudar.",
+  },
   "Limite de envio atingido: tente mais tarde": { es: "Límite de envío alcanzado: inténtalo más tarde" },
   "Template pausado ou não aprovado pela Meta": { es: "Plantilla pausada o no aprobada por Meta" },
   "O template mudou na Meta: escolha de novo": { es: "La plantilla cambió en Meta: elígela de nuevo" },
