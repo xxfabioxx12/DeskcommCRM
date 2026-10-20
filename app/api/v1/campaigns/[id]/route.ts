@@ -37,7 +37,7 @@ const COLUNAS =
   "audience_filter, audience_version, content_version, snapshot_total, snapshot_eligible, " +
   "snapshot_excluded, scheduled_at, prepared_at, started_at, paused_at, completed_at, " +
   "cancelled_at, failure_code, intervalo_segundos, janela_inicio_hora, janela_fim_hora, " +
-  "teto_diario, teto_horario, pipeline_id, stage_id, agent_id, created_at, created_by, "+
+  "teto_diario, teto_horario, pipeline_id, stage_id, agent_id, created_at, created_by, " +
   "message_mode, template_name, template_language, template_contract_hash, template_slot_map";
 
 export async function GET(
@@ -184,12 +184,15 @@ export async function PATCH(
   ] as const;
   const mexeNaMensagem = CAMPOS_DA_MENSAGEM.some((campo) => entrada[campo] !== undefined);
   if (mexeNaMensagem) Object.assign(mudanca, colunasDoConteudo(conteudoDepois));
+  // Em template o texto livre não existe (como no POST), mesmo que o pedido traga um.
+  const emTemplate = conteudoDepois.messageMode === "template";
+  if (emTemplate) mudanca.message_body = null;
 
   // Mexer no TEXTO (ou no template) sobe a versão do conteúdo: é ela que o
   // destinatário carrega, e é por ela que se sabe se a mensagem preparada é a
   // mensagem de hoje.
   if (
-    (entrada.message_body !== undefined && entrada.message_body !== campanha.message_body) ||
+    (!emTemplate && entrada.message_body !== undefined && entrada.message_body !== campanha.message_body) ||
     conteudoDoTemplateMudou(conteudoAntes, conteudoDepois)
   ) {
     mudanca.content_version = campanha.content_version + 1;

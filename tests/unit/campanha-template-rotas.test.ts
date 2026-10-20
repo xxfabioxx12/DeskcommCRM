@@ -207,5 +207,21 @@ describe("PATCH /api/v1/campaigns/:id", () => {
     expect(res.status).toBe(500);
     expect(f.gravado.update).toBeUndefined();
   });
+
+  it("text -> template: message_body gravado como null", async () => {
+    const f = fakeAdmin({ campanha: { ...RASCUNHO, message_mode: "text", message_body: "Oi", template_name: null, template_language: null, template_contract_hash: null, template_slot_map: {} } });
+    h.admin = f.cliente;
+    const res = await PATCH(req("PATCH", "http://x/api/v1/campaigns/c-1", { message_mode: "template", template_name: "boas_vindas", template_language: "pt_BR", template_contract_hash: "h1", template_slot_map: { "1": "{{nome}}" } }), ctx);
+    expect(res.status).toBe(200);
+    expect(f.gravado.update?.message_body).toBeNull();
+  });
+
+  it("em template, message_body enviado é descartado (null)", async () => {
+    const f = fakeAdmin({ campanha: RASCUNHO });
+    h.admin = f.cliente;
+    const res = await PATCH(req("PATCH", "http://x/api/v1/campaigns/c-1", { message_body: "x", template_slot_map: { "1": "{{nome}}", "2": "Super Presell" } }), ctx);
+    expect(res.status).toBe(200);
+    expect(f.gravado.update?.message_body).toBeNull();
+  });
 });
 
