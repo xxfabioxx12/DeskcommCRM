@@ -209,6 +209,48 @@ function recusaDoVinculo(estado: Exclude<BindingState, "ok">): ConferenciaDoCont
   return recusa("campanha_template_invalido", MENSAGENS_DA_CONFERENCIA.template_mudou, 422, "template_mudou");
 }
 
+/** A linha do espelho conferida contra o vínculo gravado na campanha. */
+export type ConferenciaDaLinha =
+  | {
+      ok: true;
+      linha: LinhaDoModelo;
+      contrato: ReturnType<typeof deriveTemplateContract>;
+      /** Links de mídia salvos no modelo, já filtrados pelo contrato de hoje. */
+      salvos: Record<string, string>;
+    }
+  | { ok: false; estado: Exclude<BindingState, "ok"> };
+
+/**
+ * O vínculo de UM número: a linha existe, está APROVADA e tem o MESMO carimbo de
+ * contrato gravado na escolha (`bindingState`)? Devolve o contrato e os links
+ * salvos. É a única conferência do vínculo — a gravação, a preparação, o teste e
+ * a rodada (`envio-por-template.ts`) passam por aqui.
+ */
+export function conferirLinhaDoModelo(
+  vinculo: Pick<ConteudoDaCampanha, "templateName" | "templateLanguage" | "templateContractHash">,
+  linha: LinhaDoModelo | null,
+): ConferenciaDaLinha {
+  const estado = bindingState(
+    {
+      name: vinculo.templateName ?? "",
+      language: vinculo.templateLanguage ?? "",
+      contractHash: vinculo.templateContractHash ?? "",
+      values: {},
+    },
+    linha ? { name: linha.name, language: linha.language, contractHash: linha.contract_hash, status: linha.status } : null,
+  );
+  if (estado !== "ok") return { ok: false, estado };
+  if (!linha) return { ok: false, estado: "missing" };
+  const contrato = deriveTemplateContract({
+    name: linha.name,
+    language: linha.language,
+    parameter_format: linha.parameter_format ?? undefined,
+    components: linha.components as never,
+  });
+  const mescla = mesclarValoresSalvos(contrato, (linha.saved_values ?? {}) as Record<string, unknown>, {});
+  return { ok: true, linha, contrato, salvos: mescla.ok ? mescla.valores : {} };
+}
+
 export function avaliarConteudoDaCampanha(
   conteudo: ConteudoDaCampanha,
   sessoes: ReadonlyArray<{ id: string; provider: string | null }>,
@@ -230,34 +272,13 @@ export function avaliarConteudoDaCampanha(
   }
   if (conteudo.messageMode === "text") return { ok: true, definicao: null };
 
-  const vinculo = {
-    name: conteudo.templateName ?? "",
-    language: conteudo.templateLanguage ?? "",
-    contractHash: conteudo.templateContractHash ?? "",
-    values: {},
-  };
   let principal: { linha: LinhaDoModelo; contrato: ReturnType<typeof deriveTemplateContract>; salvos: Record<string, string> } | null =
     null;
   for (const sessao of sessoes) {
-    const atual = linhas.get(sessao.id) ?? null;
-    const estado = bindingState(
-      vinculo,
-      atual
-        ? { name: atual.name, language: atual.language, contractHash: atual.contract_hash, status: atual.status }
-        : null,
-    );
-    if (estado !== "ok") return recusaDoVinculo(estado);
-    if (!atual) return recusaDoVinculo("missing");
-
     // Cada número tem a SUA linha (parceiro: por conexão) e pode ter outro link de mídia salvo.
-    const contrato = deriveTemplateContract({
-      name: atual.name,
-      language: atual.language,
-      parameter_format: atual.parameter_format ?? undefined,
-      components: atual.components as never,
-    });
-    const mescla = mesclarValoresSalvos(contrato, (atual.saved_values ?? {}) as Record<string, unknown>, {});
-    const salvos = mescla.ok ? mescla.valores : {};
+    const conferida = conferirLinhaDoModelo(conteudo, linhas.get(sessao.id) ?? null);
+    if (!conferida.ok) return recusaDoVinculo(conferida.estado);
+    const { linha: atual, contrato, salvos } = conferida;
     const avaliacao = avaliarModeloParaCampanha(slotsDoContrato(contrato), salvos);
     const doExtra = principal !== null;
     if (!avaliacao.usavel) {

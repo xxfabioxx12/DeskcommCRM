@@ -41,14 +41,23 @@ import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { decidePacing, dayStartInTz } from "@/lib/agent-engine/pacing/engine";
 import { loadChannelKnobs, loadPacingState, recordSend } from "@/lib/agent-engine/pacing/store";
 import { beginServiceAtOrigin } from "@/lib/atendimento/origem";
+import { linhaDoEspelho } from "@/lib/channels/linha-do-espelho";
 import { logger } from "@/lib/logger";
 import { OrgNaoOperanteError, STATUS_OPERANTE, ehOperante, statusDaOrgEmbutida } from "@/lib/organizacao/operante";
 
 import { motivoParaExcluir, recusouMarketing, statusDaSaida } from "./elegibilidade";
+import { COLUNAS_DO_MODELO, type LinhaDoModelo } from "./conferir-template";
+import {
+  falhaDoEnvioParaACampanha,
+  montarEnvioDoTemplate,
+  pausarPorTemplate,
+  type EnvioDoTemplate,
+} from "./envio-por-template";
 import { hashDoEndereco } from "./exclusoes";
 import { renderizar } from "./renderizador";
 import { escolherNumero, poolDaCampanha, type NumeroDisponivel } from "./rodizio";
-import { podeMandarAgora, proximaTentativa, type RitmoDaCampanha } from "./ritmo";
+import { intervaloDoCanalCumprido, podeMandarAgora, proximaTentativa, type RitmoDaCampanha } from "./ritmo";
+import { intervaloMinimoDoCanal, lerValoresPreparados } from "./template-da-campanha";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { TEXTO_DA_EXCLUSAO } from "./tipos";
 
@@ -86,6 +95,11 @@ interface CampanhaRow {
   name: string;
   message_body: string | null;
   content_version: number;
+  /** Migration 0704: `template` manda a definição aprovada em vez do texto. */
+  message_mode: string;
+  template_name: string | null;
+  template_language: string | null;
+  template_contract_hash: string | null;
   intervalo_segundos: number | null;
   janela_inicio_hora: number | null;
   janela_fim_hora: number | null;
@@ -95,6 +109,7 @@ interface CampanhaRow {
 
 const COLUNAS_DA_CAMPANHA =
   "id, organization_id, channel_session_id, name, message_body, content_version, " +
+  "message_mode, template_name, template_language, template_contract_hash, " +
   "intervalo_segundos, janela_inicio_hora, janela_fim_hora, teto_diario, teto_horario";
 
 /**
@@ -223,6 +238,8 @@ interface DestinatarioRow {
   contact_id: string;
   recipient_address: string | null;
   rendered_body: string | null;
+  /** `{ nome, template_values }` em template (preparação); `{ nome }` em texto. */
+  variables: unknown;
   contacts: {
     id: string;
     name: string | null;
@@ -243,7 +260,7 @@ async function rodarUmaCampanha(
   const { data: fila } = await admin
     .from("campaign_recipients")
     .select(
-      "id, contact_id, recipient_address, rendered_body, " +
+      "id, contact_id, recipient_address, rendered_body, variables, " +
         "contacts(id, name, display_name, phone_number, is_blocked, is_personal, is_anonymized, consent)",
     )
     .eq("campaign_id", campanha.id)
@@ -380,11 +397,11 @@ async function rodarUmaCampanha(
 
     const { data: canal } = await admin
       .from("channel_sessions")
-      .select("daily_message_limit, status")
+      .select("daily_message_limit, status, provider")
       .eq("organization_id", campanha.organization_id)
       .eq("id", sessionId)
       .maybeSingle();
-    const linha = canal as { daily_message_limit: number | null; status: string } | null;
+    const linha = canal as { daily_message_limit: number | null; status: string; provider: string | null } | null;
     // Número fora do ar não entra no rodízio: mandar por ele seria fabricar uma
     // mensagem presa em `sending` que o recovery depois marca como falha.
     if (!linha || linha.status !== "WORKING") continue;
@@ -406,7 +423,9 @@ async function rodarUmaCampanha(
         linha.daily_message_limit === null
           ? null
           : Math.max(0, linha.daily_message_limit - estadoDoNumero.sentToday),
-      podeAgora: decisao.allow,
+      // O intervalo da PLATAFORMA (6 s no oficial) soma-se ao pacing do número e
+      // ao intervalo da campanha — hetero-restrição, que nenhum dos dois cobria.
+      podeAgora: decisao.allow && intervaloDoCanalCumprido(estadoDoNumero.lastSentAt, intervaloMinimoDoCanal(linha.provider), agora),
       ultimoEnvio: estadoDoNumero.lastSentAt,
     });
   }
@@ -419,6 +438,39 @@ async function rodarUmaCampanha(
   }
   const sessionEscolhida = escolha.sessionId;
   const knobs = knobsPorNumero.get(sessionEscolhida)!.knobs;
+
+  // ─── Campanha por template: a definição é conferida ANTES de reservar ───
+  // No número ESCOLHIDO (cada número do rodízio tem o seu espelho). Sumiu,
+  // pausou ou mudou: a campanha pausa com o motivo e a pessoa fica na fila — sem
+  // isso cada rodada queimaria mais um destinatário com a mesma recusa.
+  let envioDoTemplate: EnvioDoTemplate | null = null;
+  if (campanha.message_mode === "template") {
+    const { data: modelo, error: erroDoModelo } = await linhaDoEspelho<LinhaDoModelo>(admin, COLUNAS_DO_MODELO, {
+      organizationId: campanha.organization_id,
+      name: campanha.template_name ?? "",
+      language: campanha.template_language ?? "",
+      channelSessionId: sessionEscolhida,
+    });
+    if (erroDoModelo) {
+      return { enviadas: 0, pulados: 0, concluidas: 0, detalhe: `erro_no_modelo:${erroDoModelo.message.slice(0, 40)}` };
+    }
+    const montagem = montarEnvioDoTemplate({
+      campanha: {
+        templateName: campanha.template_name,
+        templateLanguage: campanha.template_language,
+        templateContractHash: campanha.template_contract_hash,
+      },
+      linha: modelo,
+      preparados: lerValoresPreparados(alvo.variables),
+      nome: nomeDoContato(contato),
+      quando: { agora, fuso: knobs.timezone },
+    });
+    if (!montagem.ok) {
+      await pausarPorTemplate(admin, campanha.id, montagem.falha, montagem.detalhe, agora);
+      return { enviadas: 0, pulados: 0, concluidas: 0, detalhe: `pausada:${montagem.falha}` };
+    }
+    envioDoTemplate = montagem.envio;
+  }
 
   // ─── O envio ───
   // O id da mensagem nasce AQUI, e não do insert: com ele, o destinatário já
@@ -441,11 +493,20 @@ async function rodarUmaCampanha(
   // preparação produziria "bom dia" numa mensagem enviada à tarde — foi o
   // defeito do primeiro piloto.
   const congelado = alvo.rendered_body ?? campanha.message_body ?? "";
-  const corpo = renderizar(
-    congelado,
-    { nome: nomeDoContato(contato) },
-    { agora, fuso: knobs.timezone },
-  ).texto;
+  const corpo = envioDoTemplate
+    ? envioDoTemplate.body
+    : renderizar(
+        congelado,
+        { nome: nomeDoContato(contato) },
+        { agora, fuso: knobs.timezone },
+      ).texto;
+  const metadata = {
+    source: "campaign",
+    campaign_id: campanha.id,
+    campaign_recipient_id: alvo.id,
+    campaign_content_version: campanha.content_version,
+    idempotency_key: `campaign:${alvo.id}`,
+  };
 
   try {
     const boundary = await beginServiceAtOrigin(
@@ -469,18 +530,11 @@ async function rodarUmaCampanha(
         requestId: `campaign:${campanha.id}:${alvo.id}`,
         internalMessageId: messageId,
       } as Parameters<typeof sendMessageHandler>[1],
-      {
-        conversation_id: boundary.conversation_id,
-        type: "text",
-        body: corpo,
-        metadata: {
-          source: "campaign",
-          campaign_id: campanha.id,
-          campaign_recipient_id: alvo.id,
-          campaign_content_version: campanha.content_version,
-          idempotency_key: `campaign:${alvo.id}`,
-        },
-      } as Parameters<typeof sendMessageHandler>[2],
+      (envioDoTemplate
+        ? { conversation_id: boundary.conversation_id, ...envioDoTemplate, metadata }
+        : { conversation_id: boundary.conversation_id, type: "text", body: corpo, metadata }) as Parameters<
+        typeof sendMessageHandler
+      >[2],
     );
     await recordSend(pool, campanha.organization_id, sessionEscolhida, agora);
 
@@ -488,6 +542,7 @@ async function rodarUmaCampanha(
     // handler marca `failed` e devolve normalmente.
     const status = (mensagem as { status?: string }).status;
     const falhou = status === "failed";
+    const erroDoEnvio = mensagem as { error_code?: string | null; error_message?: string | null };
     // `.eq("status","sending")` porque o ack pode ter chegado ANTES desta linha:
     // o trigger já teria avançado o destinatário para `sent`/`delivered`, e
     // escrever por cima o rebaixaria.
@@ -497,6 +552,9 @@ async function rodarUmaCampanha(
         status: falhou ? "failed" : "sent",
         sent_at: falhou ? null : agora.toISOString(),
         last_error_code: falhou ? "send_failed" : null,
+        // O texto da recusa vai junto: é dele que a tela tira o código da
+        // plataforma e a frase em português (`erros-para-operador.ts`).
+        last_error_detail: falhou && erroDoEnvio.error_message ? erroDoEnvio.error_message.slice(0, 300) : null,
         // O `message_id` só pode ser gravado AQUI: a coluna tem FK para
         // `messages`, e a linha da mensagem só existe depois do envio. Gravá-lo
         // antes — que era o desenho original, para o trigger de ack sempre achar
@@ -505,6 +563,13 @@ async function rodarUmaCampanha(
       })
       .eq("id", alvo.id)
       .eq("status", "sending");
+
+    // Template parado ou desatualizado na hora do envio: a campanha PAUSA, em vez
+    // de falhar cliente por cliente pelo resto da lista.
+    if (falhou && envioDoTemplate) {
+      const falha = falhaDoEnvioParaACampanha(erroDoEnvio.error_code ?? null, erroDoEnvio.error_message ?? null);
+      if (falha) await pausarPorTemplate(admin, campanha.id, falha, erroDoEnvio.error_message ?? falha, agora);
+    }
 
     return {
       enviadas: falhou ? 0 : 1,
