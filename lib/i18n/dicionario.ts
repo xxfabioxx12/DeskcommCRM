@@ -14939,6 +14939,9 @@ export const DICIONARIO: Traducoes = {
   "Há uma variável desconhecida no preenchimento do template. Use {{nome}}, {{primeiro_nome}}, {{saudacao}}, {{contato.campo}} ou {{lead.campo}}.": {
     es: "Hay una variable desconocida en el llenado de la plantilla. Usa {{nome}}, {{primeiro_nome}}, {{saudacao}}, {{contato.campo}} o {{lead.campo}}.",
   },
+  "Há uma variável escrita errado no preenchimento do template. Use {{nome}}, {{primeiro_nome}}, {{saudacao}}, {{contato.campo}} ou {{lead.campo}}, sem espaço nem acento dentro das chaves.": {
+    es: "Hay una variable mal escrita en el llenado de la plantilla. Usa {{nome}}, {{primeiro_nome}}, {{saudacao}}, {{contato.campo}} o {{lead.campo}}, sin espacios ni tildes dentro de las llaves.",
+  },
   "Cabeçalho com imagem, vídeo ou documento sem link salvo": {
     es: "Encabezado con imagen, video o documento sin enlace guardado",
   },

@@ -36,7 +36,7 @@ import {
   limparMapaDeSlots,
   slotsDoContrato,
 } from "./template-da-campanha";
-import { renderizar } from "./renderizador";
+import { renderizar, temChaveSolta } from "./renderizador";
 import {
   TEXTO_DA_FALHA_DA_CAMPANHA,
   type FalhaDeTemplateDaCampanha,
@@ -188,6 +188,8 @@ export const MENSAGENS_DA_CONFERENCIA = {
     "Um dos números extras da campanha tem este template com problema (link de mídia salvo ou variáveis diferentes). Confira o template em cada número.",
   variavel_desconhecida:
     "Há uma variável desconhecida no preenchimento do template. Use {{nome}}, {{primeiro_nome}}, {{saudacao}}, {{contato.campo}} ou {{lead.campo}}.",
+  variavel_mal_escrita:
+    "Há uma variável escrita errado no preenchimento do template. Use {{nome}}, {{primeiro_nome}}, {{saudacao}}, {{contato.campo}} ou {{lead.campo}}, sem espaço nem acento dentro das chaves.",
 } as const;
 
 function recusa(
@@ -306,7 +308,11 @@ export function avaliarConteudoDaCampanha(
   const { linha: linhaPrincipal, contrato, salvos } = principal;
 
   // P17: variável que o renderizador não conhece sairia literal para o cliente.
+  // Chave que sobra depois dos tokens válidos ({{nome completo}}) também sairia literal.
   for (const expressao of Object.values(conteudo.slotMap)) {
+    if (temChaveSolta(expressao)) {
+      return recusa("campanha_template_invalido", MENSAGENS_DA_CONFERENCIA.variavel_mal_escrita, 422);
+    }
     if (renderizar(expressao, { nome: "x" }).desconhecidas.length > 0) {
       return recusa("campanha_template_invalido", MENSAGENS_DA_CONFERENCIA.variavel_desconhecida, 422);
     }

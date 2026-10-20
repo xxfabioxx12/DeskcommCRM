@@ -243,6 +243,30 @@ describe("variável desconhecida no mapa (P17)", () => {
   });
 });
 
+describe("variável escrita errado no mapa (chaves que o renderizador não casa)", () => {
+  // O TOKEN do renderizador não casa espaço no meio, hífen nem acento: a expressão
+  // não vira "desconhecida", sai LITERAL para o cliente ("Oi {{nome completo}}").
+  for (const expressao of ["{{nome completo}}", "{{primeiro-nome}}", "{{Primeiro Nome}}", "Oi {{nome}", "{{saudação}}", "nome}}"]) {
+    it(`recusa ${expressao} com 422 e a frase de variável escrita errado`, () => {
+      const r = avaliarConteudoDaCampanha(
+        { ...TEMPLATE, slotMap: { "1": expressao, "2": "Super Presell" } },
+        [OFICIAL],
+        linhas([[OFICIAL.id, linha()]]),
+      );
+      expect(r).toMatchObject({ ok: false, codigo: "campanha_template_invalido", status: 422 });
+      expect(!r.ok && r.mensagem).toBe(MENSAGENS_DA_CONFERENCIA.variavel_mal_escrita);
+    });
+  }
+  it("aceita as válidas, inclusive com espaço junto das chaves e texto fixo", () => {
+    const r = avaliarConteudoDaCampanha(
+      { ...TEMPLATE, slotMap: { "1": "{{ primeiro_nome }}", "2": "Oferta {{lead.gancho}} de {{contato.cidade}}" } },
+      [OFICIAL],
+      linhas([[OFICIAL.id, linha()]]),
+    );
+    expect(r.ok).toBe(true);
+  });
+});
+
 it("toda mensagem da conferência tem espanhol", () => {
   for (const mensagem of Object.values(MENSAGENS_DA_CONFERENCIA)) {
     expect(DICIONARIO[mensagem]?.es, mensagem).toBeTruthy();

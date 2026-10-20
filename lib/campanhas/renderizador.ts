@@ -81,6 +81,16 @@ export interface ValoresDoDestinatario {
 const TOKEN = /\{\{\s*([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*)\s*\}\}/g;
 
 /**
+ * Sobrou `{{` ou `}}` depois de tirar todo token que o renderizador casa? Então
+ * há uma variável escrita errado (`{{nome completo}}`, `{{primeiro-nome}}`,
+ * `{{saudação}}`) que sairia literal para o cliente. Não muda a renderização.
+ */
+export function temChaveSolta(texto: string): boolean {
+  const resto = texto.replace(new RegExp(TOKEN.source, "g"), "");
+  return resto.includes("{{") || resto.includes("}}");
+}
+
+/**
  * Nomes que um jsonb pode trazer gravados e que NÃO são campo nenhum: são
  * propriedade do protótipo do objeto. Lidos, dariam `{{lead.constructor}}` um
  * texto que o operador nunca escreveu (ou código, num mapa malformado).
