@@ -14841,6 +14841,8 @@ export const DICIONARIO: Traducoes = {
   "Sem nenhuma destas etiquetas": { es: "Sin ninguna de estas etiquetas" },
   "separe por vírgula": { es: "separe por coma" },
   "Último problema": { es: "Último problema" },
+  "channel_session_id inválido": { es: "channel_session_id inválido" },
+  "conexão não encontrada": { es: "conexión no encontrada" },
   "Um dos números extras da campanha tem este template com problema (link de mídia salvo ou variáveis diferentes). Confira o template em cada número.": {
     es: "Uno de los números extra de la campaña tiene esta plantilla con problemas (enlace de medios guardado o variables diferentes). Revisa la plantilla en cada número.",
   },

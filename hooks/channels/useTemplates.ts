@@ -34,6 +34,8 @@ export interface TemplateView {
   previews: TemplatePreview[];
   /** Links de mídia salvos no modelo — o painel da janela fechada pré-preenche com eles. */
   savedValues: Record<string, string>;
+  /** A definição crua (a rota já devolve) — a prévia da campanha monta o texto com ela. */
+  components?: unknown[];
 }
 
 export interface TemplatesPayload {
@@ -53,6 +55,23 @@ export function useTemplates() {
   return useQuery({
     queryKey: ["channel-templates"],
     queryFn: async () => apiClient.get<{ data: TemplatesPayload }>("/api/v1/channels/templates"),
+    staleTime: 30_000,
+  });
+}
+
+/**
+ * Os modelos de UM número — a lista da campanha. Mesma rota, com
+ * `channel_session_id`; a chave começa por `channel-templates` para o sync e o
+ * "salvar link" (que invalidam esse prefixo) atualizarem esta lista também.
+ */
+export function useTemplatesDoNumero(channelSessionId: string | null) {
+  return useQuery({
+    queryKey: ["channel-templates", "numero", channelSessionId],
+    enabled: !!channelSessionId,
+    queryFn: async () =>
+      apiClient.get<{ data: TemplatesPayload }>(
+        `/api/v1/channels/templates?channel_session_id=${encodeURIComponent(channelSessionId ?? "")}`,
+      ),
     staleTime: 30_000,
   });
 }

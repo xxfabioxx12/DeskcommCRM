@@ -117,3 +117,44 @@ export async function definicaoNaConexao<R>(
   );
   return rows[0] ?? null;
 }
+
+/** O mínimo de uma linha do espelho para saber de qual conexão ela é. */
+export interface LinhaComConexao {
+  name: string;
+  language: string;
+  channel_session_id: string | null;
+  waba_id: string | null;
+}
+
+/**
+ * A MESMA regra de `linhaDoEspelho`, aplicada a uma LISTA: as linhas da conexão
+ * e, para cada (nome, idioma) que a conexão não tem, a linha sem conexão da conta
+ * oficial desta sessão. `wabaDoOficial = null` (sessão que não é do canal oficial)
+ * desliga o segundo passo — é o que impede servir a um número de parceiro a
+ * definição do oficial, ou a linha órfã de um parceiro apagado.
+ */
+export function filtrarLinhasDaConexao<T extends LinhaComConexao>(
+  linhas: readonly T[],
+  conexao: { channelSessionId: string; wabaDoOficial: string | null },
+): T[] {
+  const chave = (l: LinhaComConexao) => `${l.name}\u0000${l.language}`;
+  const daConexao = new Set(
+    linhas.filter((l) => l.channel_session_id === conexao.channelSessionId).map(chave),
+  );
+  return linhas.filter((l) => {
+    if (l.channel_session_id === conexao.channelSessionId) return true;
+    return (
+      l.channel_session_id === null &&
+      conexao.wabaDoOficial !== null &&
+      l.waba_id === conexao.wabaDoOficial &&
+      !daConexao.has(chave(l))
+    );
+  });
+}
+
+/** A conta (WABA) da sessão, só quando ela É do canal oficial — a única que tem linha sem número. */
+export function wabaDoOficial(
+  sessao: { provider?: string | null; meta_waba_id?: string | null } | null,
+): string | null {
+  return sessao?.provider === CHANNEL_PROVIDER_META && sessao.meta_waba_id ? sessao.meta_waba_id : null;
+}

@@ -13,6 +13,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
@@ -23,6 +24,9 @@ import { deriveTemplateContract, describeAddress } from "@/lib/channels/meta/tem
 import { slotKey } from "@/lib/channels/meta/build-components";
 import { syncTemplates } from "@/lib/channels/meta/template-sync";
 import { mesclarValoresSalvos } from "@/lib/channels/meta/valores-salvos";
+import { filtrarLinhasDaConexao, wabaDoOficial } from "@/lib/channels/linha-do-espelho";
+import { traduzir } from "@/lib/i18n/dicionario";
+import type { Idioma } from "@/lib/i18n/idiomas";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -93,7 +97,7 @@ function textPreviews(components: unknown): Array<{ onde: string; text: string }
 }
 
 type OrgGate =
-  | { autorizado: true; orgId: string }
+  | { autorizado: true; orgId: string; idioma: Idioma }
   | { autorizado: false; resposta: NextResponse };
 
 /**
@@ -113,20 +117,47 @@ type OrgGate =
 async function orgOrFail(requestId: string, papel: "agent" | "admin"): Promise<OrgGate> {
   const authz = await requireRole(papel, { requestId, resource: "channels_templates" });
   if (!authz.ok) return { autorizado: false, resposta: authz.response };
-  return { autorizado: true, orgId: authz.org.orgId };
+  return { autorizado: true, orgId: authz.org.orgId, idioma: authz.user.idioma };
 }
 
-export async function GET(): Promise<NextResponse> {
+/** `?channel_session_id=` — opcional. Ausente, a rota responde como sempre. */
+const consultaSchema = z.object({ channel_session_id: z.string().uuid().optional() });
+
+export async function GET(req: NextRequest): Promise<NextResponse> {
   const requestId = randomUUID();
   const r = await orgOrFail(requestId, "agent");
   if (!r.autorizado) return r.resposta;
+  const t = (texto: string) => traduzir(texto, r.idioma);
+
+  const consulta = consultaSchema.safeParse(Object.fromEntries(new URL(req.url).searchParams.entries()));
+  if (!consulta.success) {
+    return fail("validation_failed", t("channel_session_id inválido"), 422, { requestId });
+  }
+  const conexao = consulta.data.channel_session_id ?? null;
 
   const sessao = await metaSessionForOrg(r.orgId);
   const admin = createAdminClient();
+
+  // Os modelos de UM número (a campanha escolhe pelo número que vai enviar): a
+  // mesma regra do envio, `linhaDoEspelho`. A sessão é conferida CONTRA A
+  // ORGANIZAÇÃO — id de outro tenant é 404, nunca a lista dele.
+  let wabaDaConexao: string | null = null;
+  if (conexao) {
+    const { data: s, error: erroDaSessao } = await admin
+      .from("channel_sessions")
+      .select("provider, meta_waba_id")
+      .eq("organization_id", r.orgId)
+      .eq("id", conexao)
+      .maybeSingle();
+    if (erroDaSessao) return fail("internal_error", erroDaSessao.message, 500, { requestId });
+    if (!s) return fail("not_found", t("conexão não encontrada"), 404, { requestId });
+    wabaDaConexao = wabaDoOficial(s as { provider?: string | null; meta_waba_id?: string | null });
+  }
+
   const { data, error } = await admin
     .from("meta_templates")
     .select(
-      "name, language, status, category, rejected_reason, quality_score, parameter_format, contract_hash, components, synced_at, saved_values",
+      "name, language, status, category, rejected_reason, quality_score, parameter_format, contract_hash, components, synced_at, saved_values, channel_session_id, waba_id",
     )
     .eq("organization_id", r.orgId)
     .order("status")
@@ -134,7 +165,11 @@ export async function GET(): Promise<NextResponse> {
 
   if (error) return fail("internal_error", error.message, 500, { requestId });
 
-  const templates: TemplateView[] = (data ?? []).map((row) => {
+  const linhas = conexao
+    ? filtrarLinhasDaConexao(data ?? [], { channelSessionId: conexao, wabaDoOficial: wabaDaConexao })
+    : (data ?? []);
+
+  const templates: TemplateView[] = linhas.map((row) => {
     const contrato = deriveTemplateContract({
       name: row.name,
       language: row.language,
