@@ -14841,6 +14841,31 @@ export const DICIONARIO: Traducoes = {
   "Sem nenhuma destas etiquetas": { es: "Sin ninguna de estas etiquetas" },
   "separe por vírgula": { es: "separe por coma" },
   "Último problema": { es: "Último problema" },
+  "Use só letras minúsculas, números e _ no nome.": { es: "Usa solo letras minúsculas, números y _ en el nombre." },
+  "O cabeçalho não pode ter variável nesta versão.": { es: "El encabezado no puede tener variable en esta versión." },
+  "As variáveis precisam ir de {{1}} em diante, sem pular número.": {
+    es: "Las variables deben ir de {{1}} en adelante, sin saltar números.",
+  },
+  "O texto não pode começar nem terminar com uma variável.": { es: "El texto no puede empezar ni terminar con una variable." },
+  "Preencha um exemplo para cada variável.": { es: "Completa un ejemplo para cada variable." },
+  Aprovado: { es: "Aprobado" },
+  Recusado: { es: "Rechazado" },
+  "Já existe um template com este nome e idioma nesta conta. Use outro nome.": {
+    es: "Ya existe una plantilla con este nombre e idioma en esta cuenta. Usa otro nombre.",
+  },
+  "A Meta não aceitou a categoria escolhida para este texto. Confira se é Marketing ou Utilidade.": {
+    es: "Meta no aceptó la categoría elegida para este texto. Revisa si es Marketing o Utilidad.",
+  },
+  "A Meta recusou o formato do template: confira o nome, as variáveis e os exemplos.": {
+    es: "Meta rechazó el formato de la plantilla: revisa el nombre, las variables y los ejemplos.",
+  },
+  "A Meta recusou o template.": { es: "Meta rechazó la plantilla." },
+  "A Meta considerou o conteúdo abusivo": { es: "Meta consideró el contenido abusivo" },
+  "Categoria errada para este texto": { es: "Categoría incorrecta para este texto" },
+  "Formato inválido (variáveis, exemplos ou texto)": { es: "Formato inválido (variables, ejemplos o texto)" },
+  "Texto promocional fora da categoria Marketing": { es: "Texto promocional fuera de la categoría Marketing" },
+  "A Meta considerou o texto suspeito de golpe": { es: "Meta consideró el texto sospechoso de estafa" },
+  "O texto não combina com a categoria escolhida": { es: "El texto no coincide con la categoría elegida" },
   "Este número é oficial: para quem não falou com você nas últimas 24 horas, a Meta só entrega template aprovado.": {
     es: "Este número es oficial: para quien no habló contigo en las últimas 24 horas, Meta solo entrega plantillas aprobadas.",
   },

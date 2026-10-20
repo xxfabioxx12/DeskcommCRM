@@ -113,3 +113,46 @@ export function falhaDeTemplate(
   }
   return null;
 }
+
+/**
+ * O erro da CRIAÇÃO/edição de template, para o operador. Vem da fábrica
+ * (`modelos-graph.ts`) como `<prefixo>_template_failed: <status> <texto da Meta>`.
+ * A plataforma não documenta um código estável por motivo, então a leitura é pelo
+ * texto — e o que não casa volta como a Meta escreveu.
+ */
+const ERROS_DA_CRIACAO: ReadonlyArray<readonly [RegExp, string]> = [
+  [/already exists|duplicate/i, "Já existe um template com este nome e idioma nesta conta. Use outro nome."],
+  [/categor/i, "A Meta não aceitou a categoria escolhida para este texto. Confira se é Marketing ou Utilidade."],
+  [/invalid parameter|invalid format|format/i, "A Meta recusou o formato do template: confira o nome, as variáveis e os exemplos."],
+];
+
+export const FRASES_DA_CRIACAO: readonly string[] = ERROS_DA_CRIACAO.map(([, frase]) => frase);
+
+const PREFIXO_DA_CRIACAO = /^[a-z_]+_template_(failed|variante_ausente):\s*(\d{3}\s+)?/i;
+
+export function explicarErroDaCriacao(mensagem: string | null | undefined): FalhaExplicada {
+  const texto = (mensagem ?? "").trim().replace(PREFIXO_DA_CRIACAO, "");
+  for (const [padrao, frase] of ERROS_DA_CRIACAO) {
+    if (padrao.test(texto)) return { frase, traduzivel: true, codigo: null };
+  }
+  return { frase: texto || "A Meta recusou o template.", traduzivel: texto === "", codigo: null };
+}
+
+/** `rejected_reason` da revisão (vocabulário da plataforma), como o operador lê. */
+export const MOTIVOS_DA_RECUSA: Record<
+  "ABUSIVE_CONTENT" | "INCORRECT_CATEGORY" | "INVALID_FORMAT" | "PROMOTIONAL" | "SCAM" | "TAG_CONTENT_MISMATCH",
+  string
+> = {
+  ABUSIVE_CONTENT: "A Meta considerou o conteúdo abusivo",
+  INCORRECT_CATEGORY: "Categoria errada para este texto",
+  INVALID_FORMAT: "Formato inválido (variáveis, exemplos ou texto)",
+  PROMOTIONAL: "Texto promocional fora da categoria Marketing",
+  SCAM: "A Meta considerou o texto suspeito de golpe",
+  TAG_CONTENT_MISMATCH: "O texto não combina com a categoria escolhida",
+};
+
+export function ehMotivoDaRecusaConhecido(
+  motivo: string | null | undefined,
+): motivo is keyof typeof MOTIVOS_DA_RECUSA {
+  return !!motivo && Object.hasOwn(MOTIVOS_DA_RECUSA, motivo);
+}
