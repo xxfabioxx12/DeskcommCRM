@@ -96,3 +96,41 @@ export const TEXTO_DA_EXCLUSAO: Record<MotivoDeExclusao, string> = {
   suprimido: "Está na lista de exclusão de campanhas",
   contato_pessoal: "Contato marcado como pessoal",
 };
+
+/**
+ * Como a mensagem da campanha é montada (migration 0704, fatia 4 da #1330).
+ *
+ * `text` é o texto livre de sempre — o default de toda campanha que já existia.
+ * `template` é o modelo aprovado pela plataforma, obrigatório no número que exige
+ * template (a decisão vem da capacidade do canal, em `template-da-campanha.ts`).
+ * Par do CHECK `campaigns_message_mode_check`: muda um, muda o outro
+ * (`tests/invariants/vocabulario-banco-x-typescript.test.ts`).
+ */
+export const MODOS_DA_MENSAGEM = ["text", "template"] as const;
+
+export type ModoDaMensagem = (typeof MODOS_DA_MENSAGEM)[number];
+
+/**
+ * Por que uma campanha por template parou SOZINHA (`campaigns.failure_code`).
+ *
+ * Código, não frase, pelo mesmo motivo de `MOTIVOS_DE_EXCLUSAO`: a frase é
+ * traduzida na borda. Template pausado, desativado ou sumido é
+ * `template_nao_aprovado`; contrato (variáveis) diferente do escolhido é
+ * `template_mudou`.
+ */
+export const FALHAS_DE_TEMPLATE_DA_CAMPANHA = ["template_nao_aprovado", "template_mudou"] as const;
+
+export type FalhaDeTemplateDaCampanha = (typeof FALHAS_DE_TEMPLATE_DA_CAMPANHA)[number];
+
+/** O que o operador lê quando a campanha não começa ou pausa por causa do template. */
+export const TEXTO_DA_FALHA_DA_CAMPANHA: Record<FalhaDeTemplateDaCampanha, string> = {
+  template_nao_aprovado:
+    "O template foi pausado pela Meta ou não está mais aprovado neste número. Escolha outro template.",
+  template_mudou: "O template mudou na Meta: escolha de novo.",
+};
+
+export function ehFalhaDeTemplateDaCampanha(
+  codigo: string | null | undefined,
+): codigo is FalhaDeTemplateDaCampanha {
+  return (FALHAS_DE_TEMPLATE_DA_CAMPANHA as readonly string[]).includes(codigo ?? "");
+}

@@ -14841,6 +14841,10 @@ export const DICIONARIO: Traducoes = {
   "Sem nenhuma destas etiquetas": { es: "Sin ninguna de estas etiquetas" },
   "separe por vírgula": { es: "separe por coma" },
   "Último problema": { es: "Último problema" },
+  "O template foi pausado pela Meta ou não está mais aprovado neste número. Escolha outro template.": {
+    es: "Meta pausó la plantilla o ya no está aprobada en este número. Elige otra plantilla.",
+  },
+  "O template mudou na Meta: escolha de novo.": { es: "La plantilla cambió en Meta: elígela de nuevo." },
   "Uma campanha fala com uma lista de contatos que você escolhe, no ritmo do número — nunca em rajada.": {
     es: "Una campaña habla con una lista de contactos que eliges, al ritmo del número — nunca en ráfaga.",
   },

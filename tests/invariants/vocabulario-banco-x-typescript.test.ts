@@ -503,6 +503,15 @@ const PARES: Array<{
     simbolo: "STATUS_DO_DESTINATARIO",
   },
   {
+    tabela: "campaigns",
+    coluna: "message_mode",
+    // lib/campanhas/tipos.ts → MODOS_DA_MENSAGEM. Migration 0704 (fatia 4 da
+    // #1330): texto livre ou template aprovado. Um modo só no CHECK seria 23514
+    // na rota de criar; só no TypeScript, campanha que o banco recusa.
+    arquivo: "lib/campanhas/tipos.ts",
+    simbolo: "MODOS_DA_MENSAGEM",
+  },
+  {
     tabela: "external_db_connections",
     coluna: "source_mode",
     arquivo: "lib/external-db/types.ts",
