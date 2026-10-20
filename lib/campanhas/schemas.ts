@@ -6,6 +6,7 @@
 import { z } from "zod";
 
 import { filtroDeAudienciaSchema } from "./audiencia";
+import { MODOS_DA_MENSAGEM } from "./tipos";
 
 /**
  * O ritmo próprio. Todos opcionais e anuláveis: `null` devolve a decisão ao
@@ -22,6 +23,29 @@ export const ritmoSchema = z.object({
   teto_diario: z.number().int().min(1).max(10_000).nullable().optional(),
   teto_horario: z.number().int().min(1).max(10_000).nullable().optional(),
 });
+
+/**
+ * O mapa slot → expressão de uma campanha por template (migration 0704).
+ *
+ * A chave é a de `slotKey` (`1`, `nome`, `header:1`, `button0:1`,
+ * `card0:header:1`) — só palavra e dois-pontos. O teto de 50 é folga sobre o
+ * maior template real (corpo + cabeçalho + botões + carrossel de 10 cards); ele
+ * existe para um corpo malformado não virar um jsonb de megabytes.
+ */
+export const mapaDeSlotsSchema = z
+  .record(z.string().regex(/^[A-Za-z0-9_:]{1,80}$/), z.string().max(1024))
+  .refine((mapa) => Object.keys(mapa).length <= 50, {
+    message: "Um template tem no máximo 50 variáveis.",
+  });
+
+/** O template escolhido. Coerência (template × texto) é refine de `criar` e conferência da rota. */
+const conteudoDoTemplate = {
+  message_mode: z.enum(MODOS_DA_MENSAGEM).optional(),
+  template_name: z.string().trim().min(1).max(512).nullable().optional(),
+  template_language: z.string().trim().min(2).max(16).nullable().optional(),
+  template_contract_hash: z.string().trim().min(1).max(128).nullable().optional(),
+  template_slot_map: mapaDeSlotsSchema.optional(),
+};
 
 const baseDaCampanha = {
   name: z.string().trim().min(1).max(160),
@@ -44,6 +68,7 @@ const baseDaCampanha = {
   pipeline_id: z.string().uuid().nullable().optional(),
   stage_id: z.string().uuid().nullable().optional(),
   agent_id: z.string().uuid().nullable().optional(),
+  ...conteudoDoTemplate,
 };
 
 export const criarCampanhaSchema = z
@@ -68,6 +93,17 @@ export const criarCampanhaSchema = z
       c.janela_fim_hora == null ||
       c.janela_fim_hora > c.janela_inicio_hora,
     { message: "A janela precisa terminar depois de começar.", path: ["janela_fim_hora"] },
+  )
+  .refine(
+    (c) =>
+      (c.message_mode ?? "text") === "text"
+        ? c.template_name == null && c.template_language == null && c.template_contract_hash == null
+        : !!c.template_name && !!c.template_language && !!c.template_contract_hash,
+    {
+      message:
+        "Template exige nome, idioma e o carimbo do contrato; mensagem em texto não leva template.",
+      path: ["template_name"],
+    },
   );
 
 /** Edição de rascunho: tudo opcional, e a mesma checagem de base legal na rota. */
@@ -84,6 +120,11 @@ export const editarCampanhaSchema = z
     pipeline_id: baseDaCampanha.pipeline_id,
     stage_id: baseDaCampanha.stage_id,
     agent_id: baseDaCampanha.agent_id,
+    message_mode: conteudoDoTemplate.message_mode,
+    template_name: conteudoDoTemplate.template_name,
+    template_language: conteudoDoTemplate.template_language,
+    template_contract_hash: conteudoDoTemplate.template_contract_hash,
+    template_slot_map: conteudoDoTemplate.template_slot_map,
   })
   .merge(ritmoSchema);
 
@@ -91,6 +132,9 @@ export const previaSchema = z.object({
   audience_filter: filtroDeAudienciaSchema,
   message_body: z.string().max(4096).default(""),
   campaign_id: z.string().uuid().optional(),
+  /** Em `template`, a prévia resolve o mapa por pessoa em vez do texto. */
+  message_mode: z.enum(MODOS_DA_MENSAGEM).default("text"),
+  template_slot_map: mapaDeSlotsSchema.optional(),
 });
 
 export const criarTemplateSchema = z.object({
