@@ -88,3 +88,20 @@ describe("classificadorDoConteudo — texto (nada muda)", () => {
     expect(cls.valoresDe("c1")).toBeNull();
   });
 });
+
+describe("prepararCampanha — template sem definição", () => {
+  it("mapa sem a definição do modelo lança, em vez de congelar corpo vazio", async () => {
+    const { prepararCampanha } = await import("@/lib/campanhas/preparacao");
+    await expect(
+      prepararCampanha({} as never, {
+        campanhaId: "c-1",
+        organizationId: "org-1",
+        filtro: { com_alguma_tag: ["vip"] },
+        corpo: "",
+        contentVersion: 1,
+        agora: new Date("2026-10-20T18:00:00.000Z"),
+        template: { slotMap: { "1": "{{nome}}" } } as never,
+      }),
+    ).rejects.toThrow(/defini/i);
+  });
+});

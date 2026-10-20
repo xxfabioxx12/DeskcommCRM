@@ -235,6 +235,11 @@ export async function prepararCampanha(
     throw new Error(`Filtro de audiência inválido: ${filtro.error.issues[0]?.message ?? "sem critério"}`);
   }
 
+  // Mapa sem a definição do modelo congelaria `rendered_body` vazio: melhor parar.
+  if (entrada.template && !entrada.template.modelo) {
+    throw new Error("Preparação por template sem a definição do modelo conferida.");
+  }
+
   const { linhas, classificador } = await classificar(admin, {
     organizationId: entrada.organizationId,
     filtro: filtro.data,

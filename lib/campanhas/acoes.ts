@@ -19,6 +19,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ApiErrorCode } from "@/lib/api/errors";
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import { beginServiceAtOrigin } from "@/lib/atendimento/origem";
+import { renderTemplateBody } from "@/lib/channels/meta/render-template";
 
 import { baseLegalValida, motivoParaExcluir, recusouMarketing } from "./elegibilidade";
 import { ehStatusDaCampanha, podeTransitar } from "./maquina-de-estados";
@@ -26,7 +27,10 @@ import { prepararCampanha } from "./preparacao";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { camposDoDestinatario } from "./consulta-de-audiencia";
 import { renderizar } from "./renderizador";
-import type { ModoDaMensagem, StatusDaCampanha } from "./tipos";
+import { conferirConteudoDaCampanha, conteudoDaLinha, type DefinicaoDaCampanha } from "./conferir-template";
+import { lerPoolExtra } from "./pool-de-numeros";
+import { resolverSlots, textoDasExpressoes } from "./template-da-campanha";
+import { ehFalhaDeTemplateDaCampanha, type ModoDaMensagem, type StatusDaCampanha } from "./tipos";
 
 export interface CampanhaCarregada {
   id: string;
@@ -103,7 +107,8 @@ function recusaDeTransicao(de: StatusDaCampanha, para: StatusDaCampanha): Recusa
 
 /** O que toda campanha precisa ter antes de qualquer envio — inclusive o de teste. */
 function faltaParaEnviar(c: CampanhaCarregada): Recusa | null {
-  if ((c.message_body ?? "").trim() === "") {
+  // Em template a mensagem é a definição aprovada; quem confere é `conferirMensagem`.
+  if (c.message_mode !== "template" && (c.message_body ?? "").trim() === "") {
     return {
       ok: false,
       codigo: "campanha_conteudo_invalido",
@@ -124,6 +129,36 @@ function faltaParaEnviar(c: CampanhaCarregada): Recusa | null {
   return null;
 }
 
+/**
+ * O número aceita esta mensagem? Texto num número que exige template, template
+ * num número de QR Code, template pausado/mudado/ausente em algum número do
+ * rodízio — tudo recusado aqui, ANTES de qualquer escrita, com a frase do motivo.
+ * A conferência em si mora em `conferir-template.ts`; aqui só se chama.
+ */
+async function conferirMensagem(
+  admin: SupabaseClient,
+  c: CampanhaCarregada,
+): Promise<Desfecho<{ definicao: DefinicaoDaCampanha | null }>> {
+  try {
+    const extras = await lerPoolExtra(admin, c.organization_id, c.id);
+    const r = await conferirConteudoDaCampanha(admin, {
+      organizationId: c.organization_id,
+      channelSessionIds: [c.channel_session_id, ...extras],
+      conteudo: conteudoDaLinha(c),
+    });
+    if (!r.ok) return { ok: false, codigo: r.codigo, mensagem: r.mensagem, status: r.status };
+    return { ok: true, definicao: r.definicao };
+  } catch (err) {
+    // Exceção inesperada (banco fora etc.) não é recusa de negócio: 500.
+    return {
+      ok: false,
+      codigo: "internal_error",
+      mensagem: err instanceof Error ? err.message : String(err),
+      status: 500,
+    };
+  }
+}
+
 /** Já saiu alguma mensagem desta campanha? Reconstruir snapshot depois disso é proibido. */
 async function jaEnviou(admin: SupabaseClient, campanhaId: string): Promise<boolean> {
   const { count } = await admin
@@ -141,6 +176,8 @@ export async function prepararAcao(
 ): Promise<Desfecho<{ resumo: { total: number; elegiveis: number; excluidos: number } }>> {
   const recusa = recusaDeTransicao(c.status, "preparing") ?? faltaParaEnviar(c);
   if (recusa) return recusa;
+  const mensagem = await conferirMensagem(admin, c);
+  if (!mensagem.ok) return mensagem;
   if (await jaEnviou(admin, c.id)) {
     return {
       ok: false,
@@ -174,6 +211,17 @@ export async function prepararAcao(
       corpo: c.message_body ?? "",
       contentVersion: c.content_version,
       agora,
+      template: mensagem.definicao
+        ? {
+            slotMap: conteudoDaLinha(c).slotMap,
+            modelo: {
+              name: mensagem.definicao.name,
+              language: mensagem.definicao.language,
+              parameterFormat: mensagem.definicao.parameterFormat,
+              components: mensagem.definicao.components,
+            },
+          }
+        : null,
     });
     if (resumo.total === 0) {
       await voltarAoRascunho(admin, c.id, "audiencia_vazia");
@@ -237,6 +285,9 @@ export async function iniciarAcao(
 ): Promise<Desfecho<{ retomada: boolean }>> {
   const recusa = recusaDeTransicao(c.status, "running") ?? faltaParaEnviar(c);
   if (recusa) return recusa;
+  // Retomar uma campanha pausada por template exige o template em dia de novo.
+  const mensagem = await conferirMensagem(admin, c);
+  if (!mensagem.ok) return mensagem;
 
   const { count } = await admin
     .from("campaign_recipients")
@@ -260,6 +311,8 @@ export async function iniciarAcao(
       started_at: agora.toISOString(),
       paused_at: null,
       scheduled_at: null,
+      // O motivo da pausa por template sai junto com a pausa; outro motivo fica.
+      ...(ehFalhaDeTemplateDaCampanha(c.failure_code) ? { failure_code: null, failure_detail: null } : {}),
     })
     .eq("id", c.id)
     .eq("status", c.status)
@@ -276,6 +329,8 @@ export async function agendarAcao(
 ): Promise<Desfecho> {
   const recusa = recusaDeTransicao(c.status, "scheduled") ?? faltaParaEnviar(c);
   if (recusa) return recusa;
+  const mensagem = await conferirMensagem(admin, c);
+  if (!mensagem.ok) return mensagem;
   if (quando.getTime() <= agora.getTime()) {
     return {
       ok: false,
@@ -352,6 +407,11 @@ export async function duplicarAcao(
       description: c.description,
       channel_session_id: c.channel_session_id,
       message_body: c.message_body,
+      message_mode: c.message_mode ?? "text",
+      template_name: c.template_name ?? null,
+      template_language: c.template_language ?? null,
+      template_contract_hash: c.template_contract_hash ?? null,
+      template_slot_map: c.template_slot_map ?? {},
       base_legal: c.base_legal,
       lia_ref: c.lia_ref,
       audience_filter: c.audience_filter,
@@ -379,7 +439,7 @@ export async function duplicarAcao(
 }
 
 /**
- * O teste: a MESMA conexão, o MESMO renderizador, a MESMA camada de envio.
+ * O teste: a MESMA conexão, a MESMA resolução de variáveis, a MESMA camada de envio.
  *
  * Um teste que passasse por outro caminho provaria o outro caminho. E ele não
  * toca nos contadores da execução oficial — não cria destinatário, não gasta
@@ -440,26 +500,73 @@ export async function testarAcao(
     };
   }
 
-  // Os campos personalizados que o TEXTO usa entram aqui pelo MESMO caminho da
-  // prévia: teste que não resolvia `{{lead.gancho}}` reprovaria o texto que o
-  // envio manda certo.
-  const campos = await camposDoDestinatario(admin, {
-    organizationId: c.organization_id,
-    contactId: linha.id,
-    corpo: c.message_body ?? "",
-  });
-  const render = renderizar(
-    c.message_body ?? "",
-    { nome: nomeDoContato(linha), ...campos },
-    { agora, fuso },
-  );
-  if (render.faltando.length > 0) {
-    return {
-      ok: false,
-      codigo: "campanha_conteudo_invalido",
-      mensagem: `Falta ${render.faltando.join(", ")} no cadastro deste contato — escolha outro para o teste.`,
-      status: 422,
+  const conferida = await conferirMensagem(admin, c);
+  if (!conferida.ok) return conferida;
+
+  // Template: valores do contato pelo mesmo `resolverSlots` da preparação, link
+  // salvo do cabeçalho e corpo pelo mesmo montador do envio.
+  let entradaDoEnvio: { type: "text" | "template"; body: string } & Record<string, unknown>;
+  if (c.message_mode === "template") {
+    const definicao = conferida.definicao;
+    if (!definicao) {
+      return {
+        ok: false,
+        codigo: "internal_error",
+        mensagem: "A conferência do template não devolveu a definição.",
+        status: 500,
+      };
+    }
+    const mapa = conteudoDaLinha(c).slotMap;
+    const campos = await camposDoDestinatario(admin, {
+      organizationId: c.organization_id,
+      contactId: linha.id,
+      corpo: textoDasExpressoes(mapa),
+    });
+    const r = resolverSlots(mapa, { nome: nomeDoContato(linha), ...campos }, { agora, fuso });
+    if (r.faltando.length > 0) {
+      return {
+        ok: false,
+        codigo: "campanha_conteudo_invalido",
+        mensagem: `Falta ${r.faltando.join(", ")} no cadastro deste contato — escolha outro para o teste.`,
+        status: 422,
+      };
+    }
+    const valores = { ...definicao.salvos, ...r.valores };
+    const corpo = renderTemplateBody(definicao.components, valores, {
+      name: definicao.name,
+      language: definicao.language,
+      parameterFormat: definicao.parameterFormat,
+    }).trim();
+    entradaDoEnvio = {
+      type: "template",
+      template_name: definicao.name,
+      template_language: definicao.language,
+      template_values: valores,
+      body: corpo || definicao.name,
     };
+  } else {
+    // Os campos personalizados que o TEXTO usa entram aqui pelo MESMO caminho da
+    // prévia: teste que não resolvia `{{lead.gancho}}` reprovaria o texto que o
+    // envio manda certo.
+    const campos = await camposDoDestinatario(admin, {
+      organizationId: c.organization_id,
+      contactId: linha.id,
+      corpo: c.message_body ?? "",
+    });
+    const render = renderizar(
+      c.message_body ?? "",
+      { nome: nomeDoContato(linha), ...campos },
+      { agora, fuso },
+    );
+    if (render.faltando.length > 0) {
+      return {
+        ok: false,
+        codigo: "campanha_conteudo_invalido",
+        mensagem: `Falta ${render.faltando.join(", ")} no cadastro deste contato — escolha outro para o teste.`,
+        status: 422,
+      };
+    }
+    entradaDoEnvio = { type: "text", body: render.texto };
   }
 
   const boundary = await beginServiceAtOrigin(admin, c.organization_id, linha.id, c.channel_session_id);
@@ -474,8 +581,7 @@ export async function testarAcao(
     } as Parameters<typeof sendMessageHandler>[1],
     {
       conversation_id: boundary.conversation_id,
-      type: "text",
-      body: render.texto,
+      ...entradaDoEnvio,
       metadata: { source: "campaign_test", campaign_id: c.id },
     } as Parameters<typeof sendMessageHandler>[2],
   );
