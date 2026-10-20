@@ -55,6 +55,9 @@ export async function POST(req: NextRequest): Promise<Response> {
       corpo: parsed.data.message_body,
       agora: new Date(),
       campanhaId: parsed.data.campaign_id,
+      // Template: a prévia resolve o MAPA por pessoa (quem fica sem o dado sai
+      // como `variavel_ausente`, igual ao texto) e devolve o exemplo.
+      slotMap: parsed.data.message_mode === "template" ? (parsed.data.template_slot_map ?? {}) : null,
     });
     return ok(
       {
