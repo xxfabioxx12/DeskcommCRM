@@ -234,7 +234,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.name }}
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.name }}${{ vars.SUFIXO_DA_IMAGEM }}
           flavor: |
             latest=false
             suffix=-${{ matrix.arch }},onlatest=true
@@ -326,10 +326,10 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: |
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/deskcommcrm
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/deskcomm-worker
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/deskcomm-scheduler
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/deskcomm-voice-agent
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/deskcommcrm${{ vars.SUFIXO_DA_IMAGEM }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/deskcomm-worker${{ vars.SUFIXO_DA_IMAGEM }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/deskcomm-scheduler${{ vars.SUFIXO_DA_IMAGEM }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/deskcomm-voice-agent${{ vars.SUFIXO_DA_IMAGEM }}
           flavor: latest=false
           tags: |
             type=ref,event=branch

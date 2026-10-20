@@ -89,3 +89,7 @@ oficial:**
   na faixa 9000. Se chegar, renumere para outro número da faixa 9000 com outro
   timestamp e atualize migration, `supabase/fork/9001.sql`, baseline, testes e este
   documento juntos.
+
+## Nomes das imagens deste fork
+
+A conta xxfabioxx12 já publica `deskcommcrm`, `deskcomm-worker` e `deskcomm-scheduler` a partir de outro repositório (o Deskcomm FV, da barbearia). Para as imagens da NODZ nunca sobrescreverem aquelas, a automação `publish-image.yml` acrescenta ao nome o valor da variável de repositório `SUFIXO_DA_IMAGEM`. Neste fork ela vale `-nodz`, então as imagens saem como `ghcr.io/xxfabioxx12/deskcommcrm-nodz`, `deskcomm-worker-nodz`, `deskcomm-scheduler-nodz` e `deskcomm-voice-agent-nodz`. Sem a variável (como no projeto oficial) os nomes ficam iguais aos de sempre. Ao atualizar do oficial, se o `publish-image.yml` der conflito, mantenha o `${{ vars.SUFIXO_DA_IMAGEM }}` nas cinco linhas de nome de imagem.
