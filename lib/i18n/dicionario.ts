@@ -14858,6 +14858,12 @@ export const DICIONARIO: Traducoes = {
   },
   "Como chega para uma pessoa da lista": { es: "Cómo le llega a una persona de la lista" },
   "Prévia do template": { es: "Vista previa de la plantilla" },
+  "O template salvo não está mais aprovado neste número. Escolha outro.": {
+    es: "La plantilla guardada ya no está aprobada en este número. Elige otra.",
+  },
+  "Para ver como chega para uma pessoa da lista, clique em “Ver quantas pessoas”.": {
+    es: "Para ver cómo le llega a una persona de la lista, haz clic en “Ver cuántas personas”.",
+  },
   "A Meta cobra por mensagem entregue de template. O valor depende da categoria do template.": {
     es: "Meta cobra por cada mensaje de plantilla entregado. El valor depende de la categoría de la plantilla.",
   },

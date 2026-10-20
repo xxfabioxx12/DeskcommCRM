@@ -185,6 +185,10 @@ export function EditarCampanha({ id }: { id: string }) {
             className="h-9 w-full rounded-md border border-border bg-surface px-2 text-sm"
             value={canal}
             onChange={(e) => {
+              // Número por template: a prévia (contagem e exemplo) era do número de antes.
+              if (exigeTemplate || canalExigeTemplate((canais.data ?? []).find((s) => s.id === e.target.value)?.provider)) {
+                previa.reset();
+              }
               setCanal(e.target.value);
               // Template é do NÚMERO: trocou o número, a escolha anterior não vale.
               setModelo(null);
@@ -371,6 +375,9 @@ export function EditarCampanha({ id }: { id: string }) {
         onChange={(v) => {
           setModelo(v.modelo);
           setSlotMap(v.slotMap);
+          // O exemplo da prévia foi resolvido para o template e o mapa de ANTES:
+          // descartar, para a tela não mostrar um valor que não é o que vai sair.
+          previa.reset();
         }}
         exemplo={previa.data?.exemplo ?? null}
         textoLivre={

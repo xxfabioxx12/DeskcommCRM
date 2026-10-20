@@ -102,4 +102,28 @@ describe("MensagemPorTemplate", () => {
       slotMap: { "1": "{{nome}}" },
     });
   });
+
+  it("template salvo que sumiu da lista aprovada avisa, em vez de só travar o salvar", () => {
+    const sumido = { name: "antigo", language: "pt_BR", contractHash: "h-antigo" };
+    render(<MensagemPorTemplate channelSessionId="s-1" valor={{ texto: "", modelo: sumido, slotMap: {} }} onChange={vi.fn()} exemplo={null} />);
+    expect(screen.getByText("O template salvo não está mais aprovado neste número. Escolha outro.")).toBeInTheDocument();
+    expect(screen.getByText("antigo · pt_BR")).toBeInTheDocument();
+  });
+
+  it("enquanto a lista carrega, o aviso de template sumido não aparece", () => {
+    estado.valor = { ...estado.valor, carregando: true, opcoes: [] };
+    const sumido = { name: "antigo", language: "pt_BR", contractHash: "h-antigo" };
+    render(<MensagemPorTemplate channelSessionId="s-1" valor={{ texto: "", modelo: sumido, slotMap: {} }} onChange={vi.fn()} exemplo={null} />);
+    expect(screen.queryByText(/O template salvo não está mais aprovado/)).not.toBeInTheDocument();
+  });
+
+  it("template desatualizado nunca usa o exemplo da audiência", () => {
+    estado.valor = { ...estado.valor, atual: opcao(USAVEL), desatualizado: true, preencher: null };
+    const velho = { name: "boas_vindas", language: "pt_BR", contractHash: "h-velho" };
+    render(
+      <MensagemPorTemplate channelSessionId="s-1" valor={{ texto: "", modelo: velho, slotMap: { "1": "{{nome}}" } }} onChange={vi.fn()} exemplo={{ "1": "Ana" }} />,
+    );
+    expect(screen.queryByText("Oi Ana, tudo bem?")).not.toBeInTheDocument();
+    expect(screen.getByText("Oi {{nome}}, tudo bem?")).toBeInTheDocument();
+  });
 });

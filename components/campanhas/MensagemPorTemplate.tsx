@@ -66,10 +66,15 @@ export function MensagemPorTemplate({
     onChange({ ...valor, slotMap: { ...valor.slotMap, [chave]: expressao } });
   }
 
+  // O exemplo vale só para o template e o mapa com que a prévia foi PEDIDA: as
+  // telas descartam a prévia (`previa.reset()`) a cada troca de número, de
+  // template ou de variável. Aqui, a segunda trava: template sem slots em dia
+  // (`preencher` nulo — desatualizado ou inutilizável) nunca usa exemplo.
+  const exemploValido = exemplo && preencher ? exemplo : null;
   const previa = atual
     ? renderTemplatePreview(
         atual.modelo.components ?? [],
-        { ...atual.modelo.savedValues, ...(exemplo ?? valor.slotMap) },
+        { ...atual.modelo.savedValues, ...(exemploValido ?? valor.slotMap) },
         { name: atual.modelo.name, language: atual.modelo.language, parameterFormat: atual.modelo.parameterFormat },
       )
     : null;
@@ -109,6 +114,15 @@ export function MensagemPorTemplate({
           </p>
         )}
       </div>
+
+      {valor.modelo && !atual && !carregando && (
+        <p className="text-sm text-warning-fg">
+          {t("O template salvo não está mais aprovado neste número. Escolha outro.")}{" "}
+          <span className="font-mono">
+            {valor.modelo.name} · {valor.modelo.language}
+          </span>
+        </p>
+      )}
 
       {desatualizado && atual && (
         <div className="flex flex-wrap items-center gap-2 text-sm text-warning-fg">
@@ -153,10 +167,15 @@ export function MensagemPorTemplate({
 
       {previa && (
         <div className="space-y-1 rounded-md border border-border bg-surface-elevated p-3 text-sm">
-          <p className="font-medium">{exemplo ? t("Como chega para uma pessoa da lista") : t("Prévia do template")}</p>
+          <p className="font-medium">{exemploValido ? t("Como chega para uma pessoa da lista") : t("Prévia do template")}</p>
           {previa.cabecalho && <p className="font-semibold">{previa.cabecalho}</p>}
           <p className="whitespace-pre-wrap">{previa.corpo}</p>
           {previa.rodape && <p className="text-xs text-muted-foreground">{previa.rodape}</p>}
+          {!exemploValido && (
+            <p className="text-xs text-muted-foreground">
+              {t("Para ver como chega para uma pessoa da lista, clique em “Ver quantas pessoas”.")}
+            </p>
+          )}
         </div>
       )}
 

@@ -18,6 +18,7 @@ import { NovaCampanha } from "./_client";
 const previa = vi.hoisted(() => ({
   isPending: false,
   mutate: vi.fn(),
+  reset: vi.fn(),
   data: {
     total: 20_001,
     elegiveis: 500,
@@ -80,7 +81,10 @@ describe("número que exige template", () => {
     canais.data = [{ id: "s-oficial", provider: CHANNEL_PROVIDER_META, display_name: "Oficial" }];
     render(<NovaCampanha />);
     expect(screen.getByLabelText("Texto da mensagem")).toBeInTheDocument();
+    previa.reset.mockClear();
     fireEvent.change(screen.getByLabelText("Enviar pelo número"), { target: { value: "s-oficial" } });
+    // A prévia pedida antes era de outro número: descartada.
+    expect(previa.reset).toHaveBeenCalled();
     expect(screen.queryByLabelText("Texto da mensagem")).not.toBeInTheDocument();
     expect(screen.getByText(/Este número é oficial/)).toBeInTheDocument();
   });

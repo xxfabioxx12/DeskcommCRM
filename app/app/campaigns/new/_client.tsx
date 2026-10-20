@@ -166,6 +166,8 @@ export function NovaCampanha() {
               // (a lista abaixo o esconde; sem isto ele seguiria no envio e o
               // servidor recusaria a campanha por números misturados).
               const tipo = exigeTemplateDe(novo);
+              // Número por template: a prévia (contagem e exemplo) era do número de antes.
+              if (exigeTemplate || tipo) previa.reset();
               if (tipo !== null) setExtras((atual) => atual.filter((id) => exigeTemplateDe(id) === tipo));
             }}
           >
@@ -388,6 +390,9 @@ export function NovaCampanha() {
         onChange={(v) => {
           setModelo(v.modelo);
           setSlotMap(v.slotMap);
+          // O exemplo da prévia foi resolvido para o template e o mapa de ANTES:
+          // descartar, para a tela não mostrar um valor que não é o que vai sair.
+          previa.reset();
         }}
         exemplo={previa.data?.exemplo ?? null}
         textoLivre={
