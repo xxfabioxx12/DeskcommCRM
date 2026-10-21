@@ -54,6 +54,7 @@ import {
   type aiClassifyConfigSchema,
   type conditionConfigSchema,
   type contactFlowFieldTypeSchema,
+  type editLeadTagConfigSchema,
   type endConfigSchema,
   type waitConfigSchema,
 } from "./graph-schema";
@@ -74,6 +75,8 @@ export type ModoDeEspera = z.infer<typeof waitConfigSchema>["mode"];
 export type ModoDaAcao = z.infer<typeof actionConfigSchema>["mode"];
 export type TipoDeCampo = z.infer<typeof contactFlowFieldTypeSchema>;
 export type TipoDeGatilho = TriggerConfig["kind"];
+export type OperacaoDaEtiqueta = NonNullable<z.infer<typeof editLeadTagConfigSchema>["operacao"]>;
+export type DestinoDaEtiqueta = NonNullable<z.infer<typeof editLeadTagConfigSchema>["destino"]>;
 
 /** `{ valor, rotulo }` na ordem de declaração do mapa — pronto para um `<Select>`. */
 export function opcoes<K extends string>(mapa: Record<K, string>): ReadonlyArray<{ valor: K; rotulo: string }> {
@@ -625,6 +628,19 @@ export const MODOS_DA_ACAO: Record<ModoDaAcao, string> = {
   text: "Texto fixo",
   ai_message: "Mensagem escrita pela IA",
   template: "Modelo de mensagem pronto",
+};
+
+// ─── etiqueta no fluxo (nó edit_lead_tag, Parte 1 do motor de fluxo) ──────
+
+/** Rótulos do formulário do nó — sem a chave no config vale `adicionar`/`card`, o de sempre. */
+export const OPERACOES_DA_ETIQUETA: Record<OperacaoDaEtiqueta, string> = {
+  adicionar: "Pôr a etiqueta",
+  remover: "Tirar a etiqueta",
+};
+
+export const DESTINOS_DA_ETIQUETA: Record<DestinoDaEtiqueta, string> = {
+  card: "Card (comportamento atual)",
+  contato: "Contato do lead",
 };
 
 // ─── prioridade da tarefa (ação create_task, #1540) ────────────────────────

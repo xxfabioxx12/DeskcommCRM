@@ -16319,6 +16319,18 @@ export const DICIONARIO: Traducoes = {
   "Sem contato vinculado, a etiqueta não é aplicada.": {
     es: "Sin contacto vinculado, la etiqueta no se aplica.",
   },
+  // ── Motor de fluxo, Parte 1 (fork) — etiqueta no fluxo ──
+  "O que fazer com a etiqueta": { es: "Qué hacer con la etiqueta" },
+  "Pôr a etiqueta": { es: "Poner la etiqueta" },
+  "Tirar a etiqueta": { es: "Quitar la etiqueta" },
+  "Onde": { es: "Dónde" },
+  "Separe por vírgula. Só estas etiquetas saem; as outras ficam.": { es: "Separa con comas. Solo salen estas etiquetas; las demás se quedan." },
+  "No contato, a etiqueta é gravada em minúsculas e com até 40 caracteres.": { es: "En el contacto, la etiqueta se graba en minúsculas y con hasta 40 caracteres." },
+  "tira": { es: "quita" },
+  "põe": { es: "pone" },
+  "no contato": { es: "en el contacto" },
+  "no card": { es: "en el card" },
+  "Não conseguiu gravar a etiqueta": { es: "No pudo grabar la etiqueta" },
   // #2744 — compositor: template escolhido sem nome para interpolar.
   "Contato sem nome no CRM: {{nome}}/{{primeiro_nome}} ficaram literais no texto. Edite antes de enviar.": {
     es: "Contacto sin nombre en el CRM: {{nome}}/{{primeiro_nome}} quedaron como texto literal en el mensaje. Edítalo antes de enviar.",

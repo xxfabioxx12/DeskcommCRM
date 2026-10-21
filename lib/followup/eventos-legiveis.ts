@@ -209,13 +209,17 @@ export function resumoDoNo(node: FlowNode): NoDoDossie {
     }
     case "move_lead":
       return { ...base, resumo: "move o card para outra etapa do funil — sem mensagem ao cliente" };
-    case "edit_lead_tag":
-      return {
-        ...base,
-        resumo: node.config.tags.length
-          ? `grava a(s) tag(s) ${node.config.tags.join(", ")} no lead — sem mensagem ao cliente`
-          : "grava tag no lead, ainda sem destino escolhido — sem mensagem ao cliente",
-      };
+    case "edit_lead_tag": {
+      const tags = node.config.tags.join(", ");
+      if (!node.config.tags.length) {
+        return { ...base, resumo: "grava tag no lead, ainda sem destino escolhido — sem mensagem ao cliente" };
+      }
+      const onde = node.config.destino === "contato" ? "no contato" : "no lead";
+      if (node.config.operacao === "remover") {
+        return { ...base, resumo: `tira a(s) tag(s) ${tags} ${onde} — sem mensagem ao cliente` };
+      }
+      return { ...base, resumo: `grava a(s) tag(s) ${tags} ${onde} — sem mensagem ao cliente` };
+    }
     case "end":
       return { ...base, resumo: `encerra — ${DESFECHO[node.config.outcome] ?? node.config.outcome}` };
   }
@@ -505,6 +509,8 @@ export function descreveEvento(
         detalhe: texto(p.error) ?? texto(p.codigo),
         ...motor,
       };
+    case "edit_lead_tag_failed":
+      return { titulo: "Não conseguiu gravar a etiqueta", detalhe: texto(p.error), ...motor };
     case "inbound_woke":
       return { titulo: "O cliente respondeu — o fluxo acordou na hora", detalhe: null, ...cliente };
     case "reactivity_replied":

@@ -291,7 +291,13 @@ export function describeNodeConfig(
     }
     case "edit_lead_tag": {
       const c = config as ConfigOf<"edit_lead_tag">;
-      return c.tags.length ? c.tags.join(", ") : t("sem tag escolhida");
+      if (!c.tags.length) return t("sem tag escolhida");
+      const lista = c.tags.join(", ");
+      // Sem as chaves novas (fluxo antigo), o card mostra o mesmo de sempre.
+      if (!c.operacao && !c.destino) return lista;
+      const acao = c.operacao === "remover" ? t("tira") : t("põe");
+      const onde = c.destino === "contato" ? t("no contato") : t("no card");
+      return `${acao} ${lista} ${onde}`;
     }
     case "end": {
       const c = config as ConfigOf<"end">;

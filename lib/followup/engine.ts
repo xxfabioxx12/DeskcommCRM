@@ -61,6 +61,10 @@ import { getAction } from "@/lib/automation/actions";
 // Efeito de import: registra a ação `add_tag` no MESMO mapa que o motor de
 // automação usa. A tag do follow-up é a tag da automação — não uma segunda.
 import "@/lib/automation/actions/add-tag";
+// Parte 1 do motor de fluxo: o fluxo tira etiqueta e grava campo pelas MESMAS
+// ações das regras (`remove_tag`, `set_field`), não por um segundo caminho.
+import "@/lib/automation/actions/remove-tag";
+import "@/lib/automation/actions/set-field";
 import { renderizarTextoDeFollowup } from "@/lib/automation/texto-do-followup";
 import type { EventRow } from "@/lib/event-log/dispatcher";
 import { quandoDoRetornoVivo, reavaliarDepoisDoRetorno } from "./retorno-segura-o-fluxo";
@@ -396,6 +400,54 @@ function turnPayloadExtras(
   return {};
 }
 
+/** Frase do `skipped` de uma ação de escrita, para o rastro da inscrição (o dossiê mostra crua). */
+const MOTIVO_DO_PULO: Record<string, string> = {
+  no_contact: "O contato não foi encontrado.",
+  no_lead: "O contato não tem card neste momento.",
+  no_target: "Sem card nem contato para gravar.",
+  no_tags: "Sem etiqueta para gravar.",
+  missing_config: "A caixa está sem campo ou sem valor.",
+};
+
+function motivoDoPulo(detail: Record<string, unknown> | undefined): string {
+  const motivo = typeof detail?.reason === "string" ? detail.reason : "";
+  return MOTIVO_DO_PULO[motivo] ?? "A escrita foi ignorada.";
+}
+
+/**
+ * Parte 1 do motor de fluxo — a escrita que falha deixa RASTRO na inscrição,
+ * como o `move_lead_failed`: o fluxo segue (a trava é o evento do passo, já
+ * gravado), e quem montou o fluxo vê no dossiê que a etiqueta/campo não foi
+ * gravado. Chave própria (`:falha`) para o replay não duplicar; o registro tem
+ * o próprio try/catch para nunca derrubar o tick.
+ */
+async function registrarFalhaDaEscrita(
+  db: AdminClient,
+  enrollment: EnrollmentRow,
+  nodeId: string,
+  idemKey: string,
+  eventType: "edit_lead_tag_failed" | "gravar_campo_failed",
+  err: unknown,
+): Promise<void> {
+  try {
+    await db.insertEnrollmentEvent({
+      organization_id: enrollment.organization_id,
+      enrollment_id: enrollment.id,
+      node_id: nodeId,
+      event_type: eventType,
+      payload: { error: err instanceof Error ? err.message : String(err) },
+      idempotency_key: `${idemKey}:falha`,
+    });
+  } catch (registroErr) {
+    logger.warn("followup_falha_da_escrita_nao_registrada", {
+      organization_id: enrollment.organization_id,
+      enrollment_id: enrollment.id,
+      node_id: nodeId,
+      error: registroErr instanceof Error ? registroErr.message : String(registroErr),
+    });
+  }
+}
+
 async function markDead(
   db: AdminClient,
   clock: () => Date,
@@ -595,6 +647,7 @@ async function applyResult(
         node_id: node.id,
         error: err instanceof Error ? err.message : String(err),
       });
+      await registrarFalhaDaEscrita(db, enrollment, node.id, idemKey, "edit_lead_tag_failed", err);
     }
   }
 
@@ -1466,8 +1519,12 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
         if (contato) context.contact = contato;
       }
 
-      const acao = getAction("add_tag");
-      if (!acao) throw new Error("add_tag_nao_registrada");
+      // Parte 1 do motor de fluxo: a OPERAÇÃO escolhe a ação do registro
+      // (`add_tag` ou `remove_tag`) e o DESTINO viaja como na regra. Sem as
+      // chaves (grafo antigo) é `add_tag` sem destino — o comportamento de sempre.
+      const tipo = item.config.operacao === "remover" ? "remove_tag" : "add_tag";
+      const acao = getAction(tipo);
+      if (!acao) throw new Error(`${tipo}_nao_registrada`);
       const resultado = await acao.execute(
         {
           admin,
@@ -1478,11 +1535,10 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
           context,
           requestId: `followup:${item.enrollment_id}`,
         },
-        { tags: item.config.tags },
+        { tags: item.config.tags, ...(item.config.destino ? { destino: item.config.destino } : {}) },
       );
-      if (resultado.status === "failed") {
-        throw new Error(resultado.error ?? "add_tag_failed");
-      }
+      if (resultado.status === "failed") throw new Error(resultado.error ?? `${tipo}_failed`);
+      if (resultado.status === "skipped") throw new Error(motivoDoPulo(resultado.detail));
     },
     async abrirAvisoRecuperacaoEsgotada(item) {
       // ── A GUARDA DE ANONIMIZAÇÃO DESTA PORTA (issue #701) ──

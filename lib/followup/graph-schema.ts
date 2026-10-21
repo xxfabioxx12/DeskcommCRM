@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { MENSAGEM_ETIQUETA_LONGA_DO_CONTATO, etiquetaLongaDoContato } from '@/lib/automation/etiquetas-e-campos';
 import { PRIORIDADES_DA_TAREFA } from '@/lib/tarefas/tipos';
 import { ehOpDeData, OPS_DE_DATA } from './condicao-por-data';
 
@@ -313,19 +314,31 @@ export const moveLeadConfigSchema = z.strictObject({
 
 /**
  * Nó `edit_lead_tag` (#2065) — grava tag no lead, o merge idempotente da ação
- * `add_tag` do motor de automação (`lib/automation/actions/add-tag.ts`), com os
- * MESMOS limites do schema de webhook (`lib/schemas/webhooks.ts`): até 10 tags
- * de até 60 caracteres.
+ * `add_tag` do motor de automação, com os MESMOS limites do schema de webhook:
+ * até 10 tags de até 60 caracteres.
+ *
+ * Parte 1 do motor de fluxo: `operacao` (`adicionar` | `remover`) e `destino`
+ * (`card` | `contato`), os dois OPCIONAIS e sem default — o grafo publicado sem
+ * as chaves parseia idêntico e faz o de sempre (adicionar no card; sem card, no
+ * contato — Divergência D1). No contato a etiqueta é normalizada na escrita e a
+ * maior que 40 é recusada aqui.
  *
  * Lista vazia é rascunho em construção (mesma degradação do `stage_id`); o
- * publish recusa (`tag_ausente`) — um nó que não grava nada não pode ser
- * publicado como se gravasse.
+ * publish recusa (`tag_ausente`).
  */
-export const editLeadTagConfigSchema = z.strictObject({
-  tags: z
-    .array(z.string().max(60, "Tag muito longa: máximo de 60 caracteres."))
-    .max(10, "No máximo 10 tags por caixa."),
-});
+export const editLeadTagConfigSchema = z
+  .strictObject({
+    tags: z
+      .array(z.string().max(60, "Tag muito longa: máximo de 60 caracteres."))
+      .max(10, "No máximo 10 tags por caixa."),
+    operacao: z.enum(['adicionar', 'remover']).optional(),
+    destino: z.enum(['card', 'contato']).optional(),
+  })
+  .superRefine((config, ctx) => {
+    if (config.destino === 'contato' && etiquetaLongaDoContato(config.tags) !== null) {
+      ctx.addIssue({ code: 'custom', path: ['tags'], message: MENSAGEM_ETIQUETA_LONGA_DO_CONTATO });
+    }
+  });
 
 /**
  * One rule of a `condition` node. In `branching: 'per_check'` it IS a branch,
