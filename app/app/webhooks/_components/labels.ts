@@ -64,6 +64,9 @@ export const TRIGGER_LABELS: Record<TriggerEvent, string> = {
   // funil) ficam embaixo, na configuração da regra.
   "lead.silent_for": "Quando ficar N dias sem mensagem",
   "lead.stage_stale": "Quando um lead ficar N dias na mesma etapa",
+  // Parte 2 da migração do ManyChat: Hotmart, Kiwify, Kookie ou conexão
+  // personalizada. Conexão, produto, evento e order bump são os filtros, embaixo.
+  "sale.received": "Venda recebida",
 };
 
 export const ACTION_LABELS: Record<ActionType, string> = {

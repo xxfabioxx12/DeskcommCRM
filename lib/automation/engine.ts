@@ -33,6 +33,9 @@ import {
   ENTIDADE_ESPERADA_POR_GATILHO,
   GATILHOS_DO_TRIGGER_DE_LEAD,
 } from "@/lib/schemas/webhooks";
+import { GATILHO_DA_VENDA } from "@/lib/vendas/eventos";
+import { vendaCasaComARegra } from "@/lib/vendas/filtro-da-regra";
+import { regrasQueJaRodaramAVenda, reservarRegraDaVenda, vendaDoEvento } from "@/lib/vendas/regra-da-venda";
 import { logger } from "@/lib/logger";
 
 export const AUTOMATION_CONSUMER_KEY = "automation-rules";
@@ -108,6 +111,8 @@ export async function buildContext(admin: SupabaseClient, row: EventRow): Promis
       .eq("organization_id", org)
       .maybeSingle();
     if (contact) context.contact = contact;
+    // `{{venda.*}}` (Parte 2): só existe no gatilho de venda.
+    if (row.event_type === GATILHO_DA_VENDA) context.venda = await vendaDoEvento(admin, row);
   } else if (row.entity_kind === "calendar_appointment" && row.entity_id) {
     const { data: appointment } = await admin
       .from("calendar_appointments")
@@ -305,6 +310,10 @@ export async function runAutomationForEvent(
     | { source_metadata?: Record<string, unknown> | null }
     | undefined;
   const webhookSourceId = lead?.source_metadata?.webhook_source_id;
+  // Venda: a regra que já rodou este pedido+evento por outro evento do log sai
+  // antes da pré-checagem de adiamento (a reserva do laço segue sendo a trava).
+  const jaRodaramAVenda =
+    row.event_type === GATILHO_DA_VENDA ? await regrasQueJaRodaramAVenda(admin, row) : new Set<string>();
   const applicable = matched.filter((rule) => {
     const configuredSourceId = rule.trigger_config?.webhook_source_id;
     if (
@@ -314,6 +323,8 @@ export async function runAutomationForEvent(
     ) {
       return false;
     }
+    if (row.event_type === GATILHO_DA_VENDA && !vendaCasaComARegra(row.payload, rule.trigger_config)) return false;
+    if (jaRodaramAVenda.has(rule.id)) return false;
     return evaluateConditions(rule.conditions ?? [], context);
   });
   if (!applicable.length) {
@@ -342,6 +353,9 @@ export async function runAutomationForEvent(
   }
 
   for (const rule of applicable) {
+    // Uma vez por (conexão, pedido, evento, regra) — proteção 2 da Parte 2. Sem linha de run:
+    // a venda repetida aparece em "Eventos de venda", não como regra que falhou.
+    if (row.event_type === GATILHO_DA_VENDA && !(await reservarRegraDaVenda(admin, row, rule.id))) continue;
     const results: ActionResultDetail[] = [];
     // O índice é o da lista INTEIRA — a posição do resultado em
     // `actions_result` e parte do id da entrega do webhook (#1529).

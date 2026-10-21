@@ -179,6 +179,9 @@ export const CURATED_FIELDS: Record<TriggerEvent, CuratedField[]> = {
   // funil (via etapa/tags) e tags do contato.
   "lead.silent_for": LEAD_FIELDS,
   "lead.stage_stale": [...LEAD_FIELDS, STAGE_FIELD],
+  // Parte 2: quem filtra a venda filtra conexão/produto/evento no bloco do
+  // gatilho; como condição sobra QUEM é o contato (as tags).
+  "sale.received": CONTACT_FIELDS,
 };
 
 export const OP_LABELS: Record<Op, string> = { eq: "é", neq: "não é", contains: "contém" };

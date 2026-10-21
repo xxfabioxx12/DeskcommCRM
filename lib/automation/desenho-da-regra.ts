@@ -20,6 +20,7 @@
  * posição dele na fila e o devolve byte a byte, sem editar.
  */
 import { configAoSalvarDaTela } from "@/lib/automation/config-ao-salvar";
+import { GATILHO_DA_VENDA } from "@/lib/vendas/eventos";
 import {
   GATILHO_DE_DATA_DO_FUNIL,
   configDoGatilhoDeData,
@@ -221,6 +222,8 @@ export function triggerConfigDaTela(
   if (evento === "lead.created") {
     return configAoSalvarDaTela({ ...base, configDaTela: { webhook_source_id: tela.fonte } });
   }
+  // Venda (Parte 2): os filtros se editam no editor de regras; o desenho os PRESERVA.
+  if (evento === GATILHO_DA_VENDA) return configAoSalvarDaTela({ ...base, configDaTela: {} });
   return {};
 }
 

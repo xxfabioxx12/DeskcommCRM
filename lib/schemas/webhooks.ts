@@ -26,6 +26,8 @@ import {
   etiquetaLongaDoContato,
 } from "@/lib/automation/etiquetas-e-campos";
 import { problemaNoTexto } from "@/lib/campanhas/valores-do-contexto";
+import { GATILHO_DA_VENDA } from "@/lib/vendas/eventos";
+import { configDaVendaSchema } from "@/lib/vendas/filtro-da-regra";
 
 /**
  * Os gatilhos que o motor reconhece, e a entidade que cada um tem que trazer.
@@ -107,6 +109,10 @@ export const ENTIDADE_ESPERADA_POR_GATILHO = {
   // regras do mesmo gatilho com N diferentes disparariam juntas.
   "lead.silent_for": "crm_lead",
   "lead.stage_stale": "crm_lead",
+  // Parte 2 da migração do ManyChat: a venda que chegou da plataforma, já com o
+  // contato resolvido. Quem emite é `lib/vendas/receber.ts` (servidor, e o
+  // `emit_event` o reserva — fork 9003); a entidade é o contato do comprador.
+  "sale.received": "contact",
 } as const;
 
 export type GatilhoDeAutomacao = keyof typeof ENTIDADE_ESPERADA_POR_GATILHO;
@@ -593,6 +599,18 @@ export const updateWebhookSourceSchema = createWebhookSourceSchema.partial().ext
   update_existing_lead_on_capture: z.boolean().optional(),
 });
 
+/** O filtro da venda torto seria regra que nunca casa: recusa na porta. */
+export const MENSAGEM_DA_CONFIG_DA_VENDA = "Revise os filtros da venda.";
+
+function exigirConfigDaVenda(
+  regra: { trigger_event?: string; trigger_config?: Record<string, unknown> },
+  ctx: z.RefinementCtx,
+): void {
+  if (regra.trigger_event !== GATILHO_DA_VENDA || regra.trigger_config === undefined) return;
+  if (configDaVendaSchema.safeParse(regra.trigger_config).success) return;
+  ctx.addIssue({ code: "custom", path: ["trigger_config"], message: MENSAGEM_DA_CONFIG_DA_VENDA });
+}
+
 export const createAutomationRuleSchema = z
   .object({
     name: z.string().min(1).max(120),
@@ -612,6 +630,7 @@ export const createAutomationRuleSchema = z
   .superRefine(exigirConfigDoGatilhoDeData)
   .superRefine(exigirConfigDosGatilhosDeTempo)
   .superRefine(exigirIdDaFonteWebhook)
+  .superRefine(exigirConfigDaVenda)
   .superRefine(recusarLacoDeLead);
 
 function exigirIdDaFonteWebhook(
@@ -707,6 +726,7 @@ export const updateAutomationRuleSchema = z
     exigirConfigDosGatilhosDeTempo(patch as { trigger_event: string; trigger_config?: Record<string, unknown> }, ctx);
   })
   .superRefine(exigirIdDaFonteWebhook)
+  .superRefine(exigirConfigDaVenda)
   // Só vê o laço quando o PATCH traz gatilho E ações; o PATCH parcial é
   // conferido contra a regra gravada na rota.
   .superRefine(recusarLacoDeLead);

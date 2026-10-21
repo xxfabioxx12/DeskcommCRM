@@ -15,7 +15,13 @@ import {
 } from "@/lib/automation/campo-do-gatilho-de-data";
 import { autoriaDaMudanca } from "@/lib/operacao/autoria";
 import { updateAutomationRuleSchema } from "@/lib/schemas";
-import { acoesQueFechamLaco, MENSAGEM_DO_LACO_DE_LEAD } from "@/lib/schemas/webhooks";
+import {
+  acoesQueFechamLaco,
+  MENSAGEM_DA_CONFIG_DA_VENDA,
+  MENSAGEM_DO_LACO_DE_LEAD,
+} from "@/lib/schemas/webhooks";
+import { GATILHO_DA_VENDA } from "@/lib/vendas/eventos";
+import { configDaVendaSchema } from "@/lib/vendas/filtro-da-regra";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptRuleActionSecrets } from "@/lib/webhooks/secrets";
@@ -74,6 +80,18 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     ).length
   ) {
     return fail("invalid_request", t(MENSAGEM_DO_LACO_DE_LEAD), 400, { requestId });
+  }
+
+  // Filtros da venda: o schema só os confere quando o PATCH traz o gatilho; o
+  // PATCH parcial é conferido contra o gatilho gravado.
+  if (
+    (parsed.data.trigger_event !== undefined || parsed.data.trigger_config !== undefined) &&
+    (parsed.data.trigger_event ?? gravada.trigger_event) === GATILHO_DA_VENDA &&
+    !configDaVendaSchema.safeParse(
+      parsed.data.trigger_config ?? (existing as { trigger_config: unknown }).trigger_config ?? {},
+    ).success
+  ) {
+    return fail("invalid_request", t(MENSAGEM_DA_CONFIG_DA_VENDA), 400, { requestId });
   }
 
   const webhookSourceId = parsed.data.trigger_config?.webhook_source_id;
