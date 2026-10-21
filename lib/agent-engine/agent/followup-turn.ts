@@ -53,6 +53,8 @@ import {
 } from './inbound-turn';
 import { isLeadInHandoff } from './human-handoff';
 import { aplicarPessoaNoComandoAoTurno } from '@/lib/followup/pessoa-no-comando-no-turno';
+import { mensagemDoPassoSchema, type MensagemDoPasso } from '@/lib/followup/graph-schema';
+import { carregarEntradaDaMensagem, montarMensagemDoPasso } from '@/lib/followup/mensagem-do-passo-envio';
 import { fusoDaOrganizacao } from './fuso-da-org';
 import {
   followupPublicadoDoEnrollment,
@@ -104,6 +106,8 @@ export const followupTurnPayloadSchema = z
     fixed_media_url: z.string().url().max(2000).optional(),
     /** action mode `template` — `message_templates` (texto) ou `meta_templates` (modelo aprovado do canal). */
     template_id: z.string().uuid().optional(),
+    /** action mode `mensagem` (Parte 1 do motor de fluxo) — as duas versões; a escolha é pelo número da conversa. */
+    mensagem: mensagemDoPassoSchema.optional(),
     /** action mode `ai_message` — modelo aprovado que sai no lugar da IA com a janela de 24 h fechada. */
     fallback_template_id: z.string().uuid().optional(),
     volta_index: z.number().int().optional(),
@@ -585,6 +589,7 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
           fixedBody: payload.fixed_body,
           fixedMediaUrl: payload.fixed_media_url,
           templateId: payload.template_id,
+          mensagem: payload.mensagem,
           fallbackTemplateId: payload.fallback_template_id,
           voltaIndex: payload.volta_index,
           voltaTotal: payload.volta_total,
@@ -676,6 +681,8 @@ async function runFlowDrivenTurn(
     /** #2734 — mídia opcional (imagem ou PDF) do passo `action`/`text`. */
     fixedMediaUrl: string | undefined;
     templateId: string | undefined;
+    /** Parte 1 do motor de fluxo — modo `mensagem`. */
+    mensagem: MensagemDoPasso | undefined;
     fallbackTemplateId: string | undefined;
     voltaIndex: number | undefined;
     voltaTotal: number | undefined;
@@ -697,7 +704,7 @@ async function runFlowDrivenTurn(
   const runLog = withFields(deps.log, { job_id: job.id, tenant_id: target.tenantId, lead_id: target.leadId, enrollment_id: enrollmentId });
 
   if (input.purpose === 'send_message') {
-    let passo = await resolveFlowSendBody(pool, target.tenantId, target.channelSessionId, target.leadId, input);
+    let passo = await resolveFlowSendBody(pool, target.tenantId, target.channelSessionId, target.leadId, input, clock());
     // O PLANO B DA MENSAGEM POR IA. Com a janela de 24 h fechada, o canal recusa
     // qualquer texto livre — o da IA inclusive —, e o passo terminava sem mandar
     // nada. A tela prometia "se a IA não conseguir escrever, mandar este modelo"
@@ -974,10 +981,28 @@ async function resolveFlowSendBody(
     /** #2734 — mídia opcional do passo (`media_url` do nó de ação). */
     fixedMediaUrl: string | undefined;
     templateId: string | undefined;
+    mensagem?: MensagemDoPasso | undefined;
     voltaIndex: number | undefined;
     voltaTotal: number | undefined;
   },
+  agora: Date = new Date(),
 ): Promise<PassoSemIa | null> {
+  // Parte 1 do motor de fluxo — o passo "Mensagem": a versão sai pelo TIPO do
+  // número da conversa (capacidade do canal), resolvida para esta pessoa pelas
+  // MESMAS regras da campanha. Recusa vira `skipped` com o motivo (a inscrição
+  // fecha com `cancel_reason`), nunca a IA no lugar.
+  if (input.mensagem !== undefined) {
+    const entrada = await carregarEntradaDaMensagem(
+      pool,
+      { organizationId: tenantId, channelSessionId, contactId },
+      input.mensagem,
+    );
+    const fuso = await fusoDaOrganizacao(pool, tenantId);
+    const passo = montarMensagemDoPasso({ mensagem: input.mensagem, ...entrada, quando: { agora, fuso } });
+    if (passo.tipo === 'recusado') return { tipo: 'recusado', motivo: passo.motivo };
+    if (passo.tipo === 'texto') return { tipo: 'texto', body: passo.body };
+    return { tipo: 'modelo_aprovado', body: passo.body, modelo: passo.modelo };
+  }
   // O `fixed_body` já chega renderizado do enfileiramento (`lib/followup/engine.ts`),
   // ou é a confirmação, que é dado do contato. Renderizar de novo leria o que veio
   // do cadastro como modelo — por isso aqui ele só ganha a volta, nunca o contexto.
