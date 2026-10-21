@@ -949,6 +949,14 @@ export function processNode(input: {
       return { kind: "advance", next_node_id: edge.target, next_eval_at: clock() };
     }
 
+    case "gravar_campo": {
+      // Parte 1 do motor de fluxo — mesma passagem do `edit_lead_tag`: quem
+      // grava é o motor ao aplicar o `advance`, guardado pelo evento do passo.
+      const edge = selectEdge(edges, node.id, { type: "always" });
+      if (!edge) return { kind: "fail", error: `gravar_campo node "${node.id}" has no outbound edge` };
+      return { kind: "advance", next_node_id: edge.target, next_eval_at: clock() };
+    }
+
     case "end": {
       if (node.config.outcome === "custom") {
         return { kind: "complete", outcome: null, cancel_reason: node.config.note };

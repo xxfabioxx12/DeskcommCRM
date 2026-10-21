@@ -8,6 +8,8 @@ import type { ModelosDaConta } from './modelos-citados';
 import { recusaDeMotivoForaDoVocabulario } from '../leads/motivo-da-perda';
 import { capabilitiesOf, transportaMensagem, type ChannelProvider } from '../channels/capabilities';
 import { CUSTO_NO_MOTOR, TETO_DE_PASSOS_DO_MOTOR } from './custo-no-motor';
+import { MENSAGEM_CAMPO_INVALIDO, campoValido } from '../automation/etiquetas-e-campos';
+import { problemaNoTexto } from '../campanhas/valores-do-contexto';
 
 /**
  * Structural publish validator for follow-up flow graphs.
@@ -54,6 +56,11 @@ export const PUBLISH_ERROR_CODES = [
   // Regra de data (item 14): sem o campo do negócio ela não tem o que comparar
   // e responderia `false` para sempre, sem dizer por quê.
   'campo_de_data_ausente',
+  // Parte 1 do motor de fluxo — nó `gravar_campo` sem campo/valor (ou com nome de
+  // campo que a escrita recusaria), e variável que sairia literal (no
+  // `gravar_campo` e no passo "Mensagem").
+  'campo_ausente',
+  'variavel_desconhecida',
 ] as const;
 export type PublishErrorCode = (typeof PUBLISH_ERROR_CODES)[number];
 
@@ -244,8 +251,8 @@ function cicloDoEncadeamento(
  * recusava em silêncio; a recusa aqui é o erro que a pessoa lê no editor.
  */
 export const NOS_DA_SUPERFICIE: Record<FollowupFlowSurface, readonly NodeType[]> = {
-  followup: ['trigger', 'wait', 'condition', 'ai_classify', 'match_reply', 'repeat', 'action', 'internal_task', 'move_lead', 'edit_lead_tag', 'end'],
-  crm_automation: ['trigger', 'wait', 'condition', 'ai_classify', 'match_reply', 'repeat', 'action', 'internal_task', 'move_lead', 'edit_lead_tag', 'end'],
+  followup: ['trigger', 'wait', 'condition', 'ai_classify', 'match_reply', 'repeat', 'action', 'internal_task', 'move_lead', 'edit_lead_tag', 'gravar_campo', 'end'],
+  crm_automation: ['trigger', 'wait', 'condition', 'ai_classify', 'match_reply', 'repeat', 'action', 'internal_task', 'move_lead', 'edit_lead_tag', 'gravar_campo', 'end'],
   atendimento: ['trigger', 'collect', 'skill', 'end'],
 };
 
@@ -397,6 +404,7 @@ export const CONTA_NO_TETO: Record<NodeType, boolean> = {
   internal_task: false, // lembrete para a equipe
   move_lead: false, // move o card no funil
   edit_lead_tag: false, // grava tag no lead
+  gravar_campo: false, // grava um campo
   end: false, // desfecho
 };
 
@@ -880,6 +888,38 @@ function conferirTags(
 }
 
 /**
+ * Parte 1 do motor de fluxo — `gravar_campo` publicado precisa de campo e valor,
+ * com variáveis que resolvem. O nome passa pela MESMA regra da escrita
+ * (`campoValido`): `__proto__`, `constructor`, `prototype`, ponto ou mais de 60
+ * seriam recusados pelo motor a cada passagem — melhor barrar aqui.
+ */
+function conferirGravarCampo(
+  node: Extract<FlowNode, { type: 'gravar_campo' }>,
+  errors: PublishValidationError[]
+): void {
+  if (node.config.campo.trim() === '' || node.config.valor.trim() === '') {
+    errors.push({
+      node_id: node.id,
+      code: 'campo_ausente',
+      message: `A caixa "${node.label}" não tem campo e valor para gravar — preencha os dois.`,
+    });
+    return;
+  }
+  if (!campoValido(node.config.campo)) {
+    errors.push({
+      node_id: node.id,
+      code: 'campo_ausente',
+      message: `A caixa "${node.label}": ${MENSAGEM_CAMPO_INVALIDO}`,
+    });
+    return;
+  }
+  const problema = problemaNoTexto(node.config.valor);
+  if (problema) {
+    errors.push({ node_id: node.id, code: 'variavel_desconhecida', message: `A caixa "${node.label}": ${problema}` });
+  }
+}
+
+/**
  * Uma regra de condição que não pode decidir nada. O rascunho aceita todas estas
  * formas — trabalho pela metade precisa salvar —, mas publicada cada uma é uma
  * saída que nunca é tomada ou que é tomada sempre, com cara de regra pronta:
@@ -1130,6 +1170,7 @@ export function validateFlowForPublish(
   for (const node of [...nodes].sort(byId)) {
     if (node.type === 'move_lead') conferirEtapaDestino(node, contexto, errors);
     if (node.type === 'edit_lead_tag') conferirTags(node, errors);
+    if (node.type === 'gravar_campo') conferirGravarCampo(node, errors);
     if (node.type === 'action' && contexto.modelos !== undefined) {
       const { prontos, doCanal } = contexto.modelos;
       const cfg = node.config;

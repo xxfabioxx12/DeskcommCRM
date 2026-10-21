@@ -13,8 +13,8 @@ import type { NodeType } from './graph-schema';
  *
  * `CUSTO_NO_MOTOR` é o preço em ticks de cada tipo de nó, lido do próprio motor e
  * das invariantes que o CI já roda (`tests/invariants/followup-engine.test.ts`):
- *  - `trigger`, `condition`, `internal_task`, `move_lead`, `edit_lead_tag` e
- *    `end` custam 1 — cada um avança (ou conclui) em um tick;
+ *  - `trigger`, `condition`, `internal_task`, `move_lead`, `edit_lead_tag`,
+ *    `gravar_campo` e `end` custam 1 — cada um avança (ou conclui) em um tick;
  *  - `wait` custa 2: um tick arma a espera, outro vence e avança;
  *  - `action` custa 2: o motor ENFILEIRA o turno (`engine.ts`) e a ponte CONCLUI
  *    (`turn-bridge.ts`), cada ponta com o seu `steps_taken + 1`;
@@ -35,6 +35,7 @@ export const CUSTO_NO_MOTOR: Record<NodeType, number> = {
   internal_task: 1,
   move_lead: 1,
   edit_lead_tag: 1,
+  gravar_campo: 1,
   end: 1,
   // Dois ticks: arma e fecha.
   wait: 2,

@@ -240,6 +240,16 @@ export interface AdminClient {
     config: Extract<FlowNode, { type: "edit_lead_tag" }>["config"];
   }): Promise<void>;
   /**
+   * Nó `gravar_campo` (Parte 1 do motor de fluxo): a MESMA ação `set_field`
+   * das regras. Opcional pelas mesmas razões de `editarTagDoLead`.
+   */
+  gravarCampo?(item: {
+    organization_id: string;
+    contact_id: string;
+    enrollment_id: string;
+    config: Extract<FlowNode, { type: "gravar_campo" }>["config"];
+  }): Promise<void>;
+  /**
    * Régua de recuperação de falta esgotada sem resposta — abre um item na
    * Central referenciando o COMPROMISSO. Opcional: só a produção precisa; os
    * adaptadores de teste que não exercitam no-show podem omitir. Ver
@@ -648,6 +658,24 @@ async function applyResult(
         error: err instanceof Error ? err.message : String(err),
       });
       await registrarFalhaDaEscrita(db, enrollment, node.id, idemKey, "edit_lead_tag_failed", err);
+    }
+  }
+  if (result.kind === "advance" && !isReplay && node.type === "gravar_campo") {
+    try {
+      await db.gravarCampo?.({
+        organization_id: enrollment.organization_id,
+        contact_id: enrollment.contact_id,
+        enrollment_id: enrollment.id,
+        config: node.config,
+      });
+    } catch (err) {
+      logger.warn("followup_gravar_campo_failed", {
+        organization_id: enrollment.organization_id,
+        enrollment_id: enrollment.id,
+        node_id: node.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      await registrarFalhaDaEscrita(db, enrollment, node.id, idemKey, "gravar_campo_failed", err);
     }
   }
 
@@ -1181,6 +1209,26 @@ export async function runFollowupTick(deps: TickDeps, opts?: { limit?: number })
 /** Production adapter: `AdminClient` backed by the real Supabase service-role client. */
 export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
   const revisions=new Map<string,number>();
+  /** `{ contact, lead }` em linhas INTEIRAS — o render das mensagens e o `set_field` leem o mesmo. */
+  async function lerContextoCompleto(orgId: string, contactId: string): Promise<Record<string, unknown>> {
+    const [{ data: lead, error: leadErr }, { data: contact, error: contactErr }] = await Promise.all([
+      admin
+        .from("crm_leads")
+        .select("*")
+        .eq("organization_id", orgId)
+        .eq("contact_id", contactId)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      admin.from("contacts").select("*").eq("organization_id", orgId).eq("id", contactId).maybeSingle(),
+    ]);
+    if (leadErr) throw new Error(leadErr.message);
+    if (contactErr) throw new Error(contactErr.message);
+    const contexto: Record<string, unknown> = {};
+    if (contact) contexto.contact = contact;
+    if (lead) contexto.lead = lead;
+    return contexto;
+  }
   return {
     async assertServiceBoundary(enrollment) { if(!revisions.has(enrollment.id) && enrollment.revision!==undefined) revisions.set(enrollment.id,enrollment.revision); await assertServiceBoundarySupabase(admin, enrollment.service_boundary ?? null); },
     async retornoQueSeguraOFluxo(enrollment) {
@@ -1281,23 +1329,7 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
      * (`updated_at desc`), senão dois caminhos dariam dados diferentes.
      */
     async loadRenderContext(orgId, contactId) {
-      const [{ data: lead, error: leadErr }, { data: contact, error: contactErr }] = await Promise.all([
-        admin
-          .from("crm_leads")
-          .select("*")
-          .eq("organization_id", orgId)
-          .eq("contact_id", contactId)
-          .order("updated_at", { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-        admin.from("contacts").select("*").eq("organization_id", orgId).eq("id", contactId).maybeSingle(),
-      ]);
-      if (leadErr) throw new Error(leadErr.message);
-      if (contactErr) throw new Error(contactErr.message);
-      const contexto: Record<string, unknown> = {};
-      if (contact) contexto.contact = contact;
-      if (lead) contexto.lead = lead;
-      return contexto;
+      return lerContextoCompleto(orgId, contactId);
     },
     async loadLastInboundBody(orgId, contactId, conversationId, naoAntesDe) {
       const ids = await idsDoContatoEGemeos(admin, orgId, contactId);
@@ -1538,6 +1570,31 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
         { tags: item.config.tags, ...(item.config.destino ? { destino: item.config.destino } : {}) },
       );
       if (resultado.status === "failed") throw new Error(resultado.error ?? `${tipo}_failed`);
+      if (resultado.status === "skipped") throw new Error(motivoDoPulo(resultado.detail));
+    },
+    /**
+     * Parte 1 do motor de fluxo — nó `gravar_campo` pela ação `set_field` do
+     * registro. O nome do campo passa por `campoValido` lá dentro (antes de
+     * `anotarCampo`): nome de protótipo, com ponto ou longo vira `skipped` e
+     * aqui vira erro com rastro, nunca escrita.
+     */
+    async gravarCampo(item) {
+      const context = await lerContextoCompleto(item.organization_id, item.contact_id);
+      const acao = getAction("set_field");
+      if (!acao) throw new Error("set_field_nao_registrada");
+      const resultado = await acao.execute(
+        {
+          admin,
+          organizationId: item.organization_id,
+          ruleId: `followup:${item.enrollment_id}`,
+          ruleName: "Fluxo de follow-up",
+          event: {} as EventRow,
+          context,
+          requestId: `followup:${item.enrollment_id}`,
+        },
+        { destino: item.config.destino, campo: item.config.campo, valor: item.config.valor },
+      );
+      if (resultado.status === "failed") throw new Error(resultado.error ?? "set_field_failed");
       if (resultado.status === "skipped") throw new Error(motivoDoPulo(resultado.detail));
     },
     async abrirAvisoRecuperacaoEsgotada(item) {

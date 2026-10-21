@@ -139,6 +139,7 @@ const TIPO_DO_NO: Record<FlowNode["type"], string> = {
   // #2065 — as duas ações que também não falam com o cliente.
   move_lead: "Mover no funil",
   edit_lead_tag: "Editar tag",
+  gravar_campo: "Gravar campo",
   end: "Fim",
 };
 
@@ -220,6 +221,13 @@ export function resumoDoNo(node: FlowNode): NoDoDossie {
       }
       return { ...base, resumo: `grava a(s) tag(s) ${tags} ${onde} — sem mensagem ao cliente` };
     }
+    case "gravar_campo":
+      return {
+        ...base,
+        resumo: node.config.campo
+          ? `grava o campo "${node.config.campo}" no ${node.config.destino === "contato" ? "contato" : "card"} — sem mensagem ao cliente`
+          : "grava um campo, ainda sem campo escolhido — sem mensagem ao cliente",
+      };
     case "end":
       return { ...base, resumo: `encerra — ${DESFECHO[node.config.outcome] ?? node.config.outcome}` };
   }
@@ -511,6 +519,8 @@ export function descreveEvento(
       };
     case "edit_lead_tag_failed":
       return { titulo: "Não conseguiu gravar a etiqueta", detalhe: texto(p.error), ...motor };
+    case "gravar_campo_failed":
+      return { titulo: "Não conseguiu gravar o campo", detalhe: texto(p.error), ...motor };
     case "inbound_woke":
       return { titulo: "O cliente respondeu — o fluxo acordou na hora", detalhe: null, ...cliente };
     case "reactivity_replied":

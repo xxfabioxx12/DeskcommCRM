@@ -1,6 +1,6 @@
 import type { ComponentType } from "react";
 
-import { Bell, Play, Clock, GitBranch, Brain, ChatCircle, ArrowsClockwise, PaperPlaneTilt, Flag, Question, PuzzlePiece, Funnel, Tag } from "@/lib/ui/icons";
+import { Bell, Play, Clock, GitBranch, Brain, ChatCircle, ArrowsClockwise, PaperPlaneTilt, Flag, Question, PuzzlePiece, Funnel, Tag, PencilSimple } from "@/lib/ui/icons";
 import type { FlowNode, NodeType } from "@/lib/followup/graph-schema";
 import { RESULTADOS_DO_FIM } from "@/lib/followup/vocabulario";
 import { NOS_DA_SUPERFICIE } from "@/lib/followup/validate-publish";
@@ -187,6 +187,16 @@ export const NODE_VISUALS: Record<NodeType, NodeVisual> = {
     defaultLabel: "Gravar tag no lead",
     defaultConfig: () => ({ tags: [] }),
   },
+  // Parte 1 do motor de fluxo — grava um campo; nasce vazio, o publish exige.
+  gravar_campo: {
+    type: "gravar_campo",
+    paletteLabel: "Gravar campo",
+    icon: PencilSimple,
+    chipClassName: "bg-info-bg text-info-fg",
+    borderClassName: "border-l-info",
+    defaultLabel: "Gravar campo",
+    defaultConfig: () => ({ destino: "contato", campo: "", valor: "" }),
+  },
   end: {
     type: "end",
     paletteLabel: "Fim",
@@ -298,6 +308,11 @@ export function describeNodeConfig(
       const acao = c.operacao === "remover" ? t("tira") : t("põe");
       const onde = c.destino === "contato" ? t("no contato") : t("no card");
       return `${acao} ${lista} ${onde}`;
+    }
+    case "gravar_campo": {
+      const c = config as ConfigOf<"gravar_campo">;
+      if (!c.campo) return t("sem campo escolhido");
+      return `${c.campo} = ${c.valor} · ${c.destino === "contato" ? t("no contato") : t("no card")}`;
     }
     case "end": {
       const c = config as ConfigOf<"end">;

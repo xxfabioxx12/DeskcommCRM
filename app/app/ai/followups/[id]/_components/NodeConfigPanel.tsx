@@ -21,6 +21,7 @@ import { InternalTaskForm } from "./forms/InternalTaskForm";
 import { MatchReplyForm } from "./forms/MatchReplyForm";
 import { MoveLeadForm } from "./forms/MoveLeadForm";
 import { EditLeadTagForm } from "./forms/EditLeadTagForm";
+import { GravarCampoForm } from "./forms/GravarCampoForm";
 import { RepeatForm } from "./forms/RepeatForm";
 import { SkillForm } from "./forms/SkillForm";
 import { WaitForm } from "./forms/WaitForm";
@@ -167,6 +168,12 @@ export function NodeConfigPanel({
         {type === "edit_lead_tag" && (
           <EditLeadTagForm
             config={node.data.config as ConfigOf<"edit_lead_tag">}
+            onChange={(config) => onChange({ config })}
+          />
+        )}
+        {type === "gravar_campo" && (
+          <GravarCampoForm
+            config={node.data.config as ConfigOf<"gravar_campo">}
             onChange={(config) => onChange({ config })}
           />
         )}

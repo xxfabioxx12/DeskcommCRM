@@ -30,6 +30,9 @@ export const NODE_TYPES = [
   // fora desta fatia e é o passo seguinte da issue.
   'move_lead',
   'edit_lead_tag',
+  // Parte 1 do motor de fluxo: grava UM campo do contato ou do card (a mesma
+  // ação `set_field` das regras). Não fala com o cliente.
+  'gravar_campo',
   'end',
 ] as const;
 export type NodeType = (typeof NODE_TYPES)[number];
@@ -341,6 +344,20 @@ export const editLeadTagConfigSchema = z
   });
 
 /**
+ * Nó `gravar_campo` (Parte 1 do motor de fluxo) — grava UMA chave de campo
+ * personalizado, com as variáveis da campanha no valor. Campo/valor vazios
+ * são rascunho; o publish exige os dois (`campo_ausente`). Ponto no nome é
+ * recusado aqui (o renderizador lê `{{contato.x}}` com UM ponto).
+ */
+export const gravarCampoConfigSchema = z
+  .strictObject({
+    destino: z.enum(['card', 'contato']),
+    campo: z.string().max(60, 'Nome do campo muito longo: máximo de 60 caracteres.'),
+    valor: z.string().max(1000, 'Valor muito longo: máximo de 1000 caracteres.'),
+  })
+  .refine((c) => !c.campo.includes('.'), { message: 'O nome do campo não pode ter ponto.', path: ['campo'] });
+
+/**
  * One rule of a `condition` node. In `branching: 'per_check'` it IS a branch,
  * so it carries the stable id an edge references and the label the handle shows
  * — identity lives on the rule itself, never in a parallel array that would
@@ -640,6 +657,17 @@ export const flowNodeSchema = z.discriminatedUnion('type', [
       y: z.number(),
     }),
     config: editLeadTagConfigSchema,
+  }),
+  // Nó de ação (Parte 1 do motor de fluxo): grava um campo, sem mensagem
+  z.strictObject({
+    id: z.string().min(1),
+    type: z.literal('gravar_campo'),
+    label: z.string().min(1).max(60),
+    position: z.strictObject({
+      x: z.number(),
+      y: z.number(),
+    }),
+    config: gravarCampoConfigSchema,
   }),
   // End node: terminal state
   z.strictObject({

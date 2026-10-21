@@ -16331,6 +16331,8 @@ export const DICIONARIO: Traducoes = {
   "no contato": { es: "en el contacto" },
   "no card": { es: "en el card" },
   "Não conseguiu gravar a etiqueta": { es: "No pudo grabar la etiqueta" },
+  "sem campo escolhido": { es: "sin campo elegido" },
+  "Não conseguiu gravar o campo": { es: "No pudo grabar el campo" },
   // #2744 — compositor: template escolhido sem nome para interpolar.
   "Contato sem nome no CRM: {{nome}}/{{primeiro_nome}} ficaram literais no texto. Edite antes de enviar.": {
     es: "Contacto sin nombre en el CRM: {{nome}}/{{primeiro_nome}} quedaron como texto literal en el mensaje. Edítalo antes de enviar.",
