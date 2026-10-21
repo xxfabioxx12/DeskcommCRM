@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
   fonte: null as Record<string, unknown> | null,
+  erroDoBanco: null as { message: string } | null,
   permitido: true,
   segredo: "segredo" as string | null,
   filtros: [] as unknown[][],
@@ -30,7 +31,7 @@ vi.mock("@/lib/supabase/admin", () => ({
         h.filtros.push(["in", ...a]);
         return c;
       };
-      c.maybeSingle = async () => ({ data: h.fonte, error: null });
+      c.maybeSingle = async () => ({ data: h.erroDoBanco ? null : h.fonte, error: h.erroDoBanco });
       return c;
     },
   }),
@@ -53,6 +54,7 @@ const enviar = (req: NextRequest, token = TOKEN) => POST(req, { params: Promise.
 
 beforeEach(() => {
   h.fonte = { ...HOTMART };
+  h.erroDoBanco = null;
   h.permitido = true;
   h.segredo = "segredo";
   h.filtros.length = 0;
@@ -76,6 +78,14 @@ describe("rota pública das vendas", () => {
     expect((await enviar(requisicao(CORPO))).status).toBe(404);
     h.fonte = { ...HOTMART, kind: "lead_capture" };
     expect((await enviar(requisicao(CORPO))).status).toBe(404);
+    expect(h.receber).not.toHaveBeenCalled();
+  });
+
+  it("erro do banco ao ler a conexão: 500 sem a mensagem do banco", async () => {
+    h.erroDoBanco = { message: 'relation "webhook_sources" does not exist' };
+    const res = await enviar(requisicao(CORPO));
+    expect(res.status).toBe(500);
+    expect(await res.text()).not.toContain("webhook_sources");
     expect(h.receber).not.toHaveBeenCalled();
   });
 

@@ -76,7 +76,10 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     .eq("path_token", token)
     .in("kind", [...PLATAFORMAS_DE_VENDA])
     .maybeSingle();
-  if (error) return fail("internal_error", error.message, 500, { requestId });
+  if (error) {
+    logger.error("[webhooks.vendas] não foi possível ler a conexão", { requestId, error: error.message });
+    return fail("internal_error", "internal_error", 500, { requestId });
+  }
   if (!fonte || !fonte.is_active || !ehPlataformaDeVenda(fonte.kind)) {
     return fail("not_found", "unknown webhook token", 404, { requestId });
   }
