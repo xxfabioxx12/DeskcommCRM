@@ -64,6 +64,7 @@ import {
   podarArquivoDeWebhooks,
 } from "@/lib/channels/retencao-do-arquivo";
 import { podarHistoricoDeCaptacao } from "@/lib/webhooks/retencao-da-captacao";
+import { limparDadosDasVendas } from "@/lib/vendas/retencao";
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -188,14 +189,27 @@ export async function GET(req: NextRequest): Promise<Response> {
   // MESMO motivo de quando a captação falha — a poda que segura o espaço é a
   // que o operador precisa ver parada — e o que a captação conseguiu vem em
   // `details` para não se perder com ela.
+  // Os dados da pessoa nas VENDAS (fork 9003): 30 dias e saem. Mesmo tique, como
+  // a captação; a falha é dita pelos três canais (log, trilha, Sentry) e não
+  // derruba as podas que já rodaram. `audit()` fica no `catch` (guarda de classe).
+  let vendas: { limpas: number } | null = null;
+  try {
+    vendas = { limpas: await limparDadosDasVendas(admin, lote) };
+  } catch (err) {
+    const detalhe = err instanceof Error ? err.message : String(err);
+    registraFalhaDePoda("eventos de venda", err, requestId);
+    void audit(linhaDeFalhaDePoda("sales_events", detalhe, requestId));
+    avisaSentry(err, requestId, "sales_events");
+  }
+
   if (falhaDoArquivo) {
     return fail("internal_error", "webhook_events_log_retention_failed", 500, {
       requestId,
-      details: { erro: falhaDoArquivo.slice(0, 300), arquivo_forense: arquivo, captacao },
+      details: { erro: falhaDoArquivo.slice(0, 300), arquivo_forense: arquivo, captacao, vendas },
     });
   }
 
-  return ok({ ...arquivo, captacao }, { requestId });
+  return ok({ ...arquivo, captacao, vendas }, { requestId });
 }
 
 /**

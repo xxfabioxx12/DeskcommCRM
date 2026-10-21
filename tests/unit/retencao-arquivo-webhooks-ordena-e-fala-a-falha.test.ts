@@ -86,6 +86,7 @@ let ordensPedidas: { tabela: string; coluna: string; lote: number; apagando: boo
  */
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
+    rpc: async () => ({ data: 0, error: null }), // limpeza das vendas (T19)
     from: (tabela: string) => {
       const arquivo = tabela === "webhook_events_log";
       // O que a CADEIA de chamadas devolve. A do DELETE é a resposta de um

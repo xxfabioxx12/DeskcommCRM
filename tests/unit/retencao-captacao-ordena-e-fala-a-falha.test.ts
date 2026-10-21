@@ -65,6 +65,7 @@ let lotePedido = 0;
 
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
+    rpc: async () => ({ data: 0, error: null }), // limpeza das vendas (T19)
     from: (tabela: string) => {
       if (tabela === "webhook_lead_captures") {
         // O heart da cerca: `limit` sem `order` LANÇA, como o PostgREST 12.2
