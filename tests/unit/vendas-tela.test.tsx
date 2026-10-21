@@ -103,7 +103,7 @@ describe("aba Vendas — conexões", () => {
     expect(screen.getByLabelText("Hottok da Hotmart")).toHaveAttribute("placeholder", "Deixe em branco para manter o segredo salvo");
     await user.click(screen.getByRole("switch", { name: "Ligada" }));
     await user.click(screen.getByRole("button", { name: "Salvar" }));
-    expect(h.atualizar).toHaveBeenCalledWith({ id: "c1", name: "Hotmart NODZ", config: { telefone_regiao: "BR", dispara: true } });
+    expect(h.atualizar).toHaveBeenCalledWith({ id: "c1", name: "Hotmart NODZ", config: { telefone_regiao: "BR", numeros_de_saida: [], dispara: true } });
   });
 
   it("personalizada: validação e mapa de campos vão na config", async () => {
@@ -163,7 +163,7 @@ describe("aba Vendas — números de saída (spec §4)", () => {
     expect(caixa).toBeChecked();
     await user.click(caixa);
     await user.click(screen.getByRole("button", { name: "Salvar" }));
-    expect(h.atualizar).toHaveBeenCalledWith({ id: "c1", name: "Hotmart NODZ", config: { telefone_regiao: "BR", dispara: false } });
+    expect(h.atualizar).toHaveBeenCalledWith({ id: "c1", name: "Hotmart NODZ", config: { telefone_regiao: "BR", numeros_de_saida: [], dispara: false } });
   });
 });
 
@@ -191,5 +191,49 @@ describe("aba Vendas — eventos", () => {
     await user.click(screen.getByRole("combobox", { name: "Situação" }));
     await user.click(await screen.findByRole("option", { name: "Falhou" }));
     expect(h.filtros.at(-1)).toEqual({ conexao_id: undefined, status: "falhou" });
+  });
+});
+
+describe("aba Vendas — editar não apaga o que a tela não mostra", () => {
+  const FLIX = {
+    ...HOTMART,
+    id: "c2",
+    name: "Flix",
+    kind: "personalizada",
+    has_secret: false,
+    config: {
+      telefone_regiao: "BR",
+      seguranca: { modo: "nenhuma" },
+      mapa: {
+        evento: { fixo: "acesso.criado" },
+        email: ["data.a.email", "data.b.email"],
+        telefone: "data.fone",
+        moeda: { fixo: "BRL" },
+        entity: "data.tipo",
+      },
+    },
+  };
+
+  it("mantém moeda e entity gravadas e esvaziar um campo da tela o remove", async () => {
+    h.conexoes = [FLIX];
+    const user = montar();
+    await user.click(screen.getByText("Flix"));
+    await user.clear(screen.getByLabelText("Caminho do telefone"));
+    await user.click(screen.getByRole("button", { name: "Salvar" }));
+    const enviado = (h.atualizar.mock.calls[0] as unknown as [{ config: { mapa: Record<string, unknown> } }])[0];
+    expect(enviado.config.mapa.moeda).toEqual({ fixo: "BRL" });
+    expect(enviado.config.mapa.entity).toBe("data.tipo");
+    expect(enviado.config.mapa).not.toHaveProperty("telefone");
+    expect(enviado.config.mapa.email).toEqual(["data.a.email", "data.b.email"]);
+  });
+
+  it("tolerância esvaziada volta ao padrão 300", async () => {
+    h.conexoes = [{ ...FLIX, config: { ...FLIX.config, seguranca: { modo: "stripe_t_v1", header: "X-S", tolerancia_s: 60 } } }];
+    const user = montar();
+    await user.click(screen.getByText("Flix"));
+    await user.clear(screen.getByLabelText("Tolerância (segundos)"));
+    await user.click(screen.getByRole("button", { name: "Salvar" }));
+    const enviado = (h.atualizar.mock.calls[0] as unknown as [{ config: { seguranca: { tolerancia_s: number } } }])[0];
+    expect(enviado.config.seguranca.tolerancia_s).toBe(300);
   });
 });

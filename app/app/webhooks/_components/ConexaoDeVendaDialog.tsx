@@ -32,6 +32,7 @@ import {
   type PlataformaDeVenda,
 } from "@/lib/vendas/eventos";
 import {
+  CAMPOS_SIMPLES_DO_MAPA,
   ROTULO_DO_CAMPO_DO_MAPA,
   mapaDaTela,
   telaDoMapa,
@@ -87,20 +88,39 @@ export function ConexaoDeVendaDialog({ conexao, open, onOpenChange }: Props) {
   const canais = useChannelSessions();
   const personalizada = plataforma === "personalizada";
 
+  /** Parte do mapa gravado e sobrepõe só o que a tela edita (moeda, entity e listas de caminhos não aparecem nela). */
+  function mapaParaSalvar() {
+    const editado = mapaDaTela(mapa) as Record<string, unknown>;
+    if (!conexao?.config.mapa) return editado as ReturnType<typeof mapaDaTela>;
+    const gravado = conexao.config.mapa as Record<string, unknown>;
+    const gravadoNaTela = telaDoMapa(conexao.config.mapa);
+    const resultado: Record<string, unknown> = { ...gravado, ...editado };
+    for (const campo of CAMPOS_SIMPLES_DO_MAPA) {
+      const atual = mapa.caminhos[campo]?.trim() ?? "";
+      if (!atual) delete resultado[campo];
+      // Campo que a pessoa não mexeu fica como foi gravado (pode ser uma lista de caminhos).
+      else if (atual === (gravadoNaTela.caminhos[campo] ?? "") && campo in gravado) resultado[campo] = gravado[campo];
+    }
+    if (!mapa.eventoFixo && !mapa.eventoCaminho.trim()) delete resultado.evento;
+    if (!mapa.extras.trim()) delete resultado.extras;
+    return resultado as ReturnType<typeof mapaDaTela>;
+  }
+
   function montarConfig(): ConfigDaConexao {
     return {
       telefone_regiao: regiao,
       // Spec §4: sem nenhum marcado, a chave nem vai — vale o número padrão de hoje.
-      ...(numerosDeSaida.length > 0 ? { numeros_de_saida: numerosDeSaida } : {}),
+      // Ao editar, o PATCH faz merge raso: sem a lista vazia explícita a lista antiga continuaria valendo.
+      ...(numerosDeSaida.length > 0 || conexao ? { numeros_de_saida: numerosDeSaida } : {}),
       ...(conexao ? { dispara } : {}),
       ...(personalizada
         ? {
             seguranca: {
               modo,
               ...(modo !== "nenhuma" && cabecalho.trim() ? { header: cabecalho.trim() } : {}),
-              ...(modo === "stripe_t_v1" ? { tolerancia_s: Number(tolerancia) || 0 } : {}),
+              ...(modo === "stripe_t_v1" ? { tolerancia_s: tolerancia.trim() === "" ? 300 : Number(tolerancia) || 0 } : {}),
             },
-            mapa: mapaDaTela(mapa),
+            mapa: mapaParaSalvar(),
           }
         : {}),
     };
