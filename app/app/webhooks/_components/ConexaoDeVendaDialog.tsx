@@ -168,7 +168,7 @@ export function ConexaoDeVendaDialog({ conexao, open, onOpenChange }: Props) {
         <DialogHeader>
           <DialogTitle>{conexao ? t("Editar conexão de venda") : t("Nova conexão de venda")}</DialogTitle>
           <DialogDescription>
-            {t("A conexão nasce só registrando: o Deskcomm guarda cada venda, mas não cria contato nem roda regra até você ligar.")}
+            {t("A conexão nasce só registrando: cada venda fica guardada, mas não cria contato nem roda regra até você ligar.")}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={salvar} className="space-y-4">

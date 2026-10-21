@@ -4,6 +4,8 @@
  * `source_metadata.origem` de quem nasce por uma venda.
  */
 import { ehIdentificadorTecnico } from "@/lib/contacts/rotulo-do-contato";
+import { tagDeIdioma } from "@/lib/i18n/datas";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 
 import { EVENTOS_DE_RECUPERACAO, ROTULO_DA_PLATAFORMA, type PlataformaDeVenda, type VendaTraduzida } from "./eventos";
 
@@ -34,7 +36,7 @@ export function camposParaCompletar(
   return campos;
 }
 
-const DATA = new Intl.DateTimeFormat("pt-BR", {
+const DATA = new Intl.DateTimeFormat(tagDeIdioma(IDIOMA_PADRAO), {
   timeZone: "America/Sao_Paulo",
   day: "2-digit",
   month: "2-digit",

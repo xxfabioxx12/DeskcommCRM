@@ -16691,8 +16691,8 @@ export const DICIONARIO: Traducoes = {
   "último evento": { es: "último evento" },
   "Nova conexão de venda": { es: "Nueva conexión de venta" },
   "Editar conexão de venda": { es: "Editar conexión de venta" },
-  "A conexão nasce só registrando: o Deskcomm guarda cada venda, mas não cria contato nem roda regra até você ligar.": {
-    es: "La conexión nace solo registrando: Deskcomm guarda cada venta, pero no crea contacto ni ejecuta reglas hasta que la actives.",
+  "A conexão nasce só registrando: cada venda fica guardada, mas não cria contato nem roda regra até você ligar.": {
+    es: "La conexión nace solo registrando: cada venta queda guardada, pero no crea contacto ni ejecuta reglas hasta que la actives.",
   },
   "Hottok da Hotmart": { es: "Hottok de Hotmart" },
   "Token de assinatura da Kiwify": { es: "Token de firma de Kiwify" },
