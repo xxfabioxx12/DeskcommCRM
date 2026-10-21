@@ -67,6 +67,13 @@ describe("config da conexão", () => {
     });
   });
 
+  it("campo torto fora da segurança não apaga a segurança", () => {
+    const seguranca = { modo: "header_igual", header: "X-Flix" } as const;
+    expect(configDaConexao({ dispara: "sim", seguranca })).toEqual({ seguranca });
+    expect(configDaConexao({ mapa: { nada: 1 }, seguranca })).toEqual({ seguranca });
+    expect(configDaConexao({ dispara: true, seguranca: { modo: "outro" } })).toEqual({});
+  });
+
   it("criar: plataforma fora da lista e segredo curto são recusados; segredo é opcional", () => {
     expect(criarConexaoDeVendaSchema.safeParse({ name: "x", kind: "lead_capture" }).success).toBe(
       false,

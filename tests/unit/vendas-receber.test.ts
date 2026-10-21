@@ -257,6 +257,18 @@ describe("receberVenda", () => {
     expect(linhas[0]!.produto).toHaveLength(500);
   });
 
+  it("corte por caractere: emoji na posição do corte não é partido ao meio", async () => {
+    const flix: ConexaoDeVenda = {
+      id: "c3",
+      organizationId: "org-1",
+      plataforma: "personalizada",
+      config: { mapa: { evento: { fixo: "compra.aprovada" }, produto_nome: "pn", email: "email" } },
+    };
+    const { banco, linhas } = bancoFalso();
+    await receberVenda(banco, flix, entrega({ pn: `${"P".repeat(499)}😀x`, email: "a@b.com" }, flix), AGORA);
+    expect(linhas[0]!.produto).toBe(`${"P".repeat(499)}😀`);
+  });
+
   it("personalizada com mapa e evento sem tradução: ignorado com motivo, não falhou", async () => {
     const comMapa: ConexaoDeVenda = {
       id: "c3",

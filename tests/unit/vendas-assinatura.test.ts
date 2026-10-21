@@ -141,3 +141,7 @@ it("conferirAssinatura escolhe pela plataforma", () => {
   expect(conferirAssinatura("personalizada", entrada({ segredo: null }), {})).toBeNull();
   expect(conferirAssinatura("kiwify", entrada(), {})).toBe("parâmetro signature ausente");
 });
+
+it("plataforma fora da lista (gravada torta) é recusada, não aceita calada", () => {
+  expect(conferirAssinatura("lead_capture" as never, entrada(), {})).toBe("plataforma desconhecida");
+});

@@ -90,10 +90,16 @@ export const configDaConexaoSchema = z
   .strict();
 export type ConfigDaConexao = z.infer<typeof configDaConexaoSchema>;
 
-/** A config gravada, lida com tolerância: torta vira `{}` — só registrando, região BR (falha fechada). */
+/**
+ * A config gravada, lida com tolerância: torta vira `{}` — só registrando, região BR (falha
+ * fechada). A `seguranca` é lida à parte: um campo torto em outro lugar não pode apagá-la
+ * (sem ela a personalizada cairia em "nenhuma" e aceitaria qualquer corpo).
+ */
 export function configDaConexao(bruto: unknown): ConfigDaConexao {
   const lida = configDaConexaoSchema.safeParse(bruto ?? {});
-  return lida.success ? lida.data : {};
+  if (lida.success) return lida.data;
+  const seguranca = segurancaSchema.safeParse((bruto as { seguranca?: unknown } | null)?.seguranca);
+  return seguranca.success ? { seguranca: seguranca.data } : {};
 }
 
 const segredo = z.string().trim().min(4).max(500);

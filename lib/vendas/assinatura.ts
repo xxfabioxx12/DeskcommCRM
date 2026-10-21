@@ -107,5 +107,8 @@ export function conferirAssinatura(
       return conferirKookie(e);
     case "personalizada":
       return conferirPersonalizada(e, config.seguranca);
+    default:
+      // Plataforma gravada torta: sem verificador, recusa (falha fechada).
+      return "plataforma desconhecida";
   }
 }

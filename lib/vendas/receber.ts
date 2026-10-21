@@ -114,14 +114,16 @@ function temMapa(config: ConfigDaConexao): boolean {
  * derrubar o registro (500 eterno), e a busca por `entidade` compara com o que foi gravado.
  */
 function cortada(v: VendaTraduzida | null): VendaTraduzida | null {
+  // Por caractere (code point), como o `char_length` do CHECK: emoji partido ao meio é JSON inválido.
+  const ate = (s: string, n: number) => Array.from(s).slice(0, n).join("");
   return (
     v && {
       ...v,
-      evento: v.evento.slice(0, 100),
-      entidade: v.entidade.slice(0, 300),
-      pedido: v.pedido?.slice(0, 300) ?? null,
-      produtoId: v.produtoId?.slice(0, 200) ?? null,
-      produto: v.produto?.slice(0, 500) ?? null,
+      evento: ate(v.evento, 100),
+      entidade: ate(v.entidade, 300),
+      pedido: v.pedido == null ? null : ate(v.pedido, 300),
+      produtoId: v.produtoId == null ? null : ate(v.produtoId, 200),
+      produto: v.produto == null ? null : ate(v.produto, 500),
     }
   );
 }
