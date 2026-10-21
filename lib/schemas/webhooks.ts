@@ -392,6 +392,18 @@ const acoesFixas = [
       })
       .superRefine(recusaEtiquetaLongaDoContato),
   }),
+  // Parte 1 do motor de fluxo — TIRAR etiqueta. `destino` obrigatório: quem
+  // tira escolhe de onde; o padrão implícito só existe para não quebrar a
+  // `add_tag` antiga.
+  z.object({
+    type: z.literal("remove_tag"),
+    config: z
+      .object({
+        tags: z.array(z.string().min(1).max(60)).min(1).max(10),
+        destino: z.enum(["card", "contato"]),
+      })
+      .superRefine(recusaEtiquetaLongaDoContato),
+  }),
   z.object({ type: z.literal("assign_owner"), config: configDoAtribuirSchema }),
   z.object({
     type: z.literal("send_ai_message"),
