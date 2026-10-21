@@ -46,8 +46,9 @@ export function telefoneE164(bruto: string | null | undefined, regiao: string = 
   if (!temMais && digitos.startsWith("00") && digitos.length >= 12) candidatos.push(`+${digitos.slice(2)}`);
   const r = regiao.toUpperCase();
   if (!temMais && (REGIOES_DO_TELEFONE as readonly string[]).includes(r)) {
-    // Nenhum número nacional começa com 0 depois do prefixo de tronco: "(011) ..." vira "11...".
-    candidatos.push(`+${DDI[r as RegiaoDoTelefone]}${digitos.replace(/^0+/, "")}`);
+    // O 0 de tronco ("(011) ...", "07911 ...") sai em todas as regiões, menos na Itália, onde o 0 do fixo faz parte do número.
+    const nacional = r === "IT" ? digitos : digitos.replace(/^0+/, "");
+    candidatos.push(`+${DDI[r as RegiaoDoTelefone]}${nacional}`);
   }
 
   for (const candidato of candidatos) {

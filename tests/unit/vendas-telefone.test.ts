@@ -20,6 +20,8 @@ describe("telefoneE164 — casos do PhoneNormalizerTest do integrador", () => {
     ["00 351 912 345 678", "BR", "+351912345678"],
     ["912345678", "PT", "+351912345678"],
     ["(011) 98765-4321", "BR", "+5511987654321"],
+    ["06 1234 5678", "IT", "+390612345678"],
+    ["07911 123456", "GB", "+447911123456"],
   ])("%s (%s) → %s", (bruto, regiao, esperado) => {
     expect(telefoneE164(bruto, regiao)).toBe(esperado);
   });
