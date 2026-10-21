@@ -784,6 +784,22 @@ export interface ExportPayload {
     created_at: string;
     created_by_name: string | null;
   }>;
+  /**
+   * Vendas recebidas das plataformas (fork 9003), REDIGIDAS na anonimização
+   * (`fn_vendas_redigir_ao_anonimizar`). Mesmo critério da redação: o contato,
+   * o e-mail ou o telefone dele. O payload cru da plataforma não sai.
+   */
+  sales_events?: Array<{
+    id: string;
+    plataforma: string;
+    evento: string | null;
+    produto: string | null;
+    pedido: string | null;
+    email: string | null;
+    telefone: string | null;
+    venda: unknown;
+    recebido_em: string;
+  }>;
   /** Propostas de campo do contato (0123), também APAGADAS na anonimização. */
   contact_field_proposals?: Array<{
     id: string;
@@ -1778,6 +1794,37 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
   }
 
+  // Vendas (fork 9003) — o mesmo alcance de `fn_vendas_redigir_ao_anonimizar`:
+  // contact_id OU e-mail OU telefone do contato. Uma consulta por critério (filtro
+  // simples, sem `or` com o e-mail dentro) e a união por id, como nos grupos acima.
+  const vendasPorId = new Map<string, NonNullable<ExportPayload["sales_events"]>[number]>();
+  if (contactId) {
+    const criterios: Array<[string, string]> = [["contact_id", contactId]];
+    if (contact?.email) criterios.push(["email", contact.email.toLowerCase()]);
+    if (contact?.phone_number) criterios.push(["telefone", contact.phone_number]);
+    for (const [coluna, valor] of criterios) {
+      const { data, error } = await admin
+        .from("sales_events")
+        .select("id, plataforma, evento, produto, pedido, email, telefone, venda, recebido_em")
+        .eq("organization_id", organizationId)
+        .eq(coluna, valor)
+        .order("recebido_em", { ascending: false })
+        .limit(500);
+      if (error) {
+        logger.warn("[lgpd-export-worker] sales events load failed", {
+          request_id: requestId,
+          error: error.message,
+        });
+        continue;
+      }
+      conferirTeto("sales_events", data, 500);
+      for (const v of data ?? []) vendasPorId.set(v.id, v);
+    }
+  }
+  const sales_events = [...vendasPorId.values()]
+    .sort((a, b) => b.recebido_em.localeCompare(a.recebido_em))
+    .slice(0, 500);
+
   // Propostas de campo do contato: a anonimização as APAGA, e o valor proposto é
   // dado do titular. Mesmo escopo da função que apaga, com os ids internos fora.
   //
@@ -2300,6 +2347,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     conversation_drafts,
     conversation_notes,
     contact_field_proposals,
+    sales_events,
     lead_notes,
     ai_agent_runs,
     lead_state,
