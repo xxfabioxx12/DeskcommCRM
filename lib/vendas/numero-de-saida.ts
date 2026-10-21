@@ -29,7 +29,7 @@ export function numerosDeSaidaDoEvento(payload: Readonly<Record<string, unknown>
  * sem isto, a venda das 23h não iniciaria fluxo nenhum.
  */
 export function livreParaOFluxo(l: Pick<LeituraDoNumero, "numero" | "aquecimentoEstourado">): NumeroDisponivel {
-  // shortcut: teto e aquecimento contam o `sentToday` de HOJE; à noite o envio real é amanhã, com a contagem zerada.
+  // shortcut: teto e aquecimento contam o `sentToday` de HOJE (à noite o envio real é amanhã, contagem zerada); trocar pela conta do dia do envio se vendas fora da janela começarem a cair em sem_numero_de_saida_livre.
   const n = l.numero;
   return { ...n, podeAgora: !l.aquecimentoEstourado && (n.folgaDoDia === null || n.folgaDoDia > 0) };
 }

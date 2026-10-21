@@ -29,6 +29,7 @@ describe("rodada × template", () => {
     const LEITURA = readFileSync(join(process.cwd(), "lib/campanhas/numero-disponivel.ts"), "utf8");
     expect(LEITURA).toMatch(/podeAgora:\s*decisao\.allow\s*&&\s*intervaloDoCanalCumprido\(/);
     expect(FONTE).toMatch(/await lerNumero\(/);
+    expect(FONTE).toMatch(/disponiveis\.push\(leitura\.numero\)/);
   });
   it("template parado pausa a campanha nos dois pontos (antes e depois do envio)", () => {
     expect(FONTE.match(/pausarACampanha\(/g)?.length ?? 0).toBeGreaterThanOrEqual(2);

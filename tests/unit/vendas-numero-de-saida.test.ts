@@ -35,7 +35,7 @@ vi.mock("@/lib/agent-engine/db/request-pool", () => ({ getRequestPool: () => ({}
 import { executeStartMessageFlow } from "@/lib/automation/actions/start-message-flow";
 import type { ActionCtx } from "@/lib/automation/types";
 import { lerNumero } from "@/lib/campanhas/numero-disponivel";
-import { CHANNEL_PROVIDER_META } from "@/lib/channels/capabilities";
+import { CHANNEL_PROVIDER_META, CHANNEL_PROVIDER_WAHA } from "@/lib/channels/capabilities";
 import { configDaConexaoSchema } from "@/lib/vendas/config";
 import { livreParaOFluxo, numerosDeSaidaDoEvento, saidaDaVenda } from "@/lib/vendas/numero-de-saida";
 
@@ -110,6 +110,24 @@ describe("a leitura do número (extraída da rodada da campanha)", () => {
     expect((await lerNumero(admin, {} as never, "org-1", "s1", AGORA))?.aquecimentoEstourado).toBe(false);
     h.estados.s1 = { lastSentAt: null, sentToday: 20, numberActivatedAt: null };
     expect((await lerNumero(admin, {} as never, "org-1", "s1", AGORA))?.aquecimentoEstourado).toBe(true);
+  });
+});
+
+describe("aquecimento só conta em número com risco de bloqueio (o decidePacing só o arma com banRisk)", () => {
+  it("número oficial acima do degrau do aquecimento continua elegível", async () => {
+    h.degraus = [{ minAgeDays: 0, cap: 20 }];
+    h.canais.s1 = { daily_message_limit: 100, status: "WORKING", provider: CHANNEL_PROVIDER_META };
+    h.estados.s1 = { lastSentAt: null, sentToday: 25, numberActivatedAt: null };
+    expect((await lerNumero(admin, {} as never, "org-1", "s1", AGORA))?.aquecimentoEstourado).toBe(false);
+    expect(await saida(["s1"])).toEqual({ tipo: "numero", sessionId: "s1" });
+  });
+
+  it("número comum (WAHA, banRisk) acima do aquecimento continua sendo pulado", async () => {
+    h.degraus = [{ minAgeDays: 0, cap: 20 }];
+    h.canais.s1 = { daily_message_limit: 100, status: "WORKING", provider: CHANNEL_PROVIDER_WAHA };
+    h.estados.s1 = { lastSentAt: null, sentToday: 25, numberActivatedAt: null };
+    expect((await lerNumero(admin, {} as never, "org-1", "s1", AGORA))?.aquecimentoEstourado).toBe(true);
+    expect(await saida(["s1"])).toEqual({ tipo: "nenhum_livre" });
   });
 });
 

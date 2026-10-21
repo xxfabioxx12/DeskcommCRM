@@ -8,6 +8,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { decidePacing, warmupCapFor } from "@/lib/agent-engine/pacing/engine";
+import { capabilitiesOf, DEFAULT_CHANNEL_PROVIDER, type ChannelProvider } from "@/lib/channels/capabilities";
 import { loadChannelKnobs, loadPacingState } from "@/lib/agent-engine/pacing/store";
 import type { Queryable } from "@/lib/agent-engine/queue/queue";
 
@@ -22,14 +23,24 @@ export interface LeituraDoNumero {
   knobs: KnobsDoNumero;
   exigeTemplate: boolean;
   /**
-   * O número em aquecimento já mandou hoje o teto do degrau da idade dele
-   * (`warmupCapFor`, a mesma regra do `decidePacing`). À parte do `podeAgora`
-   * porque o pacing olha a janela ANTES e, fora dela, esconde o aquecimento.
+   * O número em aquecimento já mandou hoje o teto do degrau da idade dele.
+   * Mesma regra do `decidePacing`: `warmupCapFor` pela idade, e só em canal com
+   * `banRisk` (o oficial não tem aquecimento). À parte do `podeAgora` porque o
+   * pacing olha a janela ANTES e, fora dela, esconde o aquecimento.
    */
   aquecimentoEstourado: boolean;
 }
 
 const DIA_MS = 86_400_000;
+
+/** O canal arma o anti-ban? Provider ausente ou desconhecido = o default conservador da coluna, com risco. */
+function temRiscoDeBloqueio(provider: string | null): boolean {
+  try {
+    return capabilitiesOf((provider ?? DEFAULT_CHANNEL_PROVIDER) as ChannelProvider).banRisk;
+  } catch {
+    return true;
+  }
+}
 
 /** `null` = fora do rodízio: número fora do ar (mandar por ele fabricaria mensagem presa) ou de outra empresa. */
 export async function lerNumero(
@@ -65,7 +76,8 @@ export async function lerNumero(
   return {
     knobs: k,
     exigeTemplate: canalExigeTemplate(linha.provider) === true,
-    aquecimentoEstourado: tetoDoAquecimento !== null && estado.sentToday >= tetoDoAquecimento,
+    aquecimentoEstourado:
+      temRiscoDeBloqueio(linha.provider) && tetoDoAquecimento !== null && estado.sentToday >= tetoDoAquecimento,
     numero: {
       sessionId,
       folgaDoDia: linha.daily_message_limit === null ? null : Math.max(0, linha.daily_message_limit - estado.sentToday),
