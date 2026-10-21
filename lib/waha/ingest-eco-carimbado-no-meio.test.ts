@@ -169,7 +169,12 @@ function banco(opcoes: { carimbarDepoisDaLeitura?: number } = {}) {
           }
           return Promise.resolve(ok({ error: null }));
         }
-        const casadas = messages.filter((m) => casa(m, filtros));
+        // Retrato, não referência: cada linha volta COPIADA, como o banco entrega
+        // um snapshot por statement. Sem a cópia, o carimbo que cai DEPOIS desta
+        // leitura vazaria para dentro de um resultado já resolvido — e a posição
+        // k=2 mediria um efeito que não existe em produção (onde a leitura que já
+        // respondeu não enxerga o UPDATE seguinte).
+        const casadas = messages.filter((m) => casa(m, filtros)).map((m) => ({ ...m }));
         const resposta = { data: casadas, error: null };
         anotarLeitura(filtros);
         return Promise.resolve(ok(resposta));
