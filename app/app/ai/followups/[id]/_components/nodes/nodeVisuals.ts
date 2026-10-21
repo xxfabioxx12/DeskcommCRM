@@ -286,6 +286,10 @@ export function describeNodeConfig(
       const c = config as ConfigOf<"action">;
       if (c.mode === "ai_message") return c.prompt_hint;
       if (c.mode === "text") return c.body;
+      if (c.mode === "mensagem") {
+        const partes = [c.modelo?.name, c.texto?.body].filter((p): p is string => !!p);
+        return partes.length ? partes.join(" · ") : t("sem mensagem escolhida");
+      }
       return t("Template fixo");
     }
     case "internal_task": {

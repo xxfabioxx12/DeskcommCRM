@@ -243,10 +243,41 @@ export const aiClassifyConfigSchema = z
   );
 
 /**
+ * Parte 1 do motor de fluxo — o passo "Mensagem" com DUAS versões, e o worker
+ * escolhe pela capacidade do número da conversa (`requiresTemplates`):
+ *
+ * - `modelo`: template APROVADO (nome + idioma), o carimbo do contrato no momento
+ *   da escolha (contrato diferente no envio = recusa, como na campanha) e o mapa
+ *   lacuna → expressão com as variáveis da campanha;
+ * - `texto`: texto livre com as mesmas variáveis, para o número comum.
+ *
+ * As duas são opcionais no RASCUNHO (o painel grava a cada tecla); o publish
+ * exige pelo menos uma (`mensagem_sem_versao`).
+ */
+export const modeloDaMensagemSchema = z.strictObject({
+  name: z.string().min(1).max(512),
+  language: z.string().min(1).max(20),
+  contract_hash: z.string().min(1).max(200),
+  slot_map: z.record(z.string().min(1).max(64), z.string().max(1000)),
+});
+
+export const textoDaMensagemSchema = z.strictObject({
+  body: z.string().min(1).max(4000),
+});
+
+export const mensagemDoPassoSchema = z.strictObject({
+  modelo: modeloDaMensagemSchema.optional(),
+  texto: textoDaMensagemSchema.optional(),
+});
+
+export type MensagemDoPasso = z.infer<typeof mensagemDoPassoSchema>;
+
+/**
  * Action node configuration schema.
  * - text: send this body as-is (no model)
  * - ai_message: generate a message using AI with a prompt hint
  * - template: send a canned message from Ajustes → Modelos
+ * - mensagem: template no número oficial, texto no comum
  */
 export const actionConfigSchema = z.discriminatedUnion('mode', [
   z.strictObject({
@@ -268,6 +299,11 @@ export const actionConfigSchema = z.discriminatedUnion('mode', [
   z.strictObject({
     mode: z.literal('template'),
     template_id: z.string().uuid(),
+  }),
+  z.strictObject({
+    mode: z.literal('mensagem'),
+    modelo: modeloDaMensagemSchema.optional(),
+    texto: textoDaMensagemSchema.optional(),
   }),
 ]);
 

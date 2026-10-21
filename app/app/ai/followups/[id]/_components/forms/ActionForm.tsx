@@ -165,6 +165,8 @@ export function ActionForm({
     fallbackTemplateId: string;
     templateId: string;
   }) => {
+    // o modo `mensagem` grava direto no onValueChange; o commit só monta os três antigos
+    if (next.mode === "mensagem") return;
     const candidate =
       next.mode === "text"
         ? {
@@ -199,6 +201,10 @@ export function ActionForm({
           onValueChange={(v) => {
             const next = v as ModoDaAcao;
             setMode(next);
+            if (next === "mensagem") {
+              onChange({ mode: "mensagem" });
+              return;
+            }
             commit({ mode: next, ...fields });
           }}
         >

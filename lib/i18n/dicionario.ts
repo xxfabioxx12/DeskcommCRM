@@ -16334,6 +16334,8 @@ export const DICIONARIO: Traducoes = {
   "Não conseguiu gravar a etiqueta": { es: "No pudo grabar la etiqueta" },
   "sem campo escolhido": { es: "sin campo elegido" },
   "Não conseguiu gravar o campo": { es: "No pudo grabar el campo" },
+  "Mensagem: template no número oficial, texto no comum": { es: "Mensaje: plantilla en el número oficial, texto en el común" },
+  "sem mensagem escolhida": { es: "sin mensaje elegido" },
   // #2744 — compositor: template escolhido sem nome para interpolar.
   "Contato sem nome no CRM: {{nome}}/{{primeiro_nome}} ficaram literais no texto. Edite antes de enviar.": {
     es: "Contacto sin nombre en el CRM: {{nome}}/{{primeiro_nome}} quedaron como texto literal en el mensaje. Edítalo antes de enviar.",

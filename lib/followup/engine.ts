@@ -20,7 +20,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { idsDoContatoEGemeos } from "@/lib/channels/contato-por-telefone";
 import { logger } from "@/lib/logger";
 
-import { flowGraphSchema, type FlowGraph, type FlowNode, type ReplySaveTo } from "./graph-schema";
+import { flowGraphSchema, type FlowGraph, type FlowNode, type MensagemDoPasso, type ReplySaveTo } from "./graph-schema";
 import { TETO_DE_PASSOS_DO_MOTOR } from "./custo-no-motor";
 import {
   ACTION_RECHECK_MS,
@@ -125,6 +125,14 @@ export interface FollowupJobRequest {
      * fechada). O turno resolve qual dos dois é e envia sem modelo de IA.
      */
     template_id?: string;
+    /**
+     * action (mode 'mensagem') — Parte 1 do motor de fluxo: as DUAS versões
+     * (template do número oficial, texto do número comum). Vai SEM `fixed_body`
+     * de propósito: quem escolhe a versão e resolve as variáveis é o worker
+     * (`followup-turn.ts`), que sabe o número da conversa; e sem `fixed_body` o
+     * atalho inline (`enviar-texto-fixo.ts`) não pega este job.
+     */
+    mensagem?: MensagemDoPasso;
     volta_index?: number;
     volta_total?: number;
     /** ai_classify — Task 5.1: classes possíveis + dica opcional pro classificador. */
@@ -399,6 +407,14 @@ function turnPayloadExtras(
     return {
       template_id: node.config.template_id,
       ...(volta ? { volta_index: volta.index, volta_total: volta.total } : {}),
+    };
+  }
+  if (node.type === "action" && node.config.mode === "mensagem") {
+    return {
+      mensagem: {
+        ...(node.config.modelo ? { modelo: node.config.modelo } : {}),
+        ...(node.config.texto ? { texto: node.config.texto } : {}),
+      },
     };
   }
   if (node.type === "ai_classify") {

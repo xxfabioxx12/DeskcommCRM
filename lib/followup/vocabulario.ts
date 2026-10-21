@@ -620,6 +620,7 @@ export const MODOS_DA_ACAO: Record<ModoDaAcao, string> = {
   text: "Texto fixo",
   ai_message: "Mensagem escrita pela IA",
   template: "Modelo de mensagem pronto",
+  mensagem: "Mensagem: template no número oficial, texto no comum",
 };
 
 // ─── etiqueta no fluxo (nó edit_lead_tag, Parte 1 do motor de fluxo) ──────
