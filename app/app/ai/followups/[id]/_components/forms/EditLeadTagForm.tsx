@@ -57,9 +57,9 @@ export function EditLeadTagForm({ config, onChange }: { config: Config; onChange
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {opcoes(OPERACOES_DA_ETIQUETA).map(({ valor, rotulo }) => (
+            {opcoes(OPERACOES_DA_ETIQUETA).map(({ valor }) => (
               <SelectItem key={valor} value={valor}>
-                {t(rotulo)}
+                {t(OPERACOES_DA_ETIQUETA[valor])}
               </SelectItem>
             ))}
           </SelectContent>
@@ -75,9 +75,9 @@ export function EditLeadTagForm({ config, onChange }: { config: Config; onChange
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {opcoes(DESTINOS_DA_ETIQUETA).map(({ valor, rotulo }) => (
+            {opcoes(DESTINOS_DA_ETIQUETA).map(({ valor }) => (
               <SelectItem key={valor} value={valor}>
-                {t(rotulo)}
+                {t(DESTINOS_DA_ETIQUETA[valor])}
               </SelectItem>
             ))}
           </SelectContent>
