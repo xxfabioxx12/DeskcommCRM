@@ -49,6 +49,19 @@ const PARES: Array<{
   simbolo: string;
 }> = [
   {
+    // Parte 2 da migração do ManyChat (fork 9003).
+    tabela: "sales_events",
+    coluna: "status",
+    arquivo: "lib/vendas/eventos.ts",
+    simbolo: "STATUS_DO_EVENTO_DE_VENDA",
+  },
+  {
+    tabela: "sales_events",
+    coluna: "plataforma",
+    arquivo: "lib/vendas/eventos.ts",
+    simbolo: "PLATAFORMAS_DE_VENDA",
+  },
+  {
     tabela: "ad_platform_connections",
     coluna: "google_api",
     arquivo: "lib/plataformas-de-anuncio/types.ts",
