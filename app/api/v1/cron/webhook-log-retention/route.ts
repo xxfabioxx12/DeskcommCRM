@@ -139,6 +139,19 @@ export async function GET(req: NextRequest): Promise<Response> {
     avisaSentry(err, requestId, "webhook_events_log");
   }
 
+  // Os dados da pessoa nas VENDAS (fork 9003): 30 dias e saem. Roda ANTES de
+  // qualquer retorno (a LGPD não espera outra poda). A falha é dita pelos três
+  // canais (log, trilha, Sentry) e não derruba as podas que já rodaram. `audit()` fica no `catch` (guarda de classe).
+  let vendas: { limpas: number } | null = null;
+  try {
+    vendas = { limpas: await limparDadosDasVendas(admin, lote) };
+  } catch (err) {
+    const detalhe = err instanceof Error ? err.message : String(err);
+    registraFalhaDePoda("eventos de venda", err, requestId);
+    void audit(linhaDeFalhaDePoda("sales_events", detalhe, requestId));
+    avisaSentry(err, requestId, "sales_events");
+  }
+
   // O HISTÓRICO de captação (`webhook_lead_captures`) roda no MESMO tique, e
   // não num cron novo: são duas tabelas do mesmo assunto, e uma rota a mais
   // seria mais uma linha no `entrypoint.sh` do scheduler para alguém esquecer
@@ -181,6 +194,7 @@ export async function GET(req: NextRequest): Promise<Response> {
         // uma da outra na tela do operador: a do arquivo forense já foi
         // reportada acima, e o 200 não vai mascará-la.
         arquivo_forense_falhou: falhaDoArquivo,
+        vendas,
       },
     });
   }
@@ -189,19 +203,6 @@ export async function GET(req: NextRequest): Promise<Response> {
   // MESMO motivo de quando a captação falha — a poda que segura o espaço é a
   // que o operador precisa ver parada — e o que a captação conseguiu vem em
   // `details` para não se perder com ela.
-  // Os dados da pessoa nas VENDAS (fork 9003): 30 dias e saem. Mesmo tique, como
-  // a captação; a falha é dita pelos três canais (log, trilha, Sentry) e não
-  // derruba as podas que já rodaram. `audit()` fica no `catch` (guarda de classe).
-  let vendas: { limpas: number } | null = null;
-  try {
-    vendas = { limpas: await limparDadosDasVendas(admin, lote) };
-  } catch (err) {
-    const detalhe = err instanceof Error ? err.message : String(err);
-    registraFalhaDePoda("eventos de venda", err, requestId);
-    void audit(linhaDeFalhaDePoda("sales_events", detalhe, requestId));
-    avisaSentry(err, requestId, "sales_events");
-  }
-
   if (falhaDoArquivo) {
     return fail("internal_error", "webhook_events_log_retention_failed", 500, {
       requestId,

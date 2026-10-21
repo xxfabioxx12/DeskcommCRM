@@ -14,5 +14,6 @@ export async function limparDadosDasVendas(admin: SupabaseClient, lote: number):
     p_lote: lote,
   });
   if (error) throw new Error(`sales_events: ${error.message}`);
-  return typeof data === "number" ? data : Number(data ?? 0);
+  const n = Number(data ?? 0);
+  return Number.isFinite(n) ? n : 0;
 }

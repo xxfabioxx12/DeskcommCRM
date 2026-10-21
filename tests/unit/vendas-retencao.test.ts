@@ -18,15 +18,16 @@ vi.mock("@/lib/channels/retencao-do-arquivo", () => ({
   podarArquivoDeWebhooks: async () => ({ esvaziadas: 0, apagadas: 0, temMais: false }),
 }));
 vi.mock("@/lib/webhooks/retencao-da-captacao", () => ({
-  podarHistoricoDeCaptacao: async () => ({ apagadas: 0, temMais: false, diasAplicados: 365 }),
+  podarHistoricoDeCaptacao: () => h.captacao(),
 }));
-const h = vi.hoisted(() => ({ rpc: vi.fn() }));
+const h = vi.hoisted(() => ({ rpc: vi.fn(), captacao: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({ rpc: h.rpc }) }));
 
 import { DIAS_DOS_DADOS_DA_VENDA, limparDadosDasVendas } from "@/lib/vendas/retencao";
 
 beforeEach(() => {
   h.rpc.mockReset();
+  h.captacao.mockReset().mockResolvedValue({ apagadas: 0, temMais: false, diasAplicados: 365 });
   av.audit.mockClear();
   av.captureException.mockClear();
 });
@@ -37,6 +38,11 @@ describe("limparDadosDasVendas", () => {
     expect(await limparDadosDasVendas({ rpc: h.rpc } as never, 50)).toBe(3);
     expect(DIAS_DOS_DADOS_DA_VENDA).toBe(30);
     expect(h.rpc).toHaveBeenCalledWith("fn_vendas_limpar_dados_vencidos", { p_dias: 30, p_lote: 50 });
+  });
+
+  it("resposta que não é número finito vira 0", async () => {
+    h.rpc.mockResolvedValue({ data: "lixo", error: null });
+    expect(await limparDadosDasVendas({ rpc: h.rpc } as never, 50)).toBe(0);
   });
 
   it("falha do banco sobe com o nome da tabela", async () => {
@@ -65,7 +71,10 @@ describe("o cron de retenção", () => {
     h.rpc.mockResolvedValue({ data: null, error: { message: "boom" } });
     const res = await chamarCron();
     expect(res.status).toBe(200);
-    expect((await res.json()).data.vendas).toBeNull();
+    const corpo = (await res.json()).data;
+    expect(corpo.vendas).toBeNull();
+    expect(corpo.captacao).toBeDefined();
+    expect(corpo).toHaveProperty("esvaziadas");
     // F19: o mesmo aviso das outras podas (trilha + Sentry), não só o log.
     expect(av.audit).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -75,5 +84,14 @@ describe("o cron de retenção", () => {
     );
     await vi.waitFor(() => expect(av.captureException).toHaveBeenCalledTimes(1));
     expect(av.captureException.mock.calls[0]?.[1]).toMatchObject({ tags: { subsystem: "retencao", poda: "sales_events" } });
+  });
+
+  it("a captação falha: a limpeza das vendas roda mesmo assim e vem no details do 500", async () => {
+    h.captacao.mockRejectedValue(new Error("captacao quebrou"));
+    h.rpc.mockResolvedValue({ data: 4, error: null });
+    const res = await chamarCron();
+    expect(res.status).toBe(500);
+    expect(h.rpc).toHaveBeenCalledWith("fn_vendas_limpar_dados_vencidos", expect.anything());
+    expect((await res.json()).error.details.vendas).toEqual({ limpas: 4 });
   });
 });
