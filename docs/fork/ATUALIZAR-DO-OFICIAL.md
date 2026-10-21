@@ -1,8 +1,10 @@
 # Trazer uma versão nova do oficial para este fork
 
-Este fork tem uma mudança que o oficial não tem: a campanha com template aprovado
-da Meta. Ela precisa de colunas novas na tabela `campaigns`, criadas pela migration
-**9001** (`supabase/migrations/20261021130704_9001_campanha_com_template.sql`).
+Este fork tem mudanças que o oficial não tem, cada uma numa migration da faixa
+**9000**: a **9001** (`supabase/migrations/20261021130704_9001_campanha_com_template.sql`,
+colunas novas em `campaigns`) e, a partir da Parte 1 do motor de fluxo, a **9002**
+(`supabase/migrations/20261021150000_9002_etiquetas_e_campos_do_fluxo.sql`, funções de
+tirar etiqueta e gravar campo).
 
 O número 9001 é de propósito. O oficial numera as migrations em sequência (0703,
 0704, 0705...). Se a nossa usasse o próximo número da fila, a próxima versão do
@@ -13,7 +15,8 @@ Os arquivos abaixo existem só para esta instalação. **Não entram em nenhum P
 oficial:**
 
 - `supabase/migrations/20261021130704_9001_campanha_com_template.sql`
-- `supabase/fork/9001.sql` (cópia exata do bloco que vai no fim do `baseline.sql`)
+- `supabase/migrations/20261021150000_9002_etiquetas_e_campos_do_fluxo.sql`
+- `supabase/fork/9NNN.sql` (cópia exata de cada bloco que vai no `baseline.sql`)
 - `scripts/fork/reaplicar-bloco-do-fork.sh`
 - este documento
 
@@ -31,9 +34,9 @@ oficial:**
    git rebase vX.Y.Z      # ou: git merge vX.Y.Z
    ```
 
-3. **Conflito no fim do `supabase/baseline.sql`.** É o conflito esperado: o oficial
-   acrescentou coisas no fim do arquivo e nós também. Fique com a versão deles e
-   recoloque o nosso bloco no fim:
+3. **Conflito no `supabase/baseline.sql`.** É o conflito esperado: o oficial
+   acrescentou coisas no arquivo e nós também. Fique com a versão deles e
+   recoloque os nossos blocos:
 
    ```bash
    git checkout --theirs supabase/baseline.sql   # no merge
@@ -43,9 +46,11 @@ oficial:**
    git add supabase/baseline.sql
    ```
 
-   O script só acrescenta o bloco se ele não estiver lá, igual ao que está em
-   `supabase/fork/9001.sql`. Nunca edite o bloco à mão no baseline: se precisar
-   mudar, mude a migration, o `supabase/fork/9001.sql` e o baseline juntos.
+   O script reaplica TODOS os blocos de `supabase/fork/`, em ordem: bloco sem função
+   vai no fim; bloco com função (como o 9002) entra logo antes do bloco
+   `-- ---- VARREDURA anon:` — depois dela, a função nasceria exposta à anon key.
+   Bloco que já está lá é pulado. Nunca edite um bloco à mão no baseline: se precisar
+   mudar, mude a migration, o `supabase/fork/9NNN.sql` e o baseline juntos.
 
 4. **Confira se o oficial lançou a própria campanha com template.** Procure se a
    versão nova já cria alguma das colunas `message_mode`, `template_name`,
@@ -54,6 +59,13 @@ oficial:**
 
    ```bash
    git grep -n "message_mode\|template_slot_map\|template_contract_hash" -- supabase/migrations ':!*9001*'
+   ```
+
+   Confira também se o oficial lançou as próprias funções de tirar etiqueta e gravar
+   campo (as da 9002):
+
+   ```bash
+   git grep -n "fn_contato_remover_etiquetas\|fn_lead_remover_etiquetas\|fn_contato_anotar_campos" -- supabase/migrations ':!*9002*'
    ```
 
    Se aparecer alguma coisa, **pare**. Não aplique nada no banco. As duas versões
@@ -69,6 +81,8 @@ oficial:**
      tests/unit/manifest-x-migrations.test.ts \
      tests/unit/main-sem-migration-duplicada.test.ts \
      tests/unit/campanha-template-migration.test.ts \
+     tests/unit/blocos-do-fork.test.ts \
+     tests/unit/fork-9002-etiquetas-e-campos.test.ts \
      tests/unit/baseline-reaplicavel.test.ts
    pnpm cercas
    pnpm test:unit
