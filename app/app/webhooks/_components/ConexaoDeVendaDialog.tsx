@@ -33,6 +33,7 @@ import {
 } from "@/lib/vendas/eventos";
 import {
   CAMPOS_SIMPLES_DO_MAPA,
+  linhasEmPares,
   ROTULO_DO_CAMPO_DO_MAPA,
   mapaDaTela,
   telaDoMapa,
@@ -99,7 +100,21 @@ export function ConexaoDeVendaDialog({ conexao, open, onOpenChange }: Props) {
       const atual = mapa.caminhos[campo]?.trim() ?? "";
       if (!atual) delete resultado[campo];
       // Campo que a pessoa não mexeu fica como foi gravado (pode ser uma lista de caminhos).
-      else if (atual === (gravadoNaTela.caminhos[campo] ?? "") && campo in gravado) resultado[campo] = gravado[campo];
+      else if (atual === (gravadoNaTela.caminhos[campo] ?? "") && campo in gravado) {
+        const bruto = gravado[campo];
+        // O valor leva o formato da tela por cima do caminho gravado.
+        resultado[campo] =
+          campo === "valor"
+            ? { path: bruto && typeof bruto === "object" && !Array.isArray(bruto) ? (bruto as { path: unknown }).path : bruto, formato: mapa.formatoDoValor }
+            : bruto;
+      }
+    }
+    const extrasGravados = (gravado.extras ?? {}) as Record<string, unknown>;
+    const extrasTela = linhasEmPares(mapa.extras);
+    for (const [nome, caminho] of Object.entries(extrasTela)) {
+      const antigo = extrasGravados[nome];
+      const primeiro = Array.isArray(antigo) ? antigo[0] : antigo;
+      if (antigo !== undefined && primeiro === caminho) (resultado.extras as Record<string, unknown>)[nome] = antigo;
     }
     if (!mapa.eventoFixo && !mapa.eventoCaminho.trim()) delete resultado.evento;
     if (!mapa.extras.trim()) delete resultado.extras;

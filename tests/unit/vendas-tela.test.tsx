@@ -236,4 +236,28 @@ describe("aba Vendas — editar não apaga o que a tela não mostra", () => {
     const enviado = (h.atualizar.mock.calls[0] as unknown as [{ config: { seguranca: { tolerancia_s: number } } }])[0];
     expect(enviado.config.seguranca.tolerancia_s).toBe(300);
   });
+
+  it("trocar só o formato do valor envia o formato novo e o caminho gravado; extras não mexidos mantêm as listas", async () => {
+    h.conexoes = [
+      {
+        ...FLIX,
+        config: {
+          ...FLIX.config,
+          mapa: {
+            ...FLIX.config.mapa,
+            valor: { path: ["data.v1", "data.v2"], formato: "reais" },
+            extras: { link: ["data.l1", "data.l2"], codigo: "data.c" },
+          },
+        },
+      },
+    ];
+    const user = montar();
+    await user.click(screen.getByText("Flix"));
+    await user.click(screen.getByRole("combobox", { name: "Formato do valor" }));
+    await user.click(await screen.findByRole("option", { name: "Em centavos" }));
+    await user.click(screen.getByRole("button", { name: "Salvar" }));
+    const mapa = (h.atualizar.mock.calls[0] as unknown as [{ config: { mapa: Record<string, unknown> } }])[0].config.mapa;
+    expect(mapa.valor).toEqual({ path: ["data.v1", "data.v2"], formato: "centavos" });
+    expect(mapa.extras).toEqual({ link: ["data.l1", "data.l2"], codigo: "data.c" });
+  });
 });
