@@ -1,6 +1,8 @@
 /**
  * O `BancoDaVenda` de produção, sobre o client de serviço do Supabase. Toda
- * consulta filtra a organização à mão (o client de serviço contorna a RLS).
+ * consulta filtra a organização à mão (o client de serviço contorna a RLS), exceto
+ * `concluir` e `marcarRecebimento`, que atualizam pelo id vindo de origem confiável
+ * (o retorno do insert e a conexão achada pelo path_token).
  *
  * O contato é procurado como a captação procura (`app/api/v1/webhooks/in/[token]/route.ts`,
  * upsert por telefone e depois por e-mail): telefone pelas DUAS grafias do
@@ -31,12 +33,13 @@ export function bancoDaVenda(admin: SupabaseClient): BancoDaVendaSupabase {
     if (chaves.telefone) {
       const achado = await encontrarContatoPorTelefoneComNome(admin, organizationId, chaves.telefone);
       if (achado) {
-        const { data } = await admin
+        const { data, error } = await admin
           .from("contacts")
           .select(COLUNAS_DO_CONTATO)
           .eq("id", achado.id)
           .eq("organization_id", organizationId)
           .maybeSingle();
+        if (error) throw new Error(`contacts: ${error.message}`);
         if (data) return data as unknown as ContatoExistente;
       }
     }
@@ -89,7 +92,7 @@ export function bancoDaVenda(admin: SupabaseClient): BancoDaVendaSupabase {
     async jaComprou(busca) {
       const aprovadas = () =>
         admin.from("sales_events").select("id").eq("evento", "compra.aprovada").eq("teste", false).limit(1);
-      const mesmoPedido = await aprovadas().eq("webhook_source_id", busca.conexaoId).eq("entidade", busca.entidade);
+      const mesmoPedido = await aprovadas().eq("organization_id", busca.organizationId).eq("webhook_source_id", busca.conexaoId).eq("entidade", busca.entidade);
       if (mesmoPedido.error) throw new Error(`sales_events: ${mesmoPedido.error.message}`);
       if ((mesmoPedido.data ?? []).length > 0) return true;
       for (const [coluna, valor] of [
@@ -163,6 +166,7 @@ export function bancoDaVenda(admin: SupabaseClient): BancoDaVendaSupabase {
       const { data } = await admin
         .from("sales_events")
         .select("id")
+        .eq("organization_id", conexao.organizationId)
         .eq("webhook_source_id", conexao.id)
         .eq("status", "recusado")
         .gte("recebido_em", desde)
@@ -173,7 +177,7 @@ export function bancoDaVenda(admin: SupabaseClient): BancoDaVendaSupabase {
         webhook_source_id: conexao.id,
         plataforma: conexao.plataforma,
         status: "recusado",
-        motivo: motivo.slice(0, 500),
+        motivo: Array.from(motivo).slice(0, 500).join(""),
       });
       if (error) logger.warn("[vendas] não foi possível registrar a recusa", { conexaoId: conexao.id, error: error.message });
     },

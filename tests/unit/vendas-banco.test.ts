@@ -64,6 +64,14 @@ describe("acharContato", () => {
   });
 });
 
+describe("releitura por telefone", () => {
+  it("erro na releitura sobe, em vez de cair para criar contato", async () => {
+    h.porTelefone.mockResolvedValue({ id: "c1", phone_number: "+5531999998888", name: null });
+    const g = supabaseGravador(() => ({ error: { message: "timeout" } }));
+    await expect(bancoDaVenda(g.admin).acharContato("org-1", { telefone: "+5531999998888", email: null })).rejects.toThrow("contacts: timeout");
+  });
+});
+
 describe("criar e completar o contato", () => {
   it("cria com origem anotada; corrida (23505) devolve quem ganhou", async () => {
     const g = supabaseGravador((_t, chamadas) =>
@@ -128,6 +136,16 @@ describe("jaComprou (Divergência D3)", () => {
     expect(usou(g.log, "sales_events", "gte", "recebido_em", "2026-10-21T09:00:00.000Z")).toBe(true);
   });
 
+  it("mesmo pedido e consulta por pessoa filtram a organização (telefone casa, e-mail nulo)", async () => {
+    const respostas: unknown[][] = [[], [{ id: "x" }]];
+    const g = supabaseGravador(() => ({ data: respostas.shift() ?? [] }));
+    expect(await bancoDaVenda(g.admin).jaComprou({ ...busca, email: null })).toBe(true);
+    const orgs = g.log.filter((c) => c.metodo === "eq" && c.args[0] === "organization_id");
+    expect(orgs).toHaveLength(2);
+    expect(usou(g.log, "sales_events", "eq", "telefone", "+5531999998888")).toBe(true);
+    expect(g.log.some((c) => c.args[0] === "email")).toBe(false);
+  });
+
   it("sem produto: qualquer produto; ninguém: não", async () => {
     const g = supabaseGravador(() => ({ data: [] }));
     expect(await bancoDaVenda(g.admin).jaComprou({ ...busca, produtoId: null })).toBe(false);
@@ -139,6 +157,7 @@ describe("recusa e gatilho", () => {
   it("recusa: no máximo uma linha por minuto, sem payload", async () => {
     const comRecente = supabaseGravador((_t, chamadas) => (chamadas.some((c) => c.metodo === "insert") ? {} : { data: [{ id: "r" }] }));
     await bancoDaVenda(comRecente.admin).registrarRecusa(CONEXAO, "hottok não confere");
+    expect(usou(comRecente.log, "sales_events", "eq", "organization_id", "org-1")).toBe(true);
     expect(comRecente.log.some((c) => c.metodo === "insert")).toBe(false);
 
     const sem = supabaseGravador(() => ({ data: [] }));
