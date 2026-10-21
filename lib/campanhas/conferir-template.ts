@@ -35,8 +35,9 @@ import {
   conferirMapaDeSlots,
   limparMapaDeSlots,
   slotsDoContrato,
+  type SlotDoModelo,
 } from "./template-da-campanha";
-import { renderizar, temChaveSolta } from "./renderizador";
+import { problemaDasExpressoes } from "./renderizador";
 import {
   type FalhaDeTemplateDaCampanha,
   type ModoDaMensagem,
@@ -143,7 +144,18 @@ export interface LinhaDoModelo {
   saved_values: unknown;
 }
 
-export const COLUNAS_DO_MODELO = "name, language, status, contract_hash, components, parameter_format, saved_values";
+/** As colunas de `meta_templates` que a campanha e o fluxo leem. A LISTA serve ao `pg` (`definicaoNaConexao`). */
+export const COLUNAS_DO_MODELO_LISTA = [
+  "name",
+  "language",
+  "status",
+  "contract_hash",
+  "components",
+  "parameter_format",
+  "saved_values",
+] as const;
+
+export const COLUNAS_DO_MODELO = COLUNAS_DO_MODELO_LISTA.join(", ");
 
 /** O que a preparação e o teste precisam da definição conferida. */
 export interface DefinicaoDaCampanha {
@@ -255,6 +267,41 @@ export function conferirLinhaDoModelo(
   return { ok: true, linha, contrato, salvos: mescla.ok ? mescla.valores : {} };
 }
 
+/** Por que UM número não pode mandar este template com este mapa. */
+export type FalhaDoModeloComMapa =
+  | { tipo: "vinculo"; estado: Exclude<BindingState, "ok"> }
+  | { tipo: "midia_sem_link" | "tipo_nao_suportado" | "variaveis_faltando" | "variaveis_sobrando" };
+
+export type ConferenciaDoModeloComMapa =
+  | {
+      ok: true;
+      linha: LinhaDoModelo;
+      contrato: ReturnType<typeof deriveTemplateContract>;
+      salvos: Record<string, string>;
+      preencher: SlotDoModelo[];
+    }
+  | { ok: false; falha: FalhaDoModeloComMapa };
+
+/**
+ * O vínculo (`conferirLinhaDoModelo`), o que o template pede (só texto/sufixo/
+ * cupom; mídia só com link salvo) e o mapa (toda lacuna com expressão, nenhuma
+ * sobrando) — numa linha do espelho. É a ÚNICA régua: a campanha (por número do
+ * rodízio), a publicação do fluxo (na conta) e o worker do fluxo (no número da
+ * conversa) chamam esta função.
+ */
+export function conferirModeloComMapa(
+  vinculo: Pick<ConteudoDaCampanha, "templateName" | "templateLanguage" | "templateContractHash" | "slotMap">,
+  linha: LinhaDoModelo | null,
+): ConferenciaDoModeloComMapa {
+  const conferida = conferirLinhaDoModelo(vinculo, linha);
+  if (!conferida.ok) return { ok: false, falha: { tipo: "vinculo", estado: conferida.estado } };
+  const avaliacao = avaliarModeloParaCampanha(slotsDoContrato(conferida.contrato), conferida.salvos);
+  if (!avaliacao.usavel) return { ok: false, falha: { tipo: avaliacao.motivo } };
+  const mapa = conferirMapaDeSlots(avaliacao.preencher, vinculo.slotMap);
+  if (mapa) return { ok: false, falha: { tipo: mapa.tipo === "faltando" ? "variaveis_faltando" : "variaveis_sobrando" } };
+  return { ok: true, linha: conferida.linha, contrato: conferida.contrato, salvos: conferida.salvos, preencher: avaliacao.preencher };
+}
+
 export function avaliarConteudoDaCampanha(
   conteudo: ConteudoDaCampanha,
   sessoes: ReadonlyArray<{ id: string; provider: string | null }>,
@@ -280,45 +327,24 @@ export function avaliarConteudoDaCampanha(
     null;
   for (const sessao of sessoes) {
     // Cada número tem a SUA linha (parceiro: por conexão) e pode ter outro link de mídia salvo.
-    const conferida = conferirLinhaDoModelo(conteudo, linhas.get(sessao.id) ?? null);
-    if (!conferida.ok) return recusaDoVinculo(conferida.estado);
-    const { linha: atual, contrato, salvos } = conferida;
-    const avaliacao = avaliarModeloParaCampanha(slotsDoContrato(contrato), salvos);
+    const conferida = conferirModeloComMapa(conteudo, linhas.get(sessao.id) ?? null);
     const doExtra = principal !== null;
-    if (!avaliacao.usavel) {
+    if (!conferida.ok) {
+      if (conferida.falha.tipo === "vinculo") return recusaDoVinculo(conferida.falha.estado);
       return recusa(
         "campanha_template_invalido",
-        doExtra ? MENSAGENS_DA_CONFERENCIA.problema_em_numero_extra : MENSAGENS_DA_CONFERENCIA[avaliacao.motivo],
+        doExtra ? MENSAGENS_DA_CONFERENCIA.problema_em_numero_extra : MENSAGENS_DA_CONFERENCIA[conferida.falha.tipo],
         422,
       );
     }
-    const mapa = conferirMapaDeSlots(avaliacao.preencher, conteudo.slotMap);
-    if (mapa) {
-      return recusa(
-        "campanha_template_invalido",
-        doExtra
-          ? MENSAGENS_DA_CONFERENCIA.problema_em_numero_extra
-          : mapa.tipo === "faltando"
-            ? MENSAGENS_DA_CONFERENCIA.variaveis_faltando
-            : MENSAGENS_DA_CONFERENCIA.variaveis_sobrando,
-        422,
-      );
-    }
-    principal ??= { linha: atual, contrato, salvos };
+    principal ??= { linha: conferida.linha, contrato: conferida.contrato, salvos: conferida.salvos };
   }
   if (!principal) return recusaDoVinculo("missing");
   const { linha: linhaPrincipal, contrato, salvos } = principal;
 
-  // P17: variável que o renderizador não conhece sairia literal para o cliente.
-  // Chave que sobra depois dos tokens válidos ({{nome completo}}) também sairia literal.
-  for (const expressao of Object.values(conteudo.slotMap)) {
-    if (temChaveSolta(expressao)) {
-      return recusa("campanha_template_invalido", MENSAGENS_DA_CONFERENCIA.variavel_mal_escrita, 422);
-    }
-    if (renderizar(expressao, { nome: "x" }).desconhecidas.length > 0) {
-      return recusa("campanha_template_invalido", MENSAGENS_DA_CONFERENCIA.variavel_desconhecida, 422);
-    }
-  }
+  // P17: variável que o renderizador não conhece (ou chave sobrando) sairia literal para o cliente.
+  const problema = problemaDasExpressoes(Object.values(conteudo.slotMap));
+  if (problema) return recusa("campanha_template_invalido", MENSAGENS_DA_CONFERENCIA[problema], 422);
   return {
     ok: true,
     definicao: {
