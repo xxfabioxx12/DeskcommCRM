@@ -36,7 +36,10 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
   if (!campoValido(campo) || valor.trim() === "") {
     return { type: TIPO, status: "skipped", detail: { reason: "missing_config" } };
   }
-  const semAlvo = { type: TIPO, status: "skipped" as const, detail: { reason: destino === "contato" ? "no_contact" : "no_lead" } };
+  const semAlvo: ActionResultDetail =
+    destino === "contato"
+      ? { type: TIPO, status: "skipped", detail: { reason: "no_contact" } }
+      : { type: TIPO, status: "skipped", detail: { reason: "no_lead" } };
   const alvo = alvoDaEscrita(ctx.context, destino, { cardSemNegocioUsaContato: false });
   if (!alvo) return semAlvo;
 
@@ -45,7 +48,9 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
   const fuso = USA_SAUDACAO.test(valor) ? await fusoDaOrg(ctx) : fusoDaOrganizacao(null);
   const renderizado = renderizarValorDoCampo(valor, ctx.context, { agora: new Date(), fuso });
   if (!renderizado.ok) {
-    return { type: TIPO, status: "failed", error: `falta o dado: ${renderizado.faltando.join(", ")}` };
+    // Texto de gente (não código): a guarda de motivos não cobra frase do mapa para ele.
+    const erro = `falta o dado: ${renderizado.faltando.join(", ")}`;
+    return { type: TIPO, status: "failed", error: erro };
   }
 
   const gravado = await anotarCampo(ctx.admin, { organizationId: ctx.organizationId, alvo, campo, valor: renderizado.valor });

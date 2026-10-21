@@ -108,6 +108,7 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
     "A ação não recebeu o que precisava (o lead do evento ou a pessoa configurada). Abra a automação e revise.",
   no_tags: "Esta ação não tem nenhuma etiqueta escolhida. Abra a automação e escolha pelo menos uma.",
   no_target: "O evento que disparou a regra não trouxe um lead nem um contato para etiquetar.",
+  no_lead: "O evento que disparou a regra não trouxe um card (negócio) para gravar o campo.",
   no_lead_or_contact: "O evento que disparou a regra não trouxe um lead para criar ou mover.",
   cross_pipeline_move_not_allowed: "Mover um lead para outro funil está desligado nesta organização.",
   /*

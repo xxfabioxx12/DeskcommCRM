@@ -6300,6 +6300,9 @@ export const DICIONARIO: Traducoes = {
   "O evento que disparou a regra não trouxe um lead nem um contato para etiquetar.": {
     es: "El evento que disparó la regla no incluyó un lead ni un contacto para etiquetar.",
   },
+  "O evento que disparou a regra não trouxe um card (negócio) para gravar o campo.": {
+    es: "El evento que disparó la regla no incluyó una tarjeta (negocio) para guardar el campo.",
+  },
   "O evento que disparou a regra não trouxe um lead para criar ou mover.": {
     es: "El evento que disparó la regla no incluyó un lead para crear o mover.",
   },

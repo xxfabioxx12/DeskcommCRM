@@ -22,15 +22,19 @@ import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
 
 const TIPO = "remove_tag";
 
+/** Motivos literais (a guarda de frases varre literais, não ternários). */
+function semAlvo(destino: "card" | "contato"): ActionResultDetail {
+  if (destino === "contato") return { type: TIPO, status: "skipped", detail: { reason: "no_contact" } };
+  return { type: TIPO, status: "skipped", detail: { reason: "no_target" } };
+}
+
 async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise<ActionResultDetail> {
   const destino = destinoDe(config.destino);
   const cruas = Array.isArray(config.tags) ? config.tags.map(String) : [];
   if (!cruas.length) return { type: TIPO, status: "skipped", detail: { reason: "no_tags" } };
 
   const alvo = alvoDaEscrita(ctx.context, destino, { cardSemNegocioUsaContato: true });
-  if (!alvo) {
-    return { type: TIPO, status: "skipped", detail: { reason: destino === "contato" ? "no_contact" : "no_target" } };
-  }
+  if (!alvo) return semAlvo(destino);
 
   // Regra de etiqueta decidida pela TABELA resolvida (ruling R1): no contato —
   // inclusive quando o destino `card` cai no contato por falta de card — a
@@ -44,9 +48,7 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
 
   const r = await removerEtiquetas(ctx.admin, { organizationId: ctx.organizationId, alvo, tags });
   if (!r.ok) {
-    if (r.motivo === "sem_linha") {
-      return { type: TIPO, status: "skipped", detail: { reason: destino === "contato" ? "no_contact" : "no_target" } };
-    }
+    if (r.motivo === "sem_linha") return semAlvo(destino);
     return { type: TIPO, status: "failed", error: r.erro };
   }
   if (alvo.foto) alvo.foto.tags = r.tags;
