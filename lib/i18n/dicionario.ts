@@ -16641,6 +16641,18 @@ export const DICIONARIO: Traducoes = {
   "A sugestão tentou usar uma ação que a prévia não reconhece. Gere de novo; se repetir, revise as ferramentas ligadas no agente.": { es: "La sugerencia intentó usar una acción que la previsualización no reconoce. Genera de nuevo; si se repite, revisa las herramientas activadas en el agente." },
   "A geração da sugestão falhou, ou o contexto da conversa não pôde ser montado. Tente de novo; se repetir, o motivo ficou registrado no servidor.": { es: "La generación de la sugerencia falló, o no se pudo armar el contexto de la conversación. Inténtalo de nuevo; si se repite, el motivo quedó registrado en el servidor." },
   // Parte 2 — entrada das vendas
+  "Conexão de venda": { es: "Conexión de venta" },
+  "Qualquer conexão": { es: "Cualquier conexión" },
+  "Conexão removida": { es: "Conexión eliminada" },
+  "Qualquer plataforma": { es: "Cualquier plataforma" },
+  "Qualquer produto": { es: "Cualquier producto" },
+  "Evento padrão": { es: "Evento estándar" },
+  "Qualquer evento": { es: "Cualquier evento" },
+  "Ignorar order bump": { es: "Ignorar order bump" },
+  "Os produtos aparecem aqui depois que a primeira venda deles chegar.": { es: "Los productos aparecen aquí después de que llegue su primera venta." },
+  "Nesta automação de venda também valem {{venda.nome}}, {{venda.primeiro_nome}}, {{venda.email}}, {{venda.telefone}}, {{venda.produto}}, {{venda.pedido}}, {{venda.valor}}, {{venda.checkout_url}}, {{venda.extra.campo}} e {{venda.payload.caminho}}.": {
+    es: "En esta automatización de venta también valen {{venda.nome}}, {{venda.primeiro_nome}}, {{venda.email}}, {{venda.telefone}}, {{venda.produto}}, {{venda.pedido}}, {{venda.valor}}, {{venda.checkout_url}}, {{venda.extra.campo}} y {{venda.payload.caminho}}.",
+  },
   "Venda recebida": { es: "Venta recibida" },
   "Revise os filtros da venda.": { es: "Revisa los filtros de la venta." },
   "As variáveis {{venda.…}} só valem no gatilho Venda recebida.": { es: "Las variables {{venda.…}} solo valen en el disparador Venta recibida." },

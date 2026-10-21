@@ -32,6 +32,7 @@ import {
 } from "@/hooks/followup/useFollowupFlows";
 import type { PlanoDeTarefas } from "@/lib/tarefas/plano";
 import { CaretDown, CaretUp, Pause, Play, X } from "@/lib/ui/icons";
+import { GATILHO_DA_VENDA } from "@/lib/vendas/eventos";
 
 /**
  * #2041 — uma pessoa fixa (a forma de sempre, sem `modo`) ou um rodízio, em que
@@ -620,7 +621,11 @@ function RemoveTagForm({ config, onChange }: FormProps<{ tags: string[]; destino
 }
 
 /** Parte 1 do motor de fluxo — gravar UM campo (só aquela chave) no contato ou no card. */
-function SetFieldForm({ config, onChange }: FormProps<{ destino: "card" | "contato"; campo: string; valor: string }>) {
+function SetFieldForm({
+  config,
+  onChange,
+  gatilho,
+}: FormProps<{ destino: "card" | "contato"; campo: string; valor: string }> & { gatilho?: string }) {
   const t = useT();
   return (
     <div className="space-y-2">
@@ -657,6 +662,11 @@ function SetFieldForm({ config, onChange }: FormProps<{ destino: "card" | "conta
         <p className="text-xs text-muted-foreground">
           {t("Pode usar {{nome}}, {{primeiro_nome}}, {{saudacao}}, {{contato.campo}} e {{lead.campo}}. Grava só este campo; os outros ficam como estão.")}
         </p>
+        {gatilho === GATILHO_DA_VENDA ? (
+          <p className="text-xs text-muted-foreground">
+            {t("Nesta automação de venda também valem {{venda.nome}}, {{venda.primeiro_nome}}, {{venda.email}}, {{venda.telefone}}, {{venda.produto}}, {{venda.pedido}}, {{venda.valor}}, {{venda.checkout_url}}, {{venda.extra.campo}} e {{venda.payload.caminho}}.")}
+          </p>
+        ) : null}
       </div>
     </div>
   );
@@ -1156,9 +1166,12 @@ function ApplyTaskPlanForm({ config, onChange }: FormProps<{ plano_id: string }>
 export function ActionConfigForm({
   action,
   onChange,
+  gatilho,
 }: {
   action: ActionItem;
   onChange: (next: ActionItem) => void;
+  /** O gatilho da regra: só para a dica de variáveis do "Gravar campo" (Parte 2). */
+  gatilho?: string;
 }) {
   switch (action.type) {
     case "create_or_move_lead":
@@ -1199,7 +1212,7 @@ export function ActionConfigForm({
     case "remove_tag":
       return <RemoveTagForm config={action.config} onChange={(config) => onChange({ type: action.type, config })} />;
     case "set_field":
-      return <SetFieldForm config={action.config} onChange={(config) => onChange({ type: action.type, config })} />;
+      return <SetFieldForm config={action.config} gatilho={gatilho} onChange={(config) => onChange({ type: action.type, config })} />;
     case "assign_owner":
       return (
         <AssignOwnerForm

@@ -36,6 +36,13 @@ import {
   type DirecaoDoSilencio,
 } from "@/lib/automation/gatilhos-de-tempo";
 import { configAoSalvarDaTela } from "@/lib/automation/config-ao-salvar";
+import { GATILHO_DA_VENDA } from "@/lib/vendas/eventos";
+import {
+  CONFIG_DA_VENDA_VAZIA,
+  configDaVendaAoSalvar,
+  configDaVendaNaTela,
+  type ConfigDaVendaNaTela,
+} from "@/lib/vendas/filtro-da-regra";
 import { camposDeDataDoNegocio } from "@/lib/leads/campos-do-funil";
 import {
   useCreateAutomationRule,
@@ -45,6 +52,7 @@ import {
 import { usePipelines, usePipelineStages, useWebhookSources } from "@/hooks/webhooks/useWebhookSources";
 import { TRIGGER_LABELS, ACTION_LABELS, type TriggerEvent, type ActionType } from "./labels";
 import { ActionConfigForm, defaultActionConfig, type ActionItem } from "./ActionConfigForm";
+import { ConfigDaVendaNaRegra } from "./ConfigDaVendaNaRegra";
 import { useT } from "@/hooks/i18n/useT";
 
 interface Props {
@@ -257,6 +265,7 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
     stage_id: "",
   });
   const [webhookSourceId, setWebhookSourceId] = React.useState(QUALQUER_FONTE);
+  const [configDaVenda, setConfigDaVenda] = React.useState<ConfigDaVendaNaTela>(CONFIG_DA_VENDA_VAZIA);
 
   const create = useCreateAutomationRule();
   const update = useUpdateAutomationRule();
@@ -285,6 +294,8 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
     setActions((rule?.actions as ActionItem[] | undefined) ?? []);
     const sourceId = rule?.trigger_config?.webhook_source_id;
     setWebhookSourceId(typeof sourceId === "string" ? sourceId : QUALQUER_FONTE);
+    // O filtro gravado volta pelo MESMO leitor que o motor usa (`configDaVendaSchema`).
+    setConfigDaVenda(rule?.trigger_event === GATILHO_DA_VENDA ? configDaVendaNaTela(rule.trigger_config) : CONFIG_DA_VENDA_VAZIA);
     // A configuração salva volta pelo MESMO leitor que a varredura usa: se ela
     // não reconhece o que está guardado, a tela não inventa nada e o operador
     // reescolhe — em vez de a tela mostrar um funil que o cron ignora.
@@ -317,6 +328,7 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
   const ehGatilhoDeTempo =
     triggerEvent === GATILHO_SILENCIO || triggerEvent === GATILHO_ETAPA_PARADA;
   const ehGatilhoDeNovoContato = triggerEvent === "lead.created";
+  const ehGatilhoDaVenda = triggerEvent === GATILHO_DA_VENDA;
   const camposDeData = camposDeDataDoNegocio(
     (pipelinesRes?.data ?? []).find((p) => p.id === configDaData.pipeline_id)?.settings ?? null,
   );
@@ -410,7 +422,14 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
                   webhook_source_id: webhookSourceId === QUALQUER_FONTE ? null : webhookSourceId,
                 },
               })
-            : {},
+            : ehGatilhoDaVenda
+              ? configAoSalvarDaTela({
+                  gatilhoDaRegra: rule?.trigger_event,
+                  configDaRegra: rule?.trigger_config,
+                  gatilhoDaTela: triggerEvent,
+                  configDaTela: configDaVendaAoSalvar(configDaVenda),
+                })
+              : {},
     };
     const parsed = createAutomationRuleSchema.safeParse(payload);
     if (!parsed.success) {
@@ -500,6 +519,8 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
                 </p>
               </div>
             ) : null}
+
+            {ehGatilhoDaVenda ? <ConfigDaVendaNaRegra valor={configDaVenda} onChange={setConfigDaVenda} /> : null}
 
             {/* O gatilho de DATA só sabe onde olhar se a regra disser o funil e o
                 campo: o campo de data pertence a UM funil. Sem esta escolha a
@@ -880,6 +901,7 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
                 </div>
                 <ActionConfigForm
                   action={action}
+                  gatilho={triggerEvent}
                   onChange={(next) =>
                     setActions((prev) => prev.map((a, i) => (i === idx ? next : a)))
                   }
