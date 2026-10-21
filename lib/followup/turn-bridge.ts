@@ -388,14 +388,17 @@ export function createPgAdminClient(pool: pg.Pool): TurnBridgeAdminClient {
          order by updated_at desc limit 1`,
         [orgId, contactId],
       );
-      const { rows: contacts } = await pool.query<{ name: string | null }>(
-        `select name from contacts where organization_id = $1 and id = $2`,
+      // `tags` = etiquetas do CONTATO, para a condição `contact_tag` (Parte 1).
+      const { rows: contacts } = await pool.query<{ name: string | null; tags: string[] | null }>(
+        `select name, tags from contacts where organization_id = $1 and id = $2`,
         [orgId, contactId],
       );
       const lead = leads[0];
+      const tagsDoContato = contacts[0]?.tags;
       return {
         lead_stage: lead?.stage_id ?? null,
         tags: lead?.tags ?? [],
+        contact_tags: Array.isArray(tagsDoContato) ? tagsDoContato : [],
         contact_name: contacts[0]?.name ?? null,
         custom_fields: lead?.custom_fields ?? {},
       };

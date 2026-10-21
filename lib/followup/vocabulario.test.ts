@@ -387,7 +387,7 @@ describe("etiqueta é pertinência, não igualdade", () => {
     // pertinência. "é igual a" prometeria outra coisa.
     expect(comparador("tag", "eq").rotulo).toBe("tem a etiqueta");
     expect(comparador("tag", "neq").rotulo).toBe("não tem a etiqueta");
-    expect(fraseDaCondicao("tag", "eq", "vip")).toBe("O contato tem a etiqueta “vip”");
+    expect(fraseDaCondicao("tag", "eq", "vip")).toBe("O card tem a etiqueta “vip”");
     expect(comparador("tag", "eq").rotulo).not.toMatch(/igual/i);
   });
 
@@ -428,7 +428,8 @@ describe("o ramo em frase — o registro do dossiê", () => {
     // Sem isto sairia "quando O contato tem…" — maiúscula no meio da frase, que
     // ninguém revisa e todo mundo lê. E jamais o id: `regra-2` na tela é o
     // defeito que este módulo existe para impedir.
-    expect(fraseDaRegraSemNome("tag", "eq", "vip")).toBe("quando o contato tem a etiqueta “vip”");
+    expect(fraseDaRegraSemNome("tag", "eq", "vip")).toBe("quando o card tem a etiqueta “vip”");
+    expect(fraseDaRegraSemNome("contact_tag", "eq", "vip")).toBe("quando o contato tem a etiqueta “vip”");
     expect(fraseDaRegraSemNome("steps_taken", "gte", 3)).toBe("quando o fluxo já deu pelo menos 3 passos");
   });
 
@@ -480,14 +481,14 @@ describe("a regra mostra o que a pessoa escolheu, nunca o identificador", () => 
 
   it("o nome da etapa só vale para o campo etapa", () => {
     const tudoViraNome = { etapa: () => "NÃO DEVIA APARECER" };
-    expect(fraseDaCondicao("tag", "eq", "vip", tudoViraNome)).toBe("O contato tem a etiqueta “vip”");
+    expect(fraseDaCondicao("tag", "eq", "vip", tudoViraNome)).toBe("O card tem a etiqueta “vip”");
     expect(fraseDaCondicao("last_outcome", "eq", "x", tudoViraNome)).toBe("O desfecho do passo anterior foi “x”");
   });
 
   it("regra sem valor diz que falta preencher, em vez de aspas vazias", () => {
     // `“”` se lia como "a etapa de nome vazio" — uma regra que parecia pronta.
     expect(fraseDaCondicao("lead_stage", "eq", "")).toBe("O lead está na etapa (a preencher)");
-    expect(fraseDaCondicao("tag", "eq", "  ")).toBe("O contato tem a etiqueta (a preencher)");
+    expect(fraseDaCondicao("tag", "eq", "  ")).toBe("O card tem a etiqueta (a preencher)");
     expect(fraseDaCondicao("steps_taken", "gte", "")).toBe("O fluxo já deu pelo menos (a preencher) passos");
     expect(fraseDaCondicao("lead_stage", "eq", "", nomes)).toBe("O lead está na etapa (a preencher)");
   });

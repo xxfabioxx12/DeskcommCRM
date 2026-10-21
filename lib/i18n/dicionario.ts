@@ -16320,6 +16320,7 @@ export const DICIONARIO: Traducoes = {
     es: "Sin contacto vinculado, la etiqueta no se aplica.",
   },
   // ── Motor de fluxo, Parte 1 (fork) — etiqueta no fluxo ──
+  "Etiqueta do card": { es: "Etiqueta del card" },
   "O que fazer com a etiqueta": { es: "Qué hacer con la etiqueta" },
   "Pôr a etiqueta": { es: "Poner la etiqueta" },
   "Tirar a etiqueta": { es: "Quitar la etiqueta" },

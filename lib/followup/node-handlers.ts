@@ -4,6 +4,8 @@ import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
  * `engine.ts` owns the tick/DB orchestration; this file only decides "given
  * this node + these facts, what happens next" so it's testable without Postgres.
  */
+import { normalizarTag } from "@/lib/contacts/tag-normalizada";
+
 import { NO_REPLY_BRANCH_ID, REPEAT_BODY_BRANCH_ID, REPEAT_DONE_BRANCH_ID, nodeBranches } from "./graph-schema";
 import type { FlowEdge, FlowNode, ReplySaveTo } from "./graph-schema";
 import { avaliarDataRelativa, ehOpDeData, type OpDeData } from "./condicao-por-data";
@@ -93,6 +95,12 @@ export interface LeadFacts {
   fuso?: string | null;
   lead_stage: string | null;
   tags: string[];
+  /**
+   * Etiquetas do CONTATO (`contacts.tags`, já normalizadas na escrita) —
+   * condição `contact_tag`. Ausente = o adaptador não as leu: a regra não é
+   * verdadeira (nem a negação), como `last_outcome` nulo.
+   */
+  contact_tags?: string[];
   steps_taken: number;
   /**
    * Desfecho do passo anterior — a classe que o último `ai_classify` escolheu,
@@ -478,7 +486,7 @@ export function ultimoDesfechoDe(events: EnrollmentEventRef[]): string | null {
 
 function evaluateCheck(
   check: {
-    field: "lead_stage" | "tag" | "steps_taken" | "last_outcome" | "lead_date";
+    field: "lead_stage" | "tag" | "contact_tag" | "steps_taken" | "last_outcome" | "lead_date";
     op: "eq" | "neq" | "gte" | "lte" | "contains" | OpDeData;
     value: string | number;
     key?: string;
@@ -502,6 +510,18 @@ function evaluateCheck(
   // Operador de data em campo que não é de data: o schema recusa no publish, e
   // aqui responde `false` em vez de cair num `switch` que não o conhece.
   if (ehOpDeData(check.op)) return false;
+
+  // Etiqueta do CONTATO: pertinência, normalizada dos dois lados ("VIP " casa
+  // com "vip"). Sem a lista carregada, nada é verdadeiro — nem a negação.
+  if (check.field === "contact_tag") {
+    if (lead.contact_tags === undefined) return false;
+    const alvo = normalizarTag(String(check.value));
+    if (alvo === "") return false;
+    const tem = lead.contact_tags.some((t) => normalizarTag(t) === alvo);
+    if (check.op === "eq" || check.op === "contains") return tem;
+    if (check.op === "neq") return !tem;
+    return false;
+  }
 
   const actual: string | number | null | string[] =
     check.field === "lead_stage" ? lead.lead_stage

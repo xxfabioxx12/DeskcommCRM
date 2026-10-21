@@ -370,6 +370,9 @@ export const conditionCheckSchema = z
     field: z.enum([
       'lead_stage',
       'tag',
+      // Parte 1 do motor de fluxo: as etiquetas do CONTATO (`contacts.tags`),
+      // comparadas normalizadas. `tag` continua sendo a do card.
+      'contact_tag',
       'steps_taken',
       'last_outcome',
       // Data relativa sobre um campo personalizado do negócio — ver

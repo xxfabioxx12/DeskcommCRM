@@ -100,7 +100,10 @@ export interface CampoDeCondicao {
 
 export const CAMPOS_DA_CONDICAO: Record<CampoDaCondicao, CampoDeCondicao> = {
   lead_stage: { rotulo: "Etapa do funil", tipoDeValor: "etapa" },
-  tag: { rotulo: "Etiqueta do contato", tipoDeValor: "etiqueta" },
+  // Parte 1 do motor de fluxo: `tag` sempre leu o CARD (`crm_leads.tags`); o
+  // rótulo agora diz isso. "Etiqueta do contato" é o campo novo `contact_tag`.
+  tag: { rotulo: "Etiqueta do card", tipoDeValor: "etiqueta" },
+  contact_tag: { rotulo: "Etiqueta do contato", tipoDeValor: "etiqueta" },
   steps_taken: { rotulo: "Passos já dados no fluxo", tipoDeValor: "numero" },
   last_outcome: { rotulo: "Desfecho do passo anterior", tipoDeValor: "texto" },
   // O VALOR desta regra é um PRAZO EM DIAS, não uma data: a data mora no campo
@@ -179,6 +182,37 @@ function diasEmPalavras(valor: string | number): string {
 const AVISO_SO_DATA =
   "«já passou há» e «falta» existem só para a regra de data de um campo do negócio.";
 
+/**
+ * Os comparadores de ETIQUETA — os mesmos para o card (`tag`) e o contato
+ * (`contact_tag`), muda só de quem é a etiqueta na frase. No motor, os dois são
+ * lista: `eq`/`contains` testam pertinência.
+ */
+function comparadoresDeEtiqueta(dono: "card" | "contato"): Record<OperadorDaCondicao, Comparador> {
+  const quem = dono === "card" ? "O card" : "O contato";
+  const daEtiqueta = dono === "card" ? "A etiqueta do card" : "A etiqueta do contato";
+  return {
+    eq: { rotulo: "tem a etiqueta", frase: (v) => `${quem} tem a etiqueta ${aspas(v)}`, oferecido: true },
+    neq: { rotulo: "não tem a etiqueta", frase: (v) => `${quem} não tem a etiqueta ${aspas(v)}`, oferecido: true },
+    // Mesmo resultado que `eq` (o motor testa pertinência nos dois): descreve
+    // o que está salvo, mas não repete a opção no seletor.
+    contains: { rotulo: "tem a etiqueta", frase: (v) => `${quem} tem a etiqueta ${aspas(v)}`, oferecido: false },
+    gte: { rotulo: "é pelo menos", frase: (v) => `${daEtiqueta} é pelo menos ${aspas(v)}`, oferecido: false, aviso: AVISO_SO_NUMERO },
+    lte: { rotulo: "é no máximo", frase: (v) => `${daEtiqueta} é no máximo ${aspas(v)}`, oferecido: false, aviso: AVISO_SO_NUMERO },
+    passou_ha: {
+      rotulo: "já passou há",
+      frase: () => `${daEtiqueta} — regra de data aplicada a campo que não é data`,
+      oferecido: false,
+      aviso: AVISO_SO_DATA,
+    },
+    falta_para: {
+      rotulo: "falta",
+      frase: () => `${daEtiqueta} — regra de data aplicada a campo que não é data`,
+      oferecido: false,
+      aviso: AVISO_SO_DATA,
+    },
+  };
+}
+
 const COMPARADORES: Record<CampoDaCondicao, Record<OperadorDaCondicao, Comparador>> = {
   lead_stage: {
     eq: {
@@ -223,50 +257,8 @@ const COMPARADORES: Record<CampoDaCondicao, Record<OperadorDaCondicao, Comparado
       aviso: AVISO_SO_DATA,
     },
   },
-  tag: {
-    // O par que dá nome à regra deste módulo: no motor, `tag` é lista.
-    eq: {
-      rotulo: "tem a etiqueta",
-      frase: (v) => `O contato tem a etiqueta ${aspas(v)}`,
-      oferecido: true,
-    },
-    neq: {
-      rotulo: "não tem a etiqueta",
-      frase: (v) => `O contato não tem a etiqueta ${aspas(v)}`,
-      oferecido: true,
-    },
-    contains: {
-      // Mesmo resultado que `eq` (o motor testa pertinência nos dois): descreve
-      // o que está salvo, mas não repete a opção no seletor.
-      rotulo: "tem a etiqueta",
-      frase: (v) => `O contato tem a etiqueta ${aspas(v)}`,
-      oferecido: false,
-    },
-    gte: {
-      rotulo: "é pelo menos",
-      frase: (v) => `A etiqueta do contato é pelo menos ${aspas(v)}`,
-      oferecido: false,
-      aviso: AVISO_SO_NUMERO,
-    },
-    lte: {
-      rotulo: "é no máximo",
-      frase: (v) => `A etiqueta do contato é no máximo ${aspas(v)}`,
-      oferecido: false,
-      aviso: AVISO_SO_NUMERO,
-    },
-    passou_ha: {
-      rotulo: "já passou há",
-      frase: () => "A etiqueta do contato — regra de data aplicada a campo que não é data",
-      oferecido: false,
-      aviso: AVISO_SO_DATA,
-    },
-    falta_para: {
-      rotulo: "falta",
-      frase: () => "A etiqueta do contato — regra de data aplicada a campo que não é data",
-      oferecido: false,
-      aviso: AVISO_SO_DATA,
-    },
-  },
+  tag: comparadoresDeEtiqueta("card"),
+  contact_tag: comparadoresDeEtiqueta("contato"),
   steps_taken: {
     gte: {
       rotulo: "é pelo menos",

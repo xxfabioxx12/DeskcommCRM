@@ -157,6 +157,8 @@ export interface AdminClient {
   loadLeadFacts(orgId: string, contactId: string, pipelineId?: string | null): Promise<{
     lead_stage: string | null;
     tags: string[];
+    /** Etiquetas do CONTATO (`contacts.tags`) — condição `contact_tag`. Ausente = não lidas. */
+    contact_tags?: string[];
     contact_name?: string | null;
     custom_fields?: Record<string, unknown>;
   }>;
@@ -985,6 +987,7 @@ async function processEnrollment(
     fuso: fusoDaOrg,
     lead_stage: leadRow.lead_stage,
     tags: leadRow.tags,
+    contact_tags: leadRow.contact_tags,
     steps_taken: enrollment.steps_taken,
     // Preenchido LOGO ABAIXO, depois que os eventos forem lidos: o desfecho do
     // passo anterior é dado que mora nos eventos, não na linha do lead.
@@ -1307,7 +1310,7 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
           .order("updated_at", { ascending: false })
           .limit(1)
           .maybeSingle(),
-        admin.from("contacts").select("name").eq("organization_id", orgId).eq("id", contactId).maybeSingle(),
+        admin.from("contacts").select("name, tags").eq("organization_id", orgId).eq("id", contactId).maybeSingle(),
       ]);
       if (leadErr) throw new Error(leadErr.message);
       if (contactErr) throw new Error(contactErr.message);
@@ -1318,6 +1321,7 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
       return {
         lead_stage: lead?.stage_id ?? null,
         tags: lead?.tags ?? [],
+        contact_tags: Array.isArray(contact?.tags) ? (contact.tags as string[]) : [],
         contact_name: contact?.name ?? null,
         custom_fields: custom,
       };
