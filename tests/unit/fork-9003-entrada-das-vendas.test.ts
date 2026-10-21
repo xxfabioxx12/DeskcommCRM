@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const RAIZ = join(__dirname, "..", "..");
-const MIGRATION = "supabase/migrations/20261021180000_9003_entrada_das_vendas.sql";
+const MIGRATION = "supabase/migrations/20261021180903_9003_entrada_das_vendas.sql";
 const BLOCO = "supabase/fork/9003.sql";
 const DA_0670 = "20261017060002_0670_o_telefone_ganho_alcanca_a_origem.sql";
 const CABECALHO = "-- ---- entrada das vendas (migration 9003, fork) ----";
@@ -77,6 +77,26 @@ describe("migration 9003 — entrada das vendas", () => {
     const sql = ler(BLOCO);
     expect(sql).toContain("after update of is_anonymized on public.contacts");
     expect(sql.match(/set email = null, telefone = null, venda = '\{\}'::jsonb, payload = null/g)).toHaveLength(2);
+    // A venda que não ganhou contato (só registrando, sem_contato) é da pessoa pelo e-mail ou telefone.
+    expect(sql).toContain(
+      "where organization_id = new.organization_id\n       and (contact_id = new.id\n" +
+        "            or (old.email is not null and email = lower(trim(old.email)))\n" +
+        "            or (old.phone_number is not null and telefone = old.phone_number));",
+    );
+  });
+
+  it("⭐ índices para achar as vendas da pessoa (redação e export) e o PostgREST recarrega", () => {
+    const sql = ler(BLOCO);
+    expect(sql).toContain(
+      "create index if not exists sales_events_contato_idx\n  on public.sales_events (organization_id, contact_id) where contact_id is not null;",
+    );
+    expect(sql).toContain(
+      "create index if not exists sales_events_email_idx\n  on public.sales_events (organization_id, email) where email is not null;",
+    );
+    expect(sql).toContain(
+      "create index if not exists sales_events_telefone_idx\n  on public.sales_events (organization_id, telefone) where telefone is not null;",
+    );
+    expect(sql.trimEnd().endsWith("notify pgrst, 'reload schema';")).toBe(true);
   });
 
   it("⭐ sale.received: as funções são as da 0670 com o tipo acrescentado, e mais nada", () => {

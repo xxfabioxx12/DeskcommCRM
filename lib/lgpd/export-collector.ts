@@ -1800,7 +1800,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
   const vendasPorId = new Map<string, NonNullable<ExportPayload["sales_events"]>[number]>();
   if (contactId) {
     const criterios: Array<[string, string]> = [["contact_id", contactId]];
-    if (contact?.email) criterios.push(["email", contact.email.toLowerCase()]);
+    if (contact?.email) criterios.push(["email", contact.email.trim().toLowerCase()]);
     if (contact?.phone_number) criterios.push(["telefone", contact.phone_number]);
     for (const [coluna, valor] of criterios) {
       const { data, error } = await admin

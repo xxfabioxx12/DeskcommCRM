@@ -78,6 +78,13 @@ create index if not exists sales_events_mesmo_pedido_idx
   where evento = 'compra.aprovada' and not teste;
 create index if not exists sales_events_poda_idx
   on public.sales_events (recebido_em) where payload is not null;
+-- A pessoa: o contato, o e-mail e o telefone (redação na anonimização e export LGPD).
+create index if not exists sales_events_contato_idx
+  on public.sales_events (organization_id, contact_id) where contact_id is not null;
+create index if not exists sales_events_email_idx
+  on public.sales_events (organization_id, email) where email is not null;
+create index if not exists sales_events_telefone_idx
+  on public.sales_events (organization_id, telefone) where telefone is not null;
 
 alter table public.sales_events enable row level security;
 drop policy if exists sales_events_select on public.sales_events;
@@ -117,7 +124,10 @@ begin
   if new.is_anonymized and not coalesce(old.is_anonymized, false) then
     update public.sales_events
        set email = null, telefone = null, venda = '{}'::jsonb, payload = null
-     where organization_id = new.organization_id and contact_id = new.id;
+     where organization_id = new.organization_id
+       and (contact_id = new.id
+            or (old.email is not null and email = lower(trim(old.email)))
+            or (old.phone_number is not null and telefone = old.phone_number));
   end if;
   return new;
 end
@@ -283,3 +293,5 @@ begin
 end $function$;
 revoke execute on function public.emit_event(text, text, uuid, jsonb, jsonb, uuid) from public, anon;
 grant  execute on function public.emit_event(text, text, uuid, jsonb, jsonb, uuid) to authenticated, service_role;
+
+notify pgrst, 'reload schema';

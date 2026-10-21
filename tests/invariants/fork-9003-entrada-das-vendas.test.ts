@@ -85,13 +85,20 @@ describe("sales_events", () => {
 
   it("anonimizar o contato apaga os dados da pessoa nas vendas dele", () => {
     sql(venda("hm-9003-anon", `contact_id, email, telefone, venda, payload|'${ANONIMO}', 'anonimo9003@example.com', '+5511999990904', '{"nome":"Ana"}', '{"x":1}'`));
+    // Sem contact_id (só registrando / sem_contato): a pessoa pelo e-mail ou pelo telefone.
+    sql(venda("hm-9003-anon-email", `email, venda, payload|'anonimo9003@example.com', '{"nome":"Ana"}', '{"x":1}'`));
+    sql(venda("hm-9003-anon-tel", `telefone, venda, payload|'+5511999990904', '{"nome":"Ana"}', '{"x":1}'`));
+    sql(venda("hm-9003-outra", `email, telefone, venda, payload|'outra9003@example.com', '+5511999990999', '{"nome":"Bia"}', '{"x":1}'`));
     sql(`update public.contacts set is_anonymized = true, anonymized_at = now() where id = '${ANONIMO}';`);
-    expect(
+    const linha = (chave: string) =>
       lastLine(
         sql(`select concat_ws('|', coalesce(email, '-'), coalesce(telefone, '-'), venda::text, coalesce(payload::text, '-'))
-               from public.sales_events where chave_evento = 'hm-9003-anon';`),
-      ),
-    ).toBe("-|-|{}|-");
+               from public.sales_events where chave_evento = '${chave}';`),
+      );
+    expect(linha("hm-9003-anon")).toBe("-|-|{}|-");
+    expect(linha("hm-9003-anon-email")).toBe("-|-|{}|-");
+    expect(linha("hm-9003-anon-tel")).toBe("-|-|{}|-");
+    expect(linha("hm-9003-outra")).not.toBe("-|-|{}|-");
   });
 
   it("os dados da pessoa saem em 30 dias; o resto da linha fica", () => {
