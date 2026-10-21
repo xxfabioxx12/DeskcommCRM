@@ -32,22 +32,38 @@ export interface ModeloDaCampanha {
   preencher: SlotDoModelo[] | null;
 }
 
-export function useModeloDaCampanha(
-  channelSessionId: string | null,
+/**
+ * O estado da escolha a partir de uma lista de templates — a MESMA conta para a
+ * campanha (templates do número) e para o passo "Mensagem" do fluxo (templates
+ * da conta, `useModeloDoFluxo`).
+ */
+export function estadoDoModeloEscolhido(
+  templates: readonly TemplateView[],
   escolhido: ModeloEscolhido | null,
+  carregando: boolean,
 ): ModeloDaCampanha {
-  const consulta = useTemplatesDoNumero(channelSessionId);
-  const opcoes = useMemo<OpcaoDeModelo[]>(
-    () =>
-      (consulta.data?.data.templates ?? [])
-        .filter((m) => isStatusSendable(m.status))
-        .map((m) => ({ modelo: m, avaliacao: avaliarModeloParaCampanha(m.slots, m.savedValues) })),
-    [consulta.data],
-  );
+  const opcoes = templates
+    .filter((m) => isStatusSendable(m.status))
+    .map((m) => ({ modelo: m, avaliacao: avaliarModeloParaCampanha(m.slots, m.savedValues) }));
   const atual = escolhido
     ? (opcoes.find((o) => o.modelo.name === escolhido.name && o.modelo.language === escolhido.language) ?? null)
     : null;
   const desatualizado = !!atual && !!escolhido && atual.modelo.contractHash !== escolhido.contractHash;
   const preencher = atual && !desatualizado && atual.avaliacao.usavel ? atual.avaliacao.preencher : null;
-  return { carregando: !!channelSessionId && consulta.isLoading, opcoes, atual, desatualizado, preencher };
+  return { carregando, opcoes, atual, desatualizado, preencher };
+}
+
+export function useModeloDaCampanha(
+  channelSessionId: string | null,
+  escolhido: ModeloEscolhido | null,
+): ModeloDaCampanha {
+  const consulta = useTemplatesDoNumero(channelSessionId);
+  const templates = consulta.data?.data.templates;
+  const carregando = !!channelSessionId && consulta.isLoading;
+  return useMemo(
+    () => estadoDoModeloEscolhido(templates ?? [], escolhido, carregando),
+    // O objeto `escolhido` muda de identidade a cada render; o que importa são os três campos.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [templates, escolhido?.name, escolhido?.language, escolhido?.contractHash, carregando],
+  );
 }

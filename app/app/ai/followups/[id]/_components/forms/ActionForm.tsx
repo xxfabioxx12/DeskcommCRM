@@ -20,6 +20,7 @@ import { useMessageTemplates } from "@/hooks/inbox/useMessageTemplates";
 import { useModelosAprovadosDoFluxo } from "@/hooks/followup/useModelosAprovadosDoFluxo";
 import { useT } from "@/hooks/i18n/useT";
 
+import { MensagemDoPassoForm } from "./MensagemDoPassoForm";
 import type { ConfigOf } from "./shared";
 
 /**
@@ -156,6 +157,10 @@ export function ActionForm({
     config.mode === "text" ? (config.media_url ?? "") : "",
   );
   const [error, setError] = useState<string | null>(null);
+  // Guarda a mensagem já montada: trocar de modo e voltar não apaga o template.
+  const [mensagemSalva, setMensagemSalva] = useState<ConfigOf<"action"> | null>(
+    config.mode === "mensagem" ? config : null,
+  );
 
   const commit = (next: {
     mode: ModoDaAcao;
@@ -202,7 +207,7 @@ export function ActionForm({
             const next = v as ModoDaAcao;
             setMode(next);
             if (next === "mensagem") {
-              onChange({ mode: "mensagem" });
+              onChange(mensagemSalva ?? { mode: "mensagem" });
               return;
             }
             commit({ mode: next, ...fields });
@@ -221,7 +226,15 @@ export function ActionForm({
         </Select>
       </div>
 
-      {mode === "text" ? (
+      {mode === "mensagem" ? (
+        <MensagemDoPassoForm
+          config={config.mode === "mensagem" ? config : { mode: "mensagem" }}
+          onChange={(c) => {
+            setMensagemSalva(c);
+            onChange(c);
+          }}
+        />
+      ) : mode === "text" ? (
         <div className="space-y-2">
           <Label htmlFor="action-body">{t("Texto enviado ao contato")}</Label>
           <Textarea

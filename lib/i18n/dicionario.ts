@@ -16293,6 +16293,25 @@ export const DICIONARIO: Traducoes = {
   "Destino da etiqueta": { es: "Destino de la etiqueta" },
   "Card (comportamento atual)": { es: "Card (comportamiento actual)" },
   "Contato do lead": { es: "Contacto del lead" },
+  // ── Motor de fluxo, Parte 1 (fork) — passo Mensagem ──
+  "Número oficial": { es: "Número oficial" },
+  "No número oficial sai um template aprovado pela Meta, com as variáveis preenchidas para cada pessoa.": {
+    es: "En el número oficial sale una plantilla aprobada por Meta, con las variables completadas para cada persona.",
+  },
+  "Nenhum template aprovado na conta. Sincronize os templates em Configurações › Templates.": {
+    es: "Ninguna plantilla aprobada en la cuenta. Sincroniza las plantillas en Configuración › Plantillas.",
+  },
+  "O template salvo não está mais aprovado. Escolha outro.": { es: "La plantilla guardada ya no está aprobada. Elige otra." },
+  "Você pode usar {{primeiro_nome}}, {{nome}}, {{saudacao}}, {{contato.campo}} e {{lead.campo}}. Se faltar o dado de alguém, a mensagem não sai e o motivo aparece no acompanhamento.": {
+    es: "Puedes usar {{primeiro_nome}}, {{nome}}, {{saudacao}}, {{contato.campo}} y {{lead.campo}}. Si falta el dato de alguien, el mensaje no sale y el motivo aparece en el seguimiento.",
+  },
+  "Número comum (QR Code)": { es: "Número común (código QR)" },
+  "Texto livre com as mesmas variáveis. Se faltar o dado de alguém, a mensagem não sai.": {
+    es: "Texto libre con las mismas variables. Si falta el dato de alguien, el mensaje no sale.",
+  },
+  "Preencha ao menos uma das duas. O fluxo escolhe sozinho pelo tipo do número da conversa; sem a versão daquele tipo, a pessoa sai do fluxo com o motivo.": {
+    es: "Completa al menos una de las dos. El flujo elige solo según el tipo de número de la conversación; sin la versión de ese tipo, la persona sale del flujo con el motivo.",
+  },
   // ── Motor de fluxo, Parte 1 (fork) — regras ──
   "Tirar tag": { es: "Quitar etiqueta" },
   "Gravar campo": { es: "Grabar campo" },
