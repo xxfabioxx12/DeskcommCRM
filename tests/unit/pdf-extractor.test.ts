@@ -193,12 +193,41 @@ describe("extractPdfText — estratégia `processo-a-parte`", () => {
         "file:///app/node_modules/.pnpm/tsx@4.23.13/node_modules/tsx/dist/loader.mjs",
       ]),
     ).toBe("processo-a-parte");
+    // O hook pelo especificador cru — a forma do CMD desde o #2823.
+    expect(estrategiaPadrao(["--import", "tsx"])).toBe("processo-a-parte");
+    expect(estrategiaPadrao(["--import=tsx"])).toBe("processo-a-parte");
+    expect(estrategiaPadrao(["--import", "tsx/esm"])).toBe("processo-a-parte");
     // App Next, vitest, node puro: nada muda.
     expect(estrategiaPadrao([])).toBe("em-processo");
     expect(estrategiaPadrao(["--max-old-space-size=256"])).toBe("em-processo");
+    expect(estrategiaPadrao(["--import", "./tsx-config.mjs"])).toBe("em-processo");
   });
 
-  it("sob o tsx DE VERDADE, o pai extrai sem carregar o pdfjs no próprio heap", () => {
+  it("as flags do CMD do Dockerfile.worker escolhem o filho", async () => {
+    // A cerca que faltou em 21/10/2026: o #2823 trocou `pnpm exec tsx` por
+    // `node --import tsx`, o caso acima só conhecia a forma antiga, e o worker
+    // de produção voltou a carregar o pdfjs no próprio heap. Este caso lê o CMD
+    // da imagem em vez de repetir à mão o que ele diz hoje.
+    const dockerfile = readFileSync(join(raiz, "Dockerfile.worker"), "utf8");
+    const linha = dockerfile.split("\n").find((l) => /^CMD\s*\[/.test(l));
+    expect(linha, "Dockerfile.worker sem CMD em forma exec").toBeTruthy();
+    const cmd = JSON.parse(linha!.replace(/^CMD\s*/, "")) as string[];
+    expect(cmd[0], `o CMD não começa por node: ${JSON.stringify(cmd)}`).toBe("node");
+    // Entre `node` e o script de entrada (o último item) está o `execArgv`.
+    const execArgv = cmd.slice(1, -1);
+    const { estrategiaPadrao } = await import("@/lib/ai/rag/extractors/pdf");
+    expect(estrategiaPadrao(execArgv), `execArgv do CMD: ${JSON.stringify(execArgv)}`).toBe(
+      "processo-a-parte",
+    );
+  });
+
+  // As duas formas de pôr o `tsx` no processo: a CLI (o CMD até o #2823) e o
+  // hook `--import tsx` (o CMD depois dele). Só a primeira era exercitada, e foi
+  // a segunda que derrubou a produção em 21/10/2026.
+  it.each([
+    ["pela CLI do tsx", ["node_modules/tsx/dist/cli.mjs", "--eval"]],
+    ["por node --import tsx", ["--import", "tsx", "--eval"]],
+  ])("sob o tsx DE VERDADE (%s), o pai extrai sem carregar o pdfjs no próprio heap", (_forma, lancador) => {
     // Este é o único caso que exercita o caminho que o worker de produção
     // percorre: o `tsx` real, não um `execArgv` de mentira. Sob ele, a extração
     // em processo custava 117 MB de heap (medido na imagem 1.27.1); com o filho,
@@ -215,7 +244,7 @@ describe("extractPdfText — estratégia `processo-a-parte`", () => {
         }));
       }).catch((e) => { console.error(String(e && e.stack || e)); process.exit(1); });
     `;
-    const saida = execFileSync(process.execPath, ["node_modules/tsx/dist/cli.mjs", "--eval", script], {
+    const saida = execFileSync(process.execPath, [...lancador, script], {
       cwd: raiz,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
