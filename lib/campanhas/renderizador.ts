@@ -44,6 +44,9 @@
  * PRÓPRIA do jsonb do banco — `{{lead.__proto__}}` não atravessa protótipo.
  */
 
+import { CAMPOS_DA_VENDA } from "@/lib/vendas/eventos";
+import { lerCaminho } from "@/lib/vendas/valores";
+
 import { horaNoFuso } from "./relogio";
 
 /** As variáveis que existem. Oferecer uma que não resolve é prometer dado que não há. */
@@ -71,6 +74,12 @@ export interface ValoresDoDestinatario {
   lead?: CamposPersonalizados | null;
   /** `{{contato.x}}` — campos do contato. */
   contato?: CamposPersonalizados | null;
+  /**
+   * `{{venda.x}}` — os dados da venda do gatilho `sale.received` (Parte 2), com
+   * `extra` e `payload` dentro. AUSENTE (`undefined`) = fora do gatilho de venda:
+   * aí `{{venda.x}}` fica desconhecida, como toda raiz que não existe.
+   */
+  venda?: CamposPersonalizados | null;
 }
 
 /**
@@ -134,6 +143,16 @@ export function renderizar(
         return saudacaoDaHora(quando.agora, quando.fuso);
       }
       default: {
+        if (valores.venda !== undefined && /^venda\./i.test(bruto)) {
+          const valor = valorDaVenda(valores.venda, bruto.slice("venda.".length));
+          if (valor === DESCONHECIDA) {
+            desconhecidas.add(bruto);
+            return literal;
+          }
+          // Sem valor = FALTA, como `{{nome}}` sem nome: o set_field falha com "falta o dado".
+          if (valor === null) return marcarFalta(faltando, chave, literal);
+          return blindar(valor);
+        }
         const raiz = raizDeCampo(bruto);
         if (raiz) {
           const mapa = raiz === "lead" ? valores.lead : valores.contato;
@@ -237,6 +256,30 @@ function textoDeCampo(valor: unknown): string {
   return String(valor);
 }
 
+const DESCONHECIDA = Symbol("desconhecida");
+
+/**
+ * `venda.produto`, `venda.extra.link`, `venda.payload.data.buyer.email`. Campo fixo
+ * fora de `CAMPOS_DA_VENDA` (ou `extra`/`payload` sem caminho) é DESCONHECIDO —
+ * erro de digitação, que a tela recusa ao salvar. Só propriedade própria.
+ */
+function valorDaVenda(venda: CamposPersonalizados | null, caminho: string): string | null | typeof DESCONHECIDA {
+  const [primeiro = "", ...resto] = caminho.split(".");
+  const raiz = primeiro.toLowerCase();
+  if (raiz === "extra" || raiz === "payload") {
+    if (resto.length === 0) return DESCONHECIDA;
+    const origem = venda && Object.hasOwn(venda, raiz) ? venda[raiz] : undefined;
+    return textoDoCaminho(origem, resto.join("."));
+  }
+  if (resto.length > 0 || !(CAMPOS_DA_VENDA as readonly string[]).includes(raiz)) return DESCONHECIDA;
+  return lerCampo(venda, raiz);
+}
+
+function textoDoCaminho(origem: unknown, caminho: string): string | null {
+  const texto = textoDeCampo(lerCaminho(origem, caminho));
+  return texto.trim() === "" ? null : texto;
+}
+
 /**
  * Quais variáveis um texto usa — para a tela avisar antes, não depois.
  * Inclui os campos personalizados no caminho que o texto escreveu (`lead.gancho`).
@@ -292,10 +335,16 @@ export type ProblemaDaExpressao = "variavel_mal_escrita" | "variavel_desconhecid
  * (`{{sobrenome}}`). `null` = todas resolvem. Fonte única da regra P17 da
  * campanha (`conferir-template.ts`), agora também do fluxo e das regras.
  */
-export function problemaDasExpressoes(expressoes: Iterable<string>): ProblemaDaExpressao | null {
+export function problemaDasExpressoes(
+  expressoes: Iterable<string>,
+  opcoes: { venda?: boolean } = {},
+): ProblemaDaExpressao | null {
   for (const expressao of expressoes) {
     if (temChaveSolta(expressao)) return "variavel_mal_escrita";
-    if (renderizar(expressao, { nome: "x" }).desconhecidas.length > 0) return "variavel_desconhecida";
+    // `venda: {}` faz `{{venda.x}}` conhecida (sem valor = falta, não problema); sem ela, desconhecida.
+    if (renderizar(expressao, { nome: "x", venda: opcoes.venda ? {} : undefined }).desconhecidas.length > 0) {
+      return "variavel_desconhecida";
+    }
   }
   return null;
 }

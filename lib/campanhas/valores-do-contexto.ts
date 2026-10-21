@@ -31,6 +31,8 @@ export function valoresDoContexto(contexto: Readonly<Record<string, unknown>>): 
     // Sem linha = sem mapa: o renderizador marca FALTA para `{{contato.x}}`/`{{lead.x}}`.
     contato: contato ? mapaDeJson(contato.custom_fields) : null,
     lead: lead ? mapaDeJson(lead.custom_fields) : null,
+    // Só o gatilho de venda põe `venda` no contexto (motor, Parte 2); fora dele a chave nem existe.
+    ...(contexto.venda !== undefined ? { venda: mapaDeJson(contexto.venda) } : {}),
   };
 }
 
@@ -53,7 +55,7 @@ export const FRASE_DO_PROBLEMA_DA_EXPRESSAO: Record<ProblemaDaExpressao, string>
     "Há uma variável desconhecida. Use {{nome}}, {{primeiro_nome}}, {{saudacao}}, {{contato.campo}} ou {{lead.campo}}.",
 };
 
-export function problemaNoTexto(texto: string): string | null {
-  const problema = problemaDasExpressoes([texto]);
+export function problemaNoTexto(texto: string, opcoes: { venda?: boolean } = {}): string | null {
+  const problema = problemaDasExpressoes([texto], opcoes);
   return problema ? FRASE_DO_PROBLEMA_DA_EXPRESSAO[problema] : null;
 }

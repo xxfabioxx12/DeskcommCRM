@@ -15,6 +15,7 @@ import {
   campoDoGatilhoDeDataEhDoContato,
 } from "@/lib/automation/campo-do-gatilho-de-data";
 import { createAutomationRuleSchema } from "@/lib/schemas";
+import { PLATAFORMAS_DE_VENDA } from "@/lib/vendas/eventos";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptRuleActionSecrets } from "@/lib/webhooks/secrets";
@@ -86,6 +87,21 @@ export async function POST(req: NextRequest): Promise<Response> {
     if (sourceError) return fail("internal_error", sourceError.message, 500, { requestId });
     if (!source) {
       return fail("invalid_request", t("A fonte escolhida não pertence a esta empresa."), 422, { requestId });
+    }
+  }
+  // A conexão do filtro da venda é desta empresa e é de venda (Parte 2).
+  const conexaoId = parsed.data.trigger_config?.conexao_id;
+  if (typeof conexaoId === "string") {
+    const { data: conexao, error: conexaoError } = await supabase
+      .from("webhook_sources")
+      .select("id")
+      .eq("id", conexaoId)
+      .eq("organization_id", activeOrg.orgId)
+      .in("kind", [...PLATAFORMAS_DE_VENDA])
+      .maybeSingle();
+    if (conexaoError) return fail("internal_error", conexaoError.message, 500, { requestId });
+    if (!conexao) {
+      return fail("invalid_request", t("A conexão escolhida não pertence a esta empresa."), 422, { requestId });
     }
   }
   const campoDeData = await campoDoGatilhoDeDataEhDoContato(

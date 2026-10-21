@@ -423,6 +423,9 @@ const acoesFixas = [
         valor: z.string().min(1).max(1000),
       })
       .superRefine((config, ctx) => {
+        // `{{venda.x}}` passa aqui; se o gatilho é o de venda, quem confere é a regra
+        // (`recusarVendaForaDoGatilho`), porque a ação não conhece o gatilho.
+        if (problemaNoTexto(config.valor, { venda: true }) === null) return;
         const problema = problemaNoTexto(config.valor);
         if (problema) ctx.addIssue({ code: "custom", path: ["valor"], message: problema });
       }),
@@ -599,6 +602,40 @@ export const updateWebhookSourceSchema = createWebhookSourceSchema.partial().ext
   update_existing_lead_on_capture: z.boolean().optional(),
 });
 
+export const MENSAGEM_DA_VENDA_FORA_DO_GATILHO = "As variáveis {{venda.…}} só valem no gatilho Venda recebida.";
+
+function valoresDoGravarCampo(acoes: ReadonlyArray<{ type: string; config?: unknown }>): string[] {
+  const valores: string[] = [];
+  for (const acao of acoes) {
+    const config = (acao.config ?? {}) as Record<string, unknown>;
+    if (acao.type === "set_field" && typeof config.valor === "string") valores.push(config.valor);
+    if (acao.type === "ai_decide" && Array.isArray(config.opcoes)) {
+      for (const opcao of config.opcoes as Array<{ acao?: { type: string; config?: unknown } }>) {
+        if (opcao?.acao) valores.push(...valoresDoGravarCampo([opcao.acao]));
+      }
+    }
+  }
+  return valores;
+}
+
+/** Alguma ação usa `{{venda.x}}` num gatilho que não é o de venda? (O resto do texto está certo.) */
+export function acoesUsamVendaForaDoGatilho(
+  gatilho: string,
+  acoes: ReadonlyArray<{ type: string; config?: unknown }>,
+): boolean {
+  if (gatilho === GATILHO_DA_VENDA) return false;
+  return valoresDoGravarCampo(acoes).some((v) => problemaNoTexto(v) !== null && problemaNoTexto(v, { venda: true }) === null);
+}
+
+function recusarVendaForaDoGatilho(
+  regra: { trigger_event?: string; actions?: ReadonlyArray<{ type: string; config?: unknown }> },
+  ctx: z.RefinementCtx,
+): void {
+  if (regra.trigger_event === undefined || regra.actions === undefined) return;
+  if (!acoesUsamVendaForaDoGatilho(regra.trigger_event, regra.actions)) return;
+  ctx.addIssue({ code: "custom", path: ["actions"], message: MENSAGEM_DA_VENDA_FORA_DO_GATILHO });
+}
+
 /** O filtro da venda torto seria regra que nunca casa: recusa na porta. */
 export const MENSAGEM_DA_CONFIG_DA_VENDA = "Revise os filtros da venda.";
 
@@ -631,6 +668,7 @@ export const createAutomationRuleSchema = z
   .superRefine(exigirConfigDosGatilhosDeTempo)
   .superRefine(exigirIdDaFonteWebhook)
   .superRefine(exigirConfigDaVenda)
+  .superRefine(recusarVendaForaDoGatilho)
   .superRefine(recusarLacoDeLead);
 
 function exigirIdDaFonteWebhook(
@@ -727,6 +765,7 @@ export const updateAutomationRuleSchema = z
   })
   .superRefine(exigirIdDaFonteWebhook)
   .superRefine(exigirConfigDaVenda)
+  .superRefine(recusarVendaForaDoGatilho)
   // Só vê o laço quando o PATCH traz gatilho E ações; o PATCH parcial é
   // conferido contra a regra gravada na rota.
   .superRefine(recusarLacoDeLead);

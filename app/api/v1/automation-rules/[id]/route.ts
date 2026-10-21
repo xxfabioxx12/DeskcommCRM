@@ -17,10 +17,12 @@ import { autoriaDaMudanca } from "@/lib/operacao/autoria";
 import { updateAutomationRuleSchema } from "@/lib/schemas";
 import {
   acoesQueFechamLaco,
+  acoesUsamVendaForaDoGatilho,
   MENSAGEM_DA_CONFIG_DA_VENDA,
+  MENSAGEM_DA_VENDA_FORA_DO_GATILHO,
   MENSAGEM_DO_LACO_DE_LEAD,
 } from "@/lib/schemas/webhooks";
-import { GATILHO_DA_VENDA } from "@/lib/vendas/eventos";
+import { GATILHO_DA_VENDA, PLATAFORMAS_DE_VENDA } from "@/lib/vendas/eventos";
 import { configDaVendaSchema } from "@/lib/vendas/filtro-da-regra";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -82,6 +84,18 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     return fail("invalid_request", t(MENSAGEM_DO_LACO_DE_LEAD), 400, { requestId });
   }
 
+  // O PATCH parcial (só as ações, ou só o gatilho) também não pode deixar
+  // `{{venda.x}}` numa regra que não é de venda: o schema só vê os dois juntos.
+  if (
+    (parsed.data.trigger_event !== undefined || parsed.data.actions !== undefined) &&
+    acoesUsamVendaForaDoGatilho(
+      parsed.data.trigger_event ?? gravada.trigger_event,
+      parsed.data.actions ?? gravada.actions ?? [],
+    )
+  ) {
+    return fail("invalid_request", t(MENSAGEM_DA_VENDA_FORA_DO_GATILHO), 400, { requestId });
+  }
+
   // Filtros da venda: o schema só os confere quando o PATCH traz o gatilho; o
   // PATCH parcial é conferido contra o gatilho gravado.
   if (
@@ -106,6 +120,22 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     if (sourceError) return fail("internal_error", sourceError.message, 500, { requestId });
     if (!source) {
       return fail("invalid_request", t("A fonte escolhida não pertence a esta empresa."), 422, { requestId });
+    }
+  }
+
+  // A conexão do filtro da venda é desta empresa e é de venda (Parte 2).
+  const conexaoId = parsed.data.trigger_config?.conexao_id;
+  if (typeof conexaoId === "string") {
+    const { data: conexao, error: conexaoError } = await supabase
+      .from("webhook_sources")
+      .select("id")
+      .eq("id", conexaoId)
+      .eq("organization_id", activeOrg.orgId)
+      .in("kind", [...PLATAFORMAS_DE_VENDA])
+      .maybeSingle();
+    if (conexaoError) return fail("internal_error", conexaoError.message, 500, { requestId });
+    if (!conexao) {
+      return fail("invalid_request", t("A conexão escolhida não pertence a esta empresa."), 422, { requestId });
     }
   }
 

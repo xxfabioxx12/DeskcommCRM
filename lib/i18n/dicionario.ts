@@ -16643,6 +16643,8 @@ export const DICIONARIO: Traducoes = {
   // Parte 2 — entrada das vendas
   "Venda recebida": { es: "Venta recibida" },
   "Revise os filtros da venda.": { es: "Revisa los filtros de la venta." },
+  "As variáveis {{venda.…}} só valem no gatilho Venda recebida.": { es: "Las variables {{venda.…}} solo valen en el disparador Venta recibida." },
+  "A conexão escolhida não pertence a esta empresa.": { es: "La conexión elegida no pertenece a esta empresa." },
 };
 
 /**
