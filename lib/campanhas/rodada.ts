@@ -38,8 +38,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
-import { decidePacing, dayStartInTz } from "@/lib/agent-engine/pacing/engine";
-import { loadChannelKnobs, loadPacingState, recordSend } from "@/lib/agent-engine/pacing/store";
+import { dayStartInTz } from "@/lib/agent-engine/pacing/engine";
+import { loadChannelKnobs, recordSend } from "@/lib/agent-engine/pacing/store";
 import { beginServiceAtOrigin } from "@/lib/atendimento/origem";
 import { linhaDoEspelho } from "@/lib/channels/linha-do-espelho";
 import { logger } from "@/lib/logger";
@@ -56,10 +56,9 @@ import {
 import { hashDoEndereco } from "./exclusoes";
 import { renderizar } from "./renderizador";
 import { escolherNumero, poolDaCampanha, type NumeroDisponivel } from "./rodizio";
-import { intervaloDoCanalCumprido, podeMandarAgora, proximaTentativa, type RitmoDaCampanha } from "./ritmo";
+import { lerNumero, type KnobsDoNumero } from "./numero-disponivel";
+import { podeMandarAgora, proximaTentativa, type RitmoDaCampanha } from "./ritmo";
 import {
-  canalExigeTemplate,
-  intervaloMinimoDoCanal,
   lerValoresPreparados,
   limparMapaDeSlots,
 } from "./template-da-campanha";
@@ -398,49 +397,25 @@ async function rodarUmaCampanha(
 
   // ─── O RODÍZIO: qual número fala com esta pessoa ───
   const disponiveis: NumeroDisponivel[] = [];
-  const knobsPorNumero = new Map<string, Awaited<ReturnType<typeof loadChannelKnobs>>>();
+  const knobsPorNumero = new Map<string, KnobsDoNumero>();
   const exigeTemplatePorNumero = new Map<string, boolean>();
   for (const sessionId of numeros) {
-    const k =
-      sessionId === campanha.channel_session_id
-        ? knobsDoPrincipal
-        : await loadChannelKnobs(pool, campanha.organization_id, sessionId);
-    knobsPorNumero.set(sessionId, k);
-
-    const { data: canal } = await admin
-      .from("channel_sessions")
-      .select("daily_message_limit, status, provider")
-      .eq("organization_id", campanha.organization_id)
-      .eq("id", sessionId)
-      .maybeSingle();
-    const linha = canal as { daily_message_limit: number | null; status: string; provider: string | null } | null;
+    // A leitura de cada número mora em `numero-disponivel.ts`: a entrada das
+    // vendas (Parte 2 §4) escolhe o número de saída pela MESMA régua.
+    const leitura = await lerNumero(
+      admin,
+      pool,
+      campanha.organization_id,
+      sessionId,
+      agora,
+      sessionId === campanha.channel_session_id ? knobsDoPrincipal : undefined,
+    );
     // Número fora do ar não entra no rodízio: mandar por ele seria fabricar uma
     // mensagem presa em `sending` que o recovery depois marca como falha.
-    if (!linha || linha.status !== "WORKING") continue;
-    exigeTemplatePorNumero.set(sessionId, canalExigeTemplate(linha.provider) === true);
-
-    const estadoDoNumero = await loadPacingState(pool, campanha.organization_id, sessionId, {
-      now: agora,
-      timezone: k.knobs.timezone,
-      numberActivatedAt: k.numberActivatedAt,
-    });
-    const decisao = decidePacing({
-      now: agora,
-      knobs: k.knobs,
-      state: estadoDoNumero,
-      crmDailyLimit: linha.daily_message_limit ?? null,
-    });
-    disponiveis.push({
-      sessionId,
-      folgaDoDia:
-        linha.daily_message_limit === null
-          ? null
-          : Math.max(0, linha.daily_message_limit - estadoDoNumero.sentToday),
-      // O intervalo da PLATAFORMA (6 s no oficial) soma-se ao pacing do número e
-      // ao intervalo da campanha — hetero-restrição, que nenhum dos dois cobria.
-      podeAgora: decisao.allow && intervaloDoCanalCumprido(estadoDoNumero.lastSentAt, intervaloMinimoDoCanal(linha.provider), agora),
-      ultimoEnvio: estadoDoNumero.lastSentAt,
-    });
+    if (!leitura) continue;
+    knobsPorNumero.set(sessionId, leitura.knobs);
+    exigeTemplatePorNumero.set(sessionId, leitura.exigeTemplate);
+    disponiveis.push(leitura.numero);
   }
 
   const escolha = escolherNumero(disponiveis, await numeroDoHistorico(admin, campanha, alvo.contact_id));

@@ -135,6 +135,9 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
     "O roteiro de atendimento não começou: o módulo Fluxos de atendimento está desligado nesta instalação.",
   roteiro_nao_iniciado:
     "O roteiro de atendimento não começou para este contato: o fluxo pode não estar publicado, o contato já pode ter um roteiro em andamento, ou já ter concluído este sem poder recomeçar.",
+  /* Parte 2 §4 — número de saída por rodízio (lib/automation/actions/start-message-flow.ts). */
+  sem_numero_de_saida_livre:
+    "O fluxo não começou: nenhum dos números de saída marcados na conexão de venda está conectado e com folga no teto do dia e no aquecimento.",
   consent_declined: "O contato não autorizou o recebimento de mensagens de marketing.",
   fora_do_pre_go_live:
     "O número deste canal ainda não entrou no pré-go-live, então a mensagem escrita pela IA não sai por ele.",

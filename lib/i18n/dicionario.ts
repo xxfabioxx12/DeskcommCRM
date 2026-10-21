@@ -16645,6 +16645,9 @@ export const DICIONARIO: Traducoes = {
   "Revise os filtros da venda.": { es: "Revisa los filtros de la venta." },
   "As variáveis {{venda.…}} só valem no gatilho Venda recebida.": { es: "Las variables {{venda.…}} solo valen en el disparador Venta recibida." },
   "A conexão escolhida não pertence a esta empresa.": { es: "La conexión elegida no pertenece a esta empresa." },
+  "O fluxo não começou: nenhum dos números de saída marcados na conexão de venda está conectado e com folga no teto do dia e no aquecimento.": {
+    es: "El flujo no empezó: ninguno de los números de salida marcados en la conexión de venta está conectado y con margen en el tope del día y en el calentamiento.",
+  },
 };
 
 /**

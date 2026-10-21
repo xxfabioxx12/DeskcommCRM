@@ -25,7 +25,10 @@ describe("rodada × template", () => {
     expect(FONTE).toMatch(/linhaDoEspelho<LinhaDoModelo>\([\s\S]{0,300}channelSessionId:\s*sessionEscolhida/);
   });
   it("o intervalo mínimo da plataforma entra na decisão de cada número", () => {
-    expect(FONTE).toMatch(/podeAgora:\s*decisao\.allow\s*&&\s*intervaloDoCanalCumprido\(/);
+    // A leitura de cada número saiu para `numero-disponivel.ts` (Parte 2 §4); a rodada a chama.
+    const LEITURA = readFileSync(join(process.cwd(), "lib/campanhas/numero-disponivel.ts"), "utf8");
+    expect(LEITURA).toMatch(/podeAgora:\s*decisao\.allow\s*&&\s*intervaloDoCanalCumprido\(/);
+    expect(FONTE).toMatch(/await lerNumero\(/);
   });
   it("template parado pausa a campanha nos dois pontos (antes e depois do envio)", () => {
     expect(FONTE.match(/pausarACampanha\(/g)?.length ?? 0).toBeGreaterThanOrEqual(2);

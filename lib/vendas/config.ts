@@ -84,6 +84,8 @@ export const configDaConexaoSchema = z
   .object({
     dispara: z.boolean().optional(),
     telefone_regiao: z.enum(REGIOES_DO_TELEFONE).optional(),
+    /** Spec §4: os números (channel_sessions) que podem abrir conversa com quem chega por aqui. */
+    numeros_de_saida: z.array(z.string().uuid()).max(50).optional(),
     seguranca: segurancaSchema.optional(),
     mapa: mapaDaPersonalizadaSchema.optional(),
   })

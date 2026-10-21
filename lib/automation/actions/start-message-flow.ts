@@ -30,6 +30,8 @@ import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
 import { iniciarFluxoDeAtendimento } from "@/lib/followup/atendimento";
 import { enrollFollowupFlow } from "@/lib/followup/enroll";
 import { moduloLigado } from "@/lib/instalacao/modulos";
+import { GATILHO_DA_VENDA } from "@/lib/vendas/eventos";
+import { numerosDeSaidaDoEvento, saidaDaVenda } from "@/lib/vendas/numero-de-saida";
 
 const TYPE = "start_message_flow";
 
@@ -74,8 +76,26 @@ export async function executeStartMessageFlow(
     return armarRoteiroDeAtendimento(ctx, pointerId, contactId);
   }
 
+  // Número de saída por rodízio (Parte 2 §4): só no gatilho de venda. Sem
+  // número marcado, ou contato que já conversa, a fronteira é a de hoje.
+  let numeroDeSaida: string | undefined;
+  if (ctx.event.event_type === GATILHO_DA_VENDA) {
+    const saida = await saidaDaVenda({
+      admin: ctx.admin,
+      pool: getRequestPool,
+      organizationId: ctx.organizationId,
+      contactId,
+      numeros: numerosDeSaidaDoEvento(ctx.event.payload ?? {}),
+      agora: new Date(),
+    });
+    if (saida.tipo === "nenhum_livre") {
+      return { type: TYPE, status: "skipped", detail: { reason: "sem_numero_de_saida_livre" } };
+    }
+    if (saida.tipo === "numero") numeroDeSaida = saida.sessionId;
+  }
+
   const result = await enrollFollowupFlow(ctx.admin, {
-    resolveServiceBoundary: () => serviceForAutomation(ctx, contactId),
+    resolveServiceBoundary: () => serviceForAutomation(ctx, contactId, numeroDeSaida),
     organizationId: ctx.organizationId,
     pointerId,
     contactId,

@@ -241,6 +241,7 @@ async function decidir(
       order_bump: venda.orderBump,
       sales_event_id: salesEventId,
       contact_id: contatoId,
+      numeros_de_saida: conexao.config.numeros_de_saida ?? [],
       // Sem `venda`: o evento fica no event_log sem poda (D11); o motor lê `venda` da linha de sales_events.
     },
     `venda:${salesEventId}`,
