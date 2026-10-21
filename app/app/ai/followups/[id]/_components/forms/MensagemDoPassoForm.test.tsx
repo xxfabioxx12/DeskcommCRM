@@ -89,6 +89,7 @@ describe("MensagemDoPassoForm", () => {
     render(<MensagemDoPassoForm config={salvo} onChange={onChange} />);
     expect(screen.getByLabelText("Número comum (QR Code)")).toHaveValue("Oi");
     expect(screen.getByLabelText(/\{\{1\}\} · corpo/)).toHaveValue("{{nome}}");
+    expect(screen.getByLabelText(/\{\{1\}\} · corpo/)).toHaveAttribute("maxlength", "1000");
     fireEvent.change(screen.getByLabelText("Número comum (QR Code)"), { target: { value: "Oi!" } });
     expect(onChange).toHaveBeenLastCalledWith({ ...salvo, texto: { body: "Oi!" } });
   });

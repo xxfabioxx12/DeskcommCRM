@@ -138,6 +138,7 @@ export function LacunasDoTemplate({
                 id={`${idDoSeletor}-slot-${slot.valueKey}`}
                 value={valor.slotMap[slot.valueKey] ?? ""}
                 onChange={(e) => preencherSlot(slot.valueKey, e.target.value)}
+                maxLength={1000}
                 placeholder={t("Texto fixo ou {{primeiro_nome}}, {{contato.campo}}…")}
               />
               <div className="flex flex-wrap gap-2">
