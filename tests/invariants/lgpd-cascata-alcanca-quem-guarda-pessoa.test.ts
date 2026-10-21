@@ -76,6 +76,13 @@ const DIVIDA_LGPD_CONHECIDA: Record<string, string> = {
     "estão aqui, as duas também já cobertas por trigger. Sai no dia em que " +
     "`tabelasNaCascata()` passar a derivar do catálogo também os triggers de " +
     "`contacts`, ou no dia em que a função ganhar o passo.",
+  sales_events:
+    "Fork 9003 (Parte 2 da migração do ManyChat): e-mail, telefone, nome (em `venda`) e o payload da venda. " +
+    "⚠️ ELA JÁ ESTÁ PROTEGIDA: o gatilho `trg_vendas_redigir_ao_anonimizar` limpa as vendas do contato na " +
+    "virada de is_anonymized, e `fn_vendas_limpar_dados_vencidos` limpa tudo depois de 30 dias — " +
+    "`tests/invariants/fork-9003-entrada-das-vendas.test.ts` prova os dois pelo comportamento. A entrada " +
+    "existe só porque ESTE instrumento lê UMA função e não enxerga gatilho (mesma razão de crm_tasks). " +
+    "Sai no dia em que `tabelasNaCascata()` derivar também os gatilhos de `contacts`.",
   webhook_lead_captures:
     "captured_name, captured_email e captured_phone — o payload cru de captação. " +
     "A própria migration 0174 escreveu que 'o cascade de anonimização precisa alcançar esta tabela' " +

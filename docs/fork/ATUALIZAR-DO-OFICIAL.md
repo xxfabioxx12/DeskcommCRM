@@ -4,7 +4,7 @@ Este fork tem mudanças que o oficial não tem, cada uma numa migration da faixa
 **9000**: a **9001** (`supabase/migrations/20261021130704_9001_campanha_com_template.sql`,
 colunas novas em `campaigns`) e, a partir da Parte 1 do motor de fluxo, a **9002**
 (`supabase/migrations/20261021150000_9002_etiquetas_e_campos_do_fluxo.sql`, funções de
-tirar etiqueta e gravar campo).
+tirar etiqueta e gravar campo) e, a partir da Parte 2, a **9003** (`supabase/migrations/20261021180000_9003_entrada_das_vendas.sql`, conexões e eventos de venda).
 
 O número 9001 é de propósito. O oficial numera as migrations em sequência (0703,
 0704, 0705...). Se a nossa usasse o próximo número da fila, a próxima versão do
@@ -16,6 +16,7 @@ oficial:**
 
 - `supabase/migrations/20261021130704_9001_campanha_com_template.sql`
 - `supabase/migrations/20261021150000_9002_etiquetas_e_campos_do_fluxo.sql`
+- `supabase/migrations/20261021180000_9003_entrada_das_vendas.sql`
 - `supabase/fork/9NNN.sql` (cópia exata de cada bloco que vai no `baseline.sql`)
 - `scripts/fork/reaplicar-bloco-do-fork.sh`
 - este documento
@@ -68,6 +69,17 @@ oficial:**
    git grep -n "fn_contato_remover_etiquetas\|fn_lead_remover_etiquetas\|fn_contato_anotar_campos" -- supabase/migrations ':!*9002*'
    ```
 
+   A 9003 recria `emit_event` e `fn_service_event_contact` a partir da 0670 (com
+   `sale.received` acrescentado). Se a versão nova do oficial redefinir qualquer
+   uma das duas, `tests/unit/fork-9003-entrada-das-vendas.test.ts` fica vermelho
+   ("a 0670 ainda é a última..."). Aí refaça o Passo 4 da Tarefa 1 do plano da
+   Parte 2 a partir da migration NOVA do oficial (troque o nome do arquivo no
+   script e na cerca) antes de aplicar qualquer coisa:
+
+   ```bash
+   git grep -n "function public.emit_event(\|function public.fn_service_event_contact(" -- supabase/migrations ':!*9003*'
+   ```
+
    Se aparecer alguma coisa, **pare**. Não aplique nada no banco. As duas versões
    precisam ser conciliadas antes (qual coluna fica, qual código fica), e isso é
    trabalho de desenvolvimento, não de atualização.
@@ -83,6 +95,7 @@ oficial:**
      tests/unit/campanha-template-migration.test.ts \
      tests/unit/blocos-do-fork.test.ts \
      tests/unit/fork-9002-etiquetas-e-campos.test.ts \
+     tests/unit/fork-9003-entrada-das-vendas.test.ts \
      tests/unit/baseline-reaplicavel.test.ts
    pnpm cercas
    pnpm test:unit

@@ -136,6 +136,7 @@ const TIPOS_RESERVADOS = [
   "contact.phone_added", //          0670
   "conversation.autonomous_turn_revoked", //0594 — revogação nativa, sessão não pode forjar
   "message.received", //             herdado
+  "sale.received", //                9003 (fork) — venda forjada por login abriria fluxo para o "comprador"
 ] as const;
 
 /** Uma coluna de texto do psql (`-tA`) virada lista, sem linha vazia. */
