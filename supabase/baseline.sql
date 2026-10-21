@@ -59382,3 +59382,36 @@ comment on column public.channel_sessions.responde_sozinho is
   'Interruptor "Responder automaticamente por este número" (fork 9005). Nulo = padrão do provedor: oficial desligado, demais ligados.';
 
 notify pgrst, 'reload schema';
+
+revoke all on public.external_db_connections_safe from anon;
+grant select on public.external_db_connections_safe to authenticated;
+
+-- ---- #3202: channel_sessions — a regra de escrita deixa de valer para a leitura (migration 0707) ----
+-- `for all` também vale para SELECT: fn_role_at_least (~4 ms) rodava por linha em todo embed de channel_sessions.
+drop policy if exists channel_sessions_tenant_write on public.channel_sessions;
+drop policy if exists channel_sessions_tenant_insert on public.channel_sessions;
+drop policy if exists channel_sessions_tenant_update on public.channel_sessions;
+drop policy if exists channel_sessions_tenant_delete on public.channel_sessions;
+
+create policy channel_sessions_tenant_insert on public.channel_sessions
+  for insert with check (
+    (organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'admin'))
+    or public.fn_is_platform_admin_full()
+  );
+create policy channel_sessions_tenant_update on public.channel_sessions
+  for update using (
+    (organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'admin'))
+    or public.fn_is_platform_admin_full()
+  ) with check (
+    (organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'admin'))
+    or public.fn_is_platform_admin_full()
+  );
+create policy channel_sessions_tenant_delete on public.channel_sessions
+  for delete using (
+    (organization_id in (select public.fn_user_org_ids())
+      and public.fn_role_at_least(organization_id, 'admin'))
+    or public.fn_is_platform_admin_full()
+  );
