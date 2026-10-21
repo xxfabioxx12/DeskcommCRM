@@ -64,6 +64,11 @@
 import { originFromAutomationEvent } from "@/lib/atendimento/origem-automacao";
 import { registerAction } from "@/lib/automation/actions";
 import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
+import {
+  MENSAGEM_ETIQUETA_LONGA_DO_CONTATO,
+  etiquetaLongaDoContato,
+  etiquetasDoDestino,
+} from "@/lib/automation/etiquetas-e-campos";
 
 type Destino = "card" | "contato";
 
@@ -89,8 +94,8 @@ function lista(valor: unknown): string[] {
 }
 
 async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise<ActionResultDetail> {
-  const tags = Array.isArray(config.tags) ? config.tags.map(String) : [];
-  if (!tags.length) return { type: "add_tag", status: "skipped", detail: { reason: "no_tags" } };
+  const cruas = Array.isArray(config.tags) ? config.tags.map(String) : [];
+  if (!cruas.length) return { type: "add_tag", status: "skipped", detail: { reason: "no_tags" } };
 
   const destino: Destino = config.destino === "contato" ? "contato" : "card";
 
@@ -131,6 +136,17 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
   } else {
     return { type: "add_tag", status: "skipped", detail: { reason: "no_target" } };
   }
+
+  // Parte 1 do motor de fluxo (Divergência D2, ruling R1): a regra de etiqueta é
+  // decidida pela TABELA resolvida. No CONTATO — inclusive quando o destino é
+  // `card` mas a pessoa não tem card e a escrita cai no contato — a etiqueta sai
+  // como o contato a guarda (`normalizarTags`, #1224) e maior que 40 é recusada
+  // (cortar em silêncio gravaria outra etiqueta). O CARD continua byte a byte.
+  if (target.table === "contacts" && etiquetaLongaDoContato(cruas) !== null) {
+    return { type: "add_tag", status: "failed", error: MENSAGEM_ETIQUETA_LONGA_DO_CONTATO };
+  }
+  const tags = target.table === "contacts" ? etiquetasDoDestino(cruas, "contato") : cruas;
+  if (!tags.length) return { type: "add_tag", status: "skipped", detail: { reason: "no_tags" } };
 
   // ─── A escrita: UMA chamada, e nada dela é calculado aqui ────────────────
   //

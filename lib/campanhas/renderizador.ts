@@ -282,3 +282,20 @@ export function saudacaoDaHora(agora: Date, fuso: string): string {
   if (hora < 18) return "Boa tarde";
   return "Boa noite";
 }
+
+/** O que pode estar errado numa expressão com variáveis — a mesma régua na campanha, no fluxo e nas regras. */
+export type ProblemaDaExpressao = "variavel_mal_escrita" | "variavel_desconhecida";
+
+/**
+ * A primeira expressão com variável que sairia LITERAL para o cliente: chave
+ * sobrando (`{{nome completo}}`) ou token que o renderizador não conhece
+ * (`{{sobrenome}}`). `null` = todas resolvem. Fonte única da regra P17 da
+ * campanha (`conferir-template.ts`), agora também do fluxo e das regras.
+ */
+export function problemaDasExpressoes(expressoes: Iterable<string>): ProblemaDaExpressao | null {
+  for (const expressao of expressoes) {
+    if (temChaveSolta(expressao)) return "variavel_mal_escrita";
+    if (renderizar(expressao, { nome: "x" }).desconhecidas.length > 0) return "variavel_desconhecida";
+  }
+  return null;
+}

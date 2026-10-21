@@ -19,6 +19,10 @@ import {
   configDaEtapaParada,
   configDoSilencio,
 } from "@/lib/automation/gatilhos-de-tempo";
+import {
+  MENSAGEM_ETIQUETA_LONGA_DO_CONTATO,
+  etiquetaLongaDoContato,
+} from "@/lib/automation/etiquetas-e-campos";
 
 /**
  * Os gatilhos que o motor reconhece, e a entidade que cada um tem que trazer.
@@ -293,6 +297,17 @@ function umRodizioPorRegra(
   }
 }
 
+/** Etiqueta de CONTATO maior que 40 é recusada na configuração (Parte 1 do motor de fluxo). */
+function recusaEtiquetaLongaDoContato(
+  config: { tags: string[]; destino?: "card" | "contato" | undefined },
+  ctx: z.RefinementCtx,
+): void {
+  if (config.destino !== "contato") return;
+  if (etiquetaLongaDoContato(config.tags) !== null) {
+    ctx.addIssue({ code: "custom", path: ["tags"], message: MENSAGEM_ETIQUETA_LONGA_DO_CONTATO });
+  }
+}
+
 /**
  * As ações FIXAS do motor — a fonte única de "que ações existem, e com que
  * config".
@@ -364,16 +379,18 @@ const acoesFixas = [
   }),
   z.object({
     type: z.literal("add_tag"),
-    config: z.object({
-      tags: z.array(z.string().min(1).max(60)).min(1).max(10),
-      /**
-       * #2498 — onde a etiqueta é GRAVADA: `card` (padrão, o comportamento de
-       * sempre) ou `contato`. Opcional de propósito: as regras antigas não têm
-       * a chave e continuam iguais; sem `.optional()` o zod descartaria o campo
-       * no save e a tela mostraria uma escolha que não foi gravada.
-       */
-      destino: z.enum(["card", "contato"]).optional(),
-    }),
+    config: z
+      .object({
+        tags: z.array(z.string().min(1).max(60)).min(1).max(10),
+        /**
+         * #2498 — onde a etiqueta é GRAVADA: `card` (padrão, o comportamento de
+         * sempre) ou `contato`. Opcional de propósito: as regras antigas não têm
+         * a chave e continuam iguais; sem `.optional()` o zod descartaria o campo
+         * no save e a tela mostraria uma escolha que não foi gravada.
+         */
+        destino: z.enum(["card", "contato"]).optional(),
+      })
+      .superRefine(recusaEtiquetaLongaDoContato),
   }),
   z.object({ type: z.literal("assign_owner"), config: configDoAtribuirSchema }),
   z.object({
