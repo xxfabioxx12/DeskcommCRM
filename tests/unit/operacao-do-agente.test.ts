@@ -131,8 +131,8 @@ describe("criar entrada automática de contatos — tenancy sob service-role", (
   it("entrada de outra organização não aparece na listagem", async () => {
     const db = makeDb({
       webhookSources: [
-        { id: "w1", organization_id: ORG_ID, name: "Minha", is_active: true, secret_encrypted: null },
-        { id: "w2", organization_id: OUTRA_ORG, name: "Alheia", is_active: true, secret_encrypted: null },
+        { id: "w1", organization_id: ORG_ID, kind: "lead_capture", name: "Minha", is_active: true, secret_encrypted: null },
+        { id: "w2", organization_id: OUTRA_ORG, kind: "lead_capture", name: "Alheia", is_active: true, secret_encrypted: null },
       ],
     });
     const lista = await listarEntradasAutomaticas(deps(db));
@@ -222,6 +222,7 @@ describe("o que a leitura NÃO devolve", () => {
           id: "w1",
           organization_id: ORG_ID,
           name: "Site",
+          kind: "lead_capture",
           is_active: true,
           secret_encrypted: "deadbeefcafe",
         },
@@ -271,7 +272,7 @@ describe("o que a leitura NÃO devolve", () => {
   it("⭐ recebimento devolve os NOMES dos campos, nunca o que a pessoa digitou", async () => {
     const db = makeDb({
       webhookSources: [
-        { id: "w1", organization_id: ORG_ID, name: "Site", path_token: "tok", secret_encrypted: null },
+        { id: "w1", organization_id: ORG_ID, name: "Site", path_token: "tok", kind: "lead_capture", secret_encrypted: null },
       ],
     });
     db.tabelas.crm_pipelines.push(); // sem efeito: só para deixar claro que a fonte é a tabela abaixo

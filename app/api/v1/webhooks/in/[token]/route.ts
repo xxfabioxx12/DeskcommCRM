@@ -181,6 +181,8 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
     .from("webhook_sources")
     .select("id, name, organization_id, secret_encrypted, default_pipeline_id, default_stage_id, field_map, form_fields, redirect_to, is_active, authorize_ai_on_capture, update_existing_lead_on_capture")
     .eq("path_token", token)
+    // Conexão de venda (fork 9003) mora na mesma tabela e NÃO abre lead por aqui.
+    .eq("kind", "lead_capture")
     .maybeSingle();
   if (srcErr) return fail("internal_error", srcErr.message, 500, { requestId });
   if (!source || !source.is_active) {

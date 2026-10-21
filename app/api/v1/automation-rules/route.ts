@@ -81,6 +81,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       .select("id")
       .eq("id", webhookSourceId)
       .eq("organization_id", activeOrg.orgId)
+      .eq("kind", "lead_capture")
       .maybeSingle();
     if (sourceError) return fail("internal_error", sourceError.message, 500, { requestId });
     if (!source) {

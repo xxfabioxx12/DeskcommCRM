@@ -69,6 +69,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     .select("id, authorize_ai_on_capture, update_existing_lead_on_capture, secret_encrypted")
     .eq("id", id)
     .eq("organization_id", activeOrg.orgId)
+    .eq("kind", "lead_capture")
     .maybeSingle();
   if (fetchErr) return fail("internal_error", fetchErr.message, 500, { requestId });
   if (!existing) return fail("not_found", t("Fonte não encontrada."), 404, { requestId });
@@ -156,6 +157,7 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx): Promise<Response
     .select("id")
     .eq("id", id)
     .eq("organization_id", activeOrg.orgId)
+    .eq("kind", "lead_capture")
     .maybeSingle();
   if (fetchErr) return fail("internal_error", fetchErr.message, 500, { requestId });
   if (!existing) return fail("not_found", t("Fonte não encontrada."), 404, { requestId });

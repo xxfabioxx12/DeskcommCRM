@@ -30,6 +30,7 @@ export async function GET(_req: Request, ctx: RouteCtx): Promise<Response> {
     .select("path_token")
     .eq("id", id)
     .eq("organization_id", activeOrg.orgId)
+    .eq("kind", "lead_capture")
     .maybeSingle();
   if (sourceErr) return fail("internal_error", sourceErr.message, 500, { requestId });
   if (!source) return fail("not_found", t("Fonte não encontrada."), 404, { requestId });

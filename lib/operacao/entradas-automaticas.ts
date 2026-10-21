@@ -89,6 +89,8 @@ export async function listarEntradasAutomaticas(
     .from("webhook_sources")
     .select(COLUNAS)
     .eq("organization_id", deps.organizationId)
+    // Só captação: conexão de venda (fork 9003) tem tela e rotas próprias.
+    .eq("kind", "lead_capture")
     .order("created_at", { ascending: false });
   if (opts.apenasAtivas) q = q.eq("is_active", true);
 
@@ -107,6 +109,7 @@ async function fonteDaOrg(
     .select("id, name, path_token, is_active")
     .eq("id", id)
     .eq("organization_id", deps.organizationId)
+    .eq("kind", "lead_capture")
     .maybeSingle();
   if (error) throw new ApiError(500, "internal_error", undefined, deps.requestId, error.message);
   if (!data) {
