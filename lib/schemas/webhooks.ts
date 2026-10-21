@@ -20,9 +20,12 @@ import {
   configDoSilencio,
 } from "@/lib/automation/gatilhos-de-tempo";
 import {
+  MENSAGEM_CAMPO_INVALIDO,
   MENSAGEM_ETIQUETA_LONGA_DO_CONTATO,
+  campoValido,
   etiquetaLongaDoContato,
 } from "@/lib/automation/etiquetas-e-campos";
+import { problemaNoTexto } from "@/lib/campanhas/valores-do-contexto";
 
 /**
  * Os gatilhos que o motor reconhece, e a entidade que cada um tem que trazer.
@@ -403,6 +406,20 @@ const acoesFixas = [
         destino: z.enum(["card", "contato"]),
       })
       .superRefine(recusaEtiquetaLongaDoContato),
+  }),
+  // Parte 1 do motor de fluxo — GRAVAR um campo (só aquela chave).
+  z.object({
+    type: z.literal("set_field"),
+    config: z
+      .object({
+        destino: z.enum(["card", "contato"]),
+        campo: z.string().trim().refine(campoValido, MENSAGEM_CAMPO_INVALIDO),
+        valor: z.string().min(1).max(1000),
+      })
+      .superRefine((config, ctx) => {
+        const problema = problemaNoTexto(config.valor);
+        if (problema) ctx.addIssue({ code: "custom", path: ["valor"], message: problema });
+      }),
   }),
   z.object({ type: z.literal("assign_owner"), config: configDoAtribuirSchema }),
   z.object({
