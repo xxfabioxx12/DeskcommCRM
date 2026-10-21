@@ -59,7 +59,13 @@ function regra(id: string, trigger_config: Record<string, unknown>) {
   };
 }
 
-function bancoEmMemoria(regras: Array<Record<string, unknown>>) {
+/** `leitura`: tabelas cuja leitura falha; `insert`: código de erro do INSERT por tabela. */
+interface Falhas {
+  leitura?: string[];
+  insert?: Record<string, string>;
+}
+
+function bancoEmMemoria(regras: Array<Record<string, unknown>>, falhas: Falhas = {}) {
   const tabelas: Record<string, Array<Record<string, unknown>>> = {
     automation_rules: regras,
     contacts: [{ id: CONTATO, organization_id: ORG, name: "João", is_personal: false, tags: [] }],
@@ -83,6 +89,8 @@ function bancoEmMemoria(regras: Array<Record<string, unknown>>) {
       let inserida: Record<string, unknown> | null = null;
       let erro: { code: string; message: string } | null = null;
       const linhas = () => (tabelas[tabela] ?? []).filter((l) => filtros.every((f) => f(l)));
+      const erroDeLeitura = () =>
+        erro ?? (!inserida && falhas.leitura?.includes(tabela) ? { code: "08006", message: "conexão caiu" } : null);
       const cadeia: Record<string, unknown> = {};
       Object.assign(cadeia, {
         select: () => cadeia,
@@ -95,6 +103,11 @@ function bancoEmMemoria(regras: Array<Record<string, unknown>>) {
         },
         insert: (linha: Record<string, unknown>) => {
           const lista = (tabelas[tabela] ??= []);
+          const codigo = falhas.insert?.[tabela];
+          if (codigo) {
+            erro = { code: codigo, message: `falha ${codigo}` };
+            return cadeia;
+          }
           const chave = chaveUnica[tabela]?.(linha);
           if (chave !== undefined && lista.some((l) => chaveUnica[tabela]!(l) === chave)) {
             erro = { code: "23505", message: "duplicate key value violates unique constraint" };
@@ -104,10 +117,12 @@ function bancoEmMemoria(regras: Array<Record<string, unknown>>) {
           }
           return cadeia;
         },
-        maybeSingle: async () => ({ data: inserida ?? linhas()[0] ?? null, error: erro }),
-        single: async () => ({ data: inserida ?? linhas()[0] ?? null, error: erro }),
+        maybeSingle: async () => (erroDeLeitura() ? { data: null, error: erroDeLeitura() } : { data: inserida ?? linhas()[0] ?? null, error: null }),
+        single: async () => (erroDeLeitura() ? { data: null, error: erroDeLeitura() } : { data: inserida ?? linhas()[0] ?? null, error: null }),
         then: (ok: (v: unknown) => unknown, falha?: (e: unknown) => unknown) =>
-          Promise.resolve({ data: inserida ? [inserida] : linhas(), error: erro }).then(ok, falha),
+          Promise.resolve(
+            erroDeLeitura() ? { data: null, error: erroDeLeitura() } : { data: inserida ? [inserida] : linhas(), error: null },
+          ).then(ok, falha),
       });
       return cadeia;
     },
@@ -190,5 +205,33 @@ describe("motor — sale.received", () => {
     deps.adiarAte = "2026-10-22T09:00:00Z";
     const resultado = await runAutomationForEvent(admin as never, evento("ev-1"));
     expect(resultado.status).toBe("retry");
+  });
+
+  it("a venda ilegível (erro ao ler sales_events): nenhuma ação roda e o motor lança (o dispatcher tenta de novo)", async () => {
+    const { admin } = bancoEmMemoria([regra("r1", {})], { leitura: ["sales_events"] });
+    await expect(runAutomationForEvent(admin as never, evento("ev-1"))).rejects.toThrow(/sales_events/);
+    expect(deps.executou).toHaveLength(0);
+  });
+
+  it("linha da venda ausente (redigida/apagada, sem erro): roda com a venda vazia", async () => {
+    const { admin, tabelas } = bancoEmMemoria([regra("r1", {})]);
+    tabelas.sales_events = [];
+    await runAutomationForEvent(admin as never, evento("ev-1"));
+    expect(deps.executou).toHaveLength(1);
+    expect(deps.executou[0]!.contexto.venda).toEqual({ payload: null });
+  });
+
+  it("repetido (23505) e a leitura do event_id falha: lança em vez de pular a regra para sempre", async () => {
+    const { admin, tabelas } = bancoEmMemoria([regra("r1", {})], { leitura: ["sales_rule_runs"] });
+    await runAutomationForEvent(admin as never, evento("ev-1"));
+    expect(tabelas.sales_rule_runs).toHaveLength(1);
+    await expect(runAutomationForEvent(admin as never, evento("ev-1"))).rejects.toThrow(/sales_rule_runs/);
+    expect(deps.executou).toHaveLength(1);
+  });
+
+  it("conexão ou regra apagada no meio (23503): a regra é pulada sem lançar", async () => {
+    const { admin } = bancoEmMemoria([regra("r1", {})], { insert: { sales_rule_runs: "23503" } });
+    await expect(runAutomationForEvent(admin as never, evento("ev-1"))).resolves.toBeDefined();
+    expect(deps.executou).toHaveLength(0);
   });
 });

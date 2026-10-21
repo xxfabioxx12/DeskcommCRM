@@ -47,7 +47,7 @@ export async function reservarRegraDaVenda(admin: SupabaseClient, row: EventRow,
   if (error.code === "23503") return false; // a conexão (ou a regra) foi apagada no meio do caminho
   if (error.code !== "23505") throw new Error(`sales_rule_runs: ${error.message}`);
 
-  const { data } = await admin
+  const { data, error: erroDaLeitura } = await admin
     .from("sales_rule_runs")
     .select("event_id")
     .eq("rule_id", ruleId)
@@ -55,6 +55,8 @@ export async function reservarRegraDaVenda(admin: SupabaseClient, row: EventRow,
     .eq("entidade", entidade)
     .eq("evento", evento)
     .maybeSingle();
+  // Sem saber de quem é a reserva, pular seria perder a regra para sempre: o dispatcher tenta de novo.
+  if (erroDaLeitura) throw new Error(`sales_rule_runs: ${erroDaLeitura.message}`);
   const mesmoEvento = (data as { event_id?: string | null } | null)?.event_id === row.id;
   if (!mesmoEvento) {
     logger.info("[vendas] regra já rodou para este pedido e evento", { ruleId, entidade, evento, eventId: row.id });
@@ -85,12 +87,15 @@ export async function regrasQueJaRodaramAVenda(admin: SupabaseClient, row: Event
 export async function vendaDoEvento(admin: SupabaseClient, row: EventRow): Promise<Record<string, unknown>> {
   const id = texto(row.payload?.sales_event_id);
   if (!id) return {};
-  const { data } = await admin
+  const { data, error } = await admin
     .from("sales_events")
     .select("venda, payload")
     .eq("id", id)
     .eq("organization_id", row.organization_id)
     .maybeSingle();
+  // Venda ilegível não roda a regra (gravaria `{{venda.*}}` vazio no contato): o dispatcher tenta de novo.
+  // Linha ausente ou redigida (sem erro) segue com a venda vazia.
+  if (error) throw new Error(`sales_events: ${error.message}`);
   const linha = data as { venda?: unknown; payload?: unknown } | null;
   const venda =
     linha?.venda && typeof linha.venda === "object" && !Array.isArray(linha.venda)
