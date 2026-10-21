@@ -16293,6 +16293,29 @@ export const DICIONARIO: Traducoes = {
   "Destino da etiqueta": { es: "Destino de la etiqueta" },
   "Card (comportamento atual)": { es: "Card (comportamiento actual)" },
   "Contato do lead": { es: "Contacto del lead" },
+  // ── Motor de fluxo, Parte 1 (fork) — regras ──
+  "Tirar tag": { es: "Quitar etiqueta" },
+  "Gravar campo": { es: "Grabar campo" },
+  "Tags para tirar (separadas por vírgula)": { es: "Etiquetas para quitar (separadas por coma)" },
+  "De onde tirar": { es: "De dónde quitar" },
+  "Do card": { es: "Del card" },
+  "Do contato do lead": { es: "Del contacto del lead" },
+  "Etiqueta do contato com mais de 40 caracteres: encurte.": { es: "Etiqueta del contacto con más de 40 caracteres: acórtala." },
+  "Onde gravar": { es: "Dónde grabar" },
+  "No contato do lead": { es: "En el contacto del lead" },
+  "No card": { es: "En el card" },
+  "Nome do campo": { es: "Nombre del campo" },
+  "Valor do campo": { es: "Valor del campo" },
+  "Pode usar {{nome}}, {{primeiro_nome}}, {{saudacao}}, {{contato.campo}} e {{lead.campo}}. Grava só este campo; os outros ficam como estão.": {
+    es: "Puedes usar {{nome}}, {{primeiro_nome}}, {{saudacao}}, {{contato.campo}} y {{lead.campo}}. Graba solo este campo; los demás quedan como están.",
+  },
+  "O nome do campo tem de 1 a 60 caracteres, sem ponto.": { es: "El nombre del campo tiene de 1 a 60 caracteres, sin punto." },
+  "Há uma variável escrita errado. Use {{nome}}, {{primeiro_nome}}, {{saudacao}}, {{contato.campo}} ou {{lead.campo}}, sem espaço nem acento dentro das chaves.": {
+    es: "Hay una variable mal escrita. Usa {{nome}}, {{primeiro_nome}}, {{saudacao}}, {{contato.campo}} o {{lead.campo}}, sin espacios ni acentos dentro de las llaves.",
+  },
+  "Há uma variável desconhecida. Use {{nome}}, {{primeiro_nome}}, {{saudacao}}, {{contato.campo}} ou {{lead.campo}}.": {
+    es: "Hay una variable desconocida. Usa {{nome}}, {{primeiro_nome}}, {{saudacao}}, {{contato.campo}} o {{lead.campo}}.",
+  },
   "Sem contato vinculado, a etiqueta não é aplicada.": {
     es: "Sin contacto vinculado, la etiqueta no se aplica.",
   },

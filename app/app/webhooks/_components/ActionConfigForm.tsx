@@ -22,6 +22,7 @@ import { useAgentsList } from "@/hooks/ai/useAgents";
 import { channelLabel, useChannelSessions } from "@/hooks/channels/useChannelSessions";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
+import { etiquetaLongaDoContato } from "@/lib/automation/etiquetas-e-campos";
 import { camposDoFunil } from "@/lib/leads/campos-do-funil";
 import { apiClient } from "@/lib/api/client";
 import { useAuth } from "@/hooks/auth/AuthProvider";
@@ -67,6 +68,8 @@ export type ActionItem =
       type: "add_tag";
       config: { tags: string[]; destino?: "card" | "contato" };
     }
+  | { type: "remove_tag"; config: { tags: string[]; destino: "card" | "contato" } }
+  | { type: "set_field"; config: { destino: "card" | "contato"; campo: string; valor: string } }
   | { type: "assign_owner"; config: ConfigDoAtribuir }
   | { type: "call_webhook"; config: { url: string; secret?: string; secret_enc?: string; include_owner?: boolean } }
   | {
@@ -105,6 +108,10 @@ export function defaultActionConfig(type: ActionItem["type"]): ActionItem {
       return { type, config: { agent_id: "", channel_session_id: "", instruction: "" } };
     case "add_tag":
       return { type, config: { tags: [] } };
+    case "remove_tag":
+      return { type, config: { tags: [], destino: "card" } };
+    case "set_field":
+      return { type, config: { destino: "contato", campo: "", valor: "" } };
     case "assign_owner":
       return { type, config: { user_id: "" } };
     case "call_webhook":
@@ -568,6 +575,88 @@ function AddTagForm({
             {t("Sem contato vinculado, a etiqueta não é aplicada.")}
           </p>
         )}
+      </div>
+    </div>
+  );
+}
+
+/** Parte 1 do motor de fluxo — tirar etiqueta do card ou do contato. */
+function RemoveTagForm({ config, onChange }: FormProps<{ tags: string[]; destino: "card" | "contato" }>) {
+  const t = useT();
+  const [text, setText] = React.useState(config.tags.join(", "));
+  const longa = config.destino === "contato" ? etiquetaLongaDoContato(config.tags) : null;
+  return (
+    <div className="space-y-2">
+      <div className="space-y-1">
+        <Label htmlFor="remove-tag-tags">{t("Tags para tirar (separadas por vírgula)")}</Label>
+        <Input
+          id="remove-tag-tags"
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            const tags = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
+            onChange({ ...config, tags });
+          }}
+          placeholder="boas-vindas, novo-lead"
+        />
+      </div>
+      <div className="space-y-1">
+        <Label>{t("De onde tirar")}</Label>
+        <Select value={config.destino} onValueChange={(v) => onChange({ ...config, destino: v as "card" | "contato" })}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="card">{t("Do card")}</SelectItem>
+            <SelectItem value="contato">{t("Do contato do lead")}</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      {longa !== null && (
+        <p className="text-xs text-error-fg">{t("Etiqueta do contato com mais de 40 caracteres: encurte.")}</p>
+      )}
+    </div>
+  );
+}
+
+/** Parte 1 do motor de fluxo — gravar UM campo (só aquela chave) no contato ou no card. */
+function SetFieldForm({ config, onChange }: FormProps<{ destino: "card" | "contato"; campo: string; valor: string }>) {
+  const t = useT();
+  return (
+    <div className="space-y-2">
+      <div className="space-y-1">
+        <Label>{t("Onde gravar")}</Label>
+        <Select value={config.destino} onValueChange={(v) => onChange({ ...config, destino: v as "card" | "contato" })}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="contato">{t("No contato do lead")}</SelectItem>
+            <SelectItem value="card">{t("No card")}</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor="set-field-campo">{t("Nome do campo")}</Label>
+        <Input
+          id="set-field-campo"
+          maxLength={60}
+          value={config.campo}
+          onChange={(e) => onChange({ ...config, campo: e.target.value })}
+          placeholder="acesso_link_area"
+        />
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor="set-field-valor">{t("Valor do campo")}</Label>
+        <Input
+          id="set-field-valor"
+          maxLength={1000}
+          value={config.valor}
+          onChange={(e) => onChange({ ...config, valor: e.target.value })}
+        />
+        <p className="text-xs text-muted-foreground">
+          {t("Pode usar {{nome}}, {{primeiro_nome}}, {{saudacao}}, {{contato.campo}} e {{lead.campo}}. Grava só este campo; os outros ficam como estão.")}
+        </p>
       </div>
     </div>
   );
@@ -1107,6 +1196,10 @@ export function ActionConfigForm({
           onChange={(config) => onChange({ type: action.type, config })}
         />
       );
+    case "remove_tag":
+      return <RemoveTagForm config={action.config} onChange={(config) => onChange({ type: action.type, config })} />;
+    case "set_field":
+      return <SetFieldForm config={action.config} onChange={(config) => onChange({ type: action.type, config })} />;
     case "assign_owner":
       return (
         <AssignOwnerForm

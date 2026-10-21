@@ -11,6 +11,8 @@ export type ActionType =
   | "send_email"
   | "send_ai_message"
   | "add_tag"
+  | "remove_tag"
+  | "set_field"
   | "assign_owner"
   | "call_webhook"
   | "start_message_flow"
@@ -72,6 +74,10 @@ export const ACTION_LABELS: Record<ActionType, string> = {
   send_email: "Enviar e-mail",
   send_ai_message: "Mensagem escrita pela IA",
   add_tag: "Adicionar tag",
+  // Parte 1 do motor de fluxo — as duas escritas que o ManyChat tem e o
+  // Deskcomm não tinha: tirar etiqueta e gravar um campo.
+  remove_tag: "Tirar tag",
+  set_field: "Gravar campo",
   assign_owner: "Atribuir a um atendente",
   call_webhook: "Avisar outro sistema (webhook)",
   start_message_flow: "Iniciar fluxo de mensagem",
