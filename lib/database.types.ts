@@ -10762,6 +10762,14 @@ export type Database = {
         Args: { p_assigned_to: string; p_created_by: string; p_org: string }
         Returns: boolean
       }
+      fn_conversation_scope: {
+        Args: never
+        Returns: {
+          organization_id: string
+          org_wide_read: boolean
+          sees_unassigned: boolean
+        }[]
+      }
       fn_claim_due_followup_enrollments: {
         Args: { p_lease_seconds: number; p_limit: number }
         Returns: {
