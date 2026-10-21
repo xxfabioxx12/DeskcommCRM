@@ -1,6 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { COLUNAS_DO_MODELO, type LinhaDoModelo } from "@/lib/campanhas/conferir-template";
+
 import type { FlowNode } from "./graph-schema";
+import { chaveDoModelo } from "./mensagem-do-passo";
 
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -58,4 +61,41 @@ export async function carregaModelosCitados(
 
   const idsDe = (linhas: { id: unknown }[] | null) => new Set((linhas ?? []).map((l) => String(l.id)));
   return { ok: true, modelos: { prontos: idsDe(prontos.data), doCanal: idsDe(doCanal.data) } };
+}
+
+/** Parte 1 do motor de fluxo — os templates (nome + idioma) que os passos "Mensagem" citam, sem repetição. */
+export function modelosDaMensagemCitados(nodes: readonly FlowNode[]): Array<{ name: string; language: string }> {
+  const vistos = new Map<string, { name: string; language: string }>();
+  for (const node of nodes) {
+    if (node.type !== "action" || node.config.mode !== "mensagem" || !node.config.modelo) continue;
+    const { name, language } = node.config.modelo;
+    vistos.set(chaveDoModelo(name, language), { name, language });
+  }
+  return [...vistos.values()];
+}
+
+/**
+ * As linhas de `meta_templates` da CONTA para cada template citado — a publicação
+ * confere na conta (o fluxo não tem número); o worker confere no número da
+ * conversa. Erro NÃO vira mapa vazio (leria como "template apagado").
+ */
+export async function carregaModelosDaMensagem(
+  client: SupabaseClient,
+  orgId: string,
+  nodes: readonly FlowNode[],
+): Promise<{ ok: true; modelos: Map<string, LinhaDoModelo[]> } | { ok: false; mensagem: string }> {
+  const citados = modelosDaMensagemCitados(nodes);
+  const modelos = new Map<string, LinhaDoModelo[]>();
+  if (citados.length === 0) return { ok: true, modelos };
+  const { data, error } = await client
+    .from("meta_templates")
+    .select(COLUNAS_DO_MODELO)
+    .eq("organization_id", orgId)
+    .in("name", [...new Set(citados.map((c) => c.name))]);
+  if (error) return { ok: false, mensagem: error.message };
+  for (const linha of (data ?? []) as unknown as LinhaDoModelo[]) {
+    const chave = chaveDoModelo(linha.name, linha.language);
+    modelos.set(chave, [...(modelos.get(chave) ?? []), linha]);
+  }
+  return { ok: true, modelos };
 }

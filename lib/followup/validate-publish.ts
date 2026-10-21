@@ -9,7 +9,10 @@ import { recusaDeMotivoForaDoVocabulario } from '../leads/motivo-da-perda';
 import { capabilitiesOf, transportaMensagem, type ChannelProvider } from '../channels/capabilities';
 import { CUSTO_NO_MOTOR, TETO_DE_PASSOS_DO_MOTOR } from './custo-no-motor';
 import { MENSAGEM_CAMPO_INVALIDO, campoValido } from '../automation/etiquetas-e-campos';
-import { problemaNoTexto } from '../campanhas/valores-do-contexto';
+import { FRASE_DO_PROBLEMA_DA_EXPRESSAO, problemaNoTexto } from '../campanhas/valores-do-contexto';
+import type { LinhaDoModelo } from '../campanhas/conferir-template';
+import { problemaDasExpressoes } from '../campanhas/renderizador';
+import { chaveDoModelo, falhaDoModeloNaConta, fraseDaFalhaNoFluxo } from './mensagem-do-passo';
 
 /**
  * Structural publish validator for follow-up flow graphs.
@@ -61,6 +64,10 @@ export const PUBLISH_ERROR_CODES = [
   // `gravar_campo` e no passo "Mensagem").
   'campo_ausente',
   'variavel_desconhecida',
+  // Parte 1 do motor de fluxo — passo "Mensagem" sem versão, ou com template
+  // que não pode sair (inexistente, parado, mudado, lacuna sem expressão).
+  'mensagem_sem_versao',
+  'modelo_da_mensagem_invalido',
 ] as const;
 export type PublishErrorCode = (typeof PUBLISH_ERROR_CODES)[number];
 
@@ -142,6 +149,12 @@ export interface ContextoDoPublish {
    * existem na organização (`carregaModelosCitados`). Ausente = não confere.
    */
   modelos?: ModelosDaConta;
+  /**
+   * Parte 1 do motor de fluxo — as linhas de `meta_templates` da conta para cada
+   * template citado por um passo "Mensagem", por `chaveDoModelo(nome, idioma)`
+   * (`carregaModelosDaMensagem`). Ausente = não confere o template.
+   */
+  modelosDaMensagem?: ReadonlyMap<string, readonly LinhaDoModelo[]>;
 }
 
 /** Chave do dicionário (a rota traduz): a frase não cita id, que a pessoa não lê. */
@@ -593,9 +606,10 @@ function analyzeCondensedPaths(
       if (
         node &&
         node.type === 'action' &&
-        node.config.mode === 'ai_message' &&
-        !node.config.fallback_template_id &&
-        totalWait >= LONG_WAIT_THRESHOLD_MS
+        totalWait >= LONG_WAIT_THRESHOLD_MS &&
+        ((node.config.mode === 'ai_message' && !node.config.fallback_template_id) ||
+          // Divergência D8: o passo "Mensagem" só sai fora das 24 h com o template.
+          (node.config.mode === 'mensagem' && !node.config.modelo))
       ) {
         longWaitNodeIds.add(id);
       }
@@ -919,6 +933,45 @@ function conferirGravarCampo(
   }
 }
 
+/** Parte 1 do motor de fluxo — o passo "Mensagem" publicado. */
+function conferirMensagem(
+  node: Extract<FlowNode, { type: 'action' }>,
+  contexto: ContextoDoPublish,
+  errors: PublishValidationError[]
+): void {
+  const cfg = node.config;
+  if (cfg.mode !== 'mensagem') return;
+  const texto = cfg.texto?.body.trim() ?? '';
+  if (!cfg.modelo && texto === '') {
+    errors.push({
+      node_id: node.id,
+      code: 'mensagem_sem_versao',
+      message: `A caixa "${node.label}" não tem mensagem: escolha o template do número oficial ou escreva o texto do número comum.`,
+    });
+    return;
+  }
+  const expressoes = [...(texto !== '' ? [texto] : []), ...Object.values(cfg.modelo?.slot_map ?? {})];
+  const problema = problemaDasExpressoes(expressoes);
+  if (problema) {
+    errors.push({
+      node_id: node.id,
+      code: 'variavel_desconhecida',
+      message: `A caixa "${node.label}": ${FRASE_DO_PROBLEMA_DA_EXPRESSAO[problema]}`,
+    });
+  }
+  if (cfg.modelo && contexto.modelosDaMensagem !== undefined) {
+    const linhas = contexto.modelosDaMensagem.get(chaveDoModelo(cfg.modelo.name, cfg.modelo.language)) ?? [];
+    const falha = falhaDoModeloNaConta(cfg.modelo, linhas);
+    if (falha) {
+      errors.push({
+        node_id: node.id,
+        code: 'modelo_da_mensagem_invalido',
+        message: `A caixa "${node.label}": ${fraseDaFalhaNoFluxo(falha, cfg.modelo.name, 'conta')}.`,
+      });
+    }
+  }
+}
+
 /**
  * Uma regra de condição que não pode decidir nada. O rascunho aceita todas estas
  * formas — trabalho pela metade precisa salvar —, mas publicada cada uma é uma
@@ -1083,7 +1136,11 @@ export function validateFlowForPublish(
       errors.push({
         node_id: id,
         code: 'long_wait_needs_template',
-        message: `Nó "${id}" acumula ≥24h de espera e precisa de fallback_template_id.`,
+        message:
+          nodesById.get(id)?.type === 'action' &&
+          (nodesById.get(id) as Extract<FlowNode, { type: 'action' }>).config.mode === 'mensagem'
+            ? `Nó "${id}" acumula ≥24h de espera e precisa da versão do número oficial (template aprovado).`
+            : `Nó "${id}" acumula ≥24h de espera e precisa de fallback_template_id.`,
       });
     }
     if (maxStepsExceeded) {
@@ -1171,6 +1228,7 @@ export function validateFlowForPublish(
     if (node.type === 'move_lead') conferirEtapaDestino(node, contexto, errors);
     if (node.type === 'edit_lead_tag') conferirTags(node, errors);
     if (node.type === 'gravar_campo') conferirGravarCampo(node, errors);
+    if (node.type === 'action') conferirMensagem(node, contexto, errors);
     if (node.type === 'action' && contexto.modelos !== undefined) {
       const { prontos, doCanal } = contexto.modelos;
       const cfg = node.config;
