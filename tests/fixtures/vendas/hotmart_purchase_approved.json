@@ -1,0 +1,33 @@
+{
+    "id": "hm-evt-0001",
+    "creation_date": 1785300000000,
+    "event": "PURCHASE_APPROVED",
+    "version": "2.0.0",
+    "data": {
+        "product": {"id": 4455, "ucode": "u-1", "name": "Curso Hotmart", "has_co_production": false},
+        "buyer": {
+            "name": "João Comprador",
+            "email": "JOAO@Email.com",
+            "checkout_phone": "999998888",
+            "checkout_phone_code": "31",
+            "document": "12345678909",
+            "document_type": "CPF",
+            "address": {"country": "Brasil", "country_iso": "BR"}
+        },
+        "producer": {"name": "NODZ"},
+        "purchase": {
+            "approved_date": 1785300100000,
+            "order_date": 1785300000000,
+            "full_price": {"value": 297.9, "currency_value": "BRL"},
+            "price": {"value": 297.9, "currency_value": "BRL"},
+            "offer": {"code": "of123", "name": "Oferta X"},
+            "recurrence_number": 1,
+            "checkout_country": {"name": "Brasil", "iso": "BR"},
+            "origin": {"xcod": "xc1", "src": "fb"},
+            "order_bump": {"is_order_bump": false},
+            "status": "APPROVED",
+            "transaction": "HP0001",
+            "payment": {"type": "PIX", "pix_code": "000201PIXCODE", "installments_number": 1}
+        }
+    }
+}

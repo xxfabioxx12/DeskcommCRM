@@ -1,0 +1,24 @@
+{
+    "order_id": "kw-0001-uuid",
+    "order_ref": "AbCdE",
+    "order_status": "paid",
+    "payment_method": "credit_card",
+    "installments": 1,
+    "card_last4digits": "1234",
+    "webhook_event_type": "order_approved",
+    "product_type": "digital",
+    "sale_type": "producer",
+    "approved_date": "2026-07-29 12:00",
+    "created_at": "2026-07-29 11:58",
+    "checkout_link": "Xy12Ab",
+    "Product": {"product_id": "prod-uuid-1", "product_name": "Curso Kiwify"},
+    "Customer": {
+        "full_name": "Ana Cliente",
+        "first_name": "Ana",
+        "email": "Ana@Email.com",
+        "mobile": "+5541999997777",
+        "CPF": "11122233344"
+    },
+    "Commissions": {"charge_amount": "19700", "currency": "BRL", "my_commission": "17000"},
+    "TrackingParameters": {"utm_source": "insta", "utm_medium": null, "utm_campaign": "lanc", "utm_content": null, "utm_term": null, "src": null, "sck": null}
+}
