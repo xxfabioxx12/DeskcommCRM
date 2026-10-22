@@ -16747,6 +16747,7 @@ export const DICIONARIO: Traducoes = {
   "A venda foi reavaliada e ficou ignorada.": { es: "La venta se reevaluó y quedó ignorada." },
   "A venda foi reavaliada, mas não há contato para ela.": { es: "La venta se reevaluó, pero no hay contacto para ella." },
   "A venda falhou de novo. O motivo está na lista.": { es: "La venta falló de nuevo. El motivo está en la lista." },
+  "Venda reavaliada.": { es: "Venta reevaluada." },
   "Venda reavaliada: {situacao}": { es: "Venta reevaluada: {situacao}" },
 };
 
