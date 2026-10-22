@@ -64,6 +64,9 @@ CRONS="
 # (channel_knobs + pacing_ledger) só sabem torná-la mais lenta.
 * * * * *|45|api/v1/cron/campaign-worker
 */5 * * * *|60|api/v1/cron/webhook-log-retention
+# AS VENDAS QUE FALHARAM (fork, Parte 2b). A cada 5 minutos porque a primeira
+# nova tentativa sai 5 minutos depois da falha. Barato: só lê a fila parcial.
+*/5 * * * *|60|api/v1/cron/vendas-reprocessar
 */5 * * * *|45|api/v1/cron/channel-health
 # A JANELA DE MANUTENÇÃO (#2388). Minuto a minuto porque o que ela decide é a
 # borda de um horário ESCOLHIDO POR UMA PESSOA: perder a abertura ou a retomada

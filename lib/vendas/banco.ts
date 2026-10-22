@@ -2,7 +2,9 @@
  * O `BancoDaVenda` de produção, sobre o client de serviço do Supabase. Toda
  * consulta filtra a organização à mão (o client de serviço contorna a RLS), exceto
  * `concluir` e `marcarRecebimento`, que atualizam pelo id vindo de origem confiável
- * (o retorno do insert e a conexão achada pelo path_token).
+ * (o retorno do insert e a conexão achada pelo path_token), e `pendentes`, a fila do
+ * cron, que é de todas as empresas por natureza: tudo depois dela filtra pela
+ * organização da própria linha.
  *
  * O contato é procurado como a captação procura (`app/api/v1/webhooks/in/[token]/route.ts`,
  * upsert por telefone e depois por e-mail): telefone pelas DUAS grafias do
@@ -17,13 +19,16 @@ import { logger } from "@/lib/logger";
 import { configDaConexao } from "./config";
 import type { CamposDoContato, ContatoExistente } from "./contato";
 import { GATILHO_DA_VENDA, PLATAFORMAS_DE_VENDA, ehPlataformaDeVenda } from "./eventos";
-import type { ConexaoDeVenda } from "./receber";
-import type { BancoDaTentativa } from "./reprocessar";
+import { JANELA_DA_TENTATIVA_MS, MOTIVO_DA_VENDA, prazoDaTentativa, type ConexaoDeVenda } from "./receber";
+import type { BancoDaFila, LinhaGuardada } from "./reprocessar";
 
 const UM_MINUTO_MS = 60_000;
 const COLUNAS_DO_CONTATO = "id, name, email, phone_number";
+/** Sem `venda`, e-mail nem telefone: a tentativa traduz de novo a partir do payload. */
+const COLUNAS_DA_TENTATIVA =
+  "id, organization_id, webhook_source_id, plataforma, evento_original, evento, chave_evento, teste, payload, tentativas, status, recebido_em";
 
-export interface BancoDaVendaSupabase extends BancoDaTentativa {
+export interface BancoDaVendaSupabase extends BancoDaFila {
   registrarRecusa(conexao: ConexaoDeVenda, motivo: string): Promise<void>;
 }
 
@@ -87,7 +92,9 @@ export function bancoDaVenda(admin: SupabaseClient): BancoDaVendaSupabase {
           proxima_tentativa_em: fim.proximaTentativaEm?.toISOString() ?? null,
           ...fim.colunas,
         })
-        .eq("id", id);
+        .eq("id", id)
+        // F9: a chegada e a tentativa concluem a partir de `recebido`; não sobrescreve o desfecho de outra execução.
+        .eq("status", "recebido");
       if (error) logger.error("[vendas] não foi possível concluir o evento de venda", { salesEventId: id, error: error.message });
     },
 
@@ -169,6 +176,53 @@ export function bancoDaVenda(admin: SupabaseClient): BancoDaVendaSupabase {
         p_organization_id: organizationId,
       });
       if (error) throw new Error(`emit_event: ${error.message}`);
+    },
+
+    async pendentes(agora, limite) {
+      const { data, error } = await admin
+        .from("sales_events")
+        .select(COLUNAS_DA_TENTATIVA)
+        // Os três filtros do índice parcial sales_events_fila_da_tentativa_idx.
+        .in("status", ["falhou", "recebido"])
+        .not("proxima_tentativa_em", "is", null)
+        .lte("proxima_tentativa_em", agora.toISOString())
+        // F15: a janela de 24 h vale para a `falhou`; a `recebido` presa vem de qualquer idade (a rodada a encerra).
+        .or(`status.eq.recebido,recebido_em.gte.${new Date(agora.getTime() - JANELA_DA_TENTATIVA_MS).toISOString()}`)
+        .not("payload", "is", null)
+        .order("proxima_tentativa_em", { ascending: true })
+        .limit(limite);
+      if (error) throw new Error(`sales_events: ${error.message}`);
+      return (data ?? []) as unknown as LinhaGuardada[];
+    },
+
+    async prender(linha, agora) {
+      // Atômico: só muda a linha que ainda está como foi lida (mesma contagem, ainda no horário).
+      const { data, error } = await admin
+        .from("sales_events")
+        .update({ status: "recebido", tentativas: linha.tentativas + 1, proxima_tentativa_em: prazoDaTentativa(agora) })
+        .eq("id", linha.id)
+        .eq("organization_id", linha.organization_id)
+        .in("status", ["falhou", "recebido"])
+        .eq("tentativas", linha.tentativas)
+        .lte("proxima_tentativa_em", agora.toISOString())
+        .not("payload", "is", null)
+        .select("id");
+      if (error) throw new Error(`sales_events: ${error.message}`);
+      return (data ?? []).length > 0;
+    },
+
+    async encerrar(linha, agora) {
+      const { data, error } = await admin
+        .from("sales_events")
+        .update({ status: "falhou", motivo: MOTIVO_DA_VENDA.tentativaInterrompida, proxima_tentativa_em: null })
+        .eq("id", linha.id)
+        .eq("organization_id", linha.organization_id)
+        .eq("status", "recebido")
+        .eq("tentativas", linha.tentativas)
+        .lte("proxima_tentativa_em", agora.toISOString())
+        .select("id");
+      if (error) throw new Error(`sales_events: ${error.message}`);
+      return (data ?? []).length > 0;
     },
 
     async conexao(organizationId, conexaoId) {

@@ -1177,6 +1177,9 @@ export const AUDIT_ACTIONS = [
   // interruptores, a antecedência e o opt-in de WhatsApp). O número NÃO entra:
   // é dado de contato, e o audit é trilha legível por quem administra.
   "user.task_reminder_prefs_updated",
+  // Fork, Parte 2b: a rodada do cron que tenta de novo as vendas que falharam
+  // (só quando tentou ou encerrou algo, e na falha da rodada com `falhou: true`).
+  "sales_event.retry_run",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

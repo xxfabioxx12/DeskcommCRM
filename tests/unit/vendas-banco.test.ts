@@ -5,6 +5,7 @@ vi.mock("@/lib/channels/contato-por-telefone", () => ({ encontrarContatoPorTelef
 
 import { bancoDaVenda } from "@/lib/vendas/banco";
 import type { ConexaoDeVenda, LinhaNovaDaVenda } from "@/lib/vendas/receber";
+import type { LinhaGuardada } from "@/lib/vendas/reprocessar";
 
 import { supabaseGravador, usou } from "./helpers/supabase-gravador";
 
@@ -204,6 +205,13 @@ describe("concluir e conexão (Parte 2b)", () => {
     ]);
   });
 
+  it("F9: concluir só grava se a linha ainda está recebido (não sobrescreve o desfecho de outra execução)", async () => {
+    const g = supabaseGravador(() => ({}));
+    await bancoDaVenda(g.admin).concluir("ev-1", { status: "processado", motivo: null, contactId: "c1" });
+    expect(usou(g.log, "sales_events", "eq", "id", "ev-1")).toBe(true);
+    expect(usou(g.log, "sales_events", "eq", "status", "recebido")).toBe(true);
+  });
+
   it("F1: concluir também grava as colunas completadas pela tentativa (nunca payload/chave/recebido_em)", async () => {
     const g = supabaseGravador(() => ({}));
     const colunas = {
@@ -235,5 +243,85 @@ describe("concluir e conexão (Parte 2b)", () => {
     await expect(
       bancoDaVenda(supabaseGravador(() => ({ error: { message: "timeout" } })).admin).conexao("org-1", "x"),
     ).rejects.toThrow("webhook_sources: timeout");
+  });
+});
+
+const AGORA = new Date("2026-10-22T15:00:00Z");
+const GUARDADA: LinhaGuardada = {
+  id: "ev-9",
+  organization_id: "org-1",
+  webhook_source_id: "conexao-1",
+  plataforma: "hotmart",
+  evento_original: "PURCHASE_APPROVED",
+  evento: "compra.aprovada",
+  chave_evento: "hm-evt-0001",
+  teste: false,
+  payload: { id: "hm-evt-0001" },
+  tentativas: 1,
+  status: "falhou",
+  recebido_em: "2026-10-22T14:00:00.000Z",
+};
+
+describe("a fila da nova tentativa (Parte 2b)", () => {
+  it("pendentes: falhou das últimas 24 h e recebido com prazo vencido de qualquer idade, com dados, na ordem", async () => {
+    const g = supabaseGravador(() => ({ data: [GUARDADA] }));
+    expect(await bancoDaVenda(g.admin).pendentes(AGORA, 25)).toEqual([GUARDADA]);
+    // Os três filtros do índice parcial sales_events_fila_da_tentativa_idx.
+    expect(usou(g.log, "sales_events", "in", "status", ["falhou", "recebido"])).toBe(true);
+    expect(usou(g.log, "sales_events", "not", "proxima_tentativa_em", "is", null)).toBe(true);
+    expect(usou(g.log, "sales_events", "lte", "proxima_tentativa_em", AGORA.toISOString())).toBe(true);
+    // F15: a janela de 24 h vale só para a falhou; a recebido presa vem de qualquer idade.
+    expect(usou(g.log, "sales_events", "or", "status.eq.recebido,recebido_em.gte.2026-10-21T15:00:00.000Z")).toBe(true);
+    expect(g.log.some((c) => c.metodo === "gte")).toBe(false);
+    expect(usou(g.log, "sales_events", "not", "payload", "is", null)).toBe(true);
+    expect(usou(g.log, "sales_events", "order", "proxima_tentativa_em", { ascending: true })).toBe(true);
+    expect(usou(g.log, "sales_events", "limit", 25)).toBe(true);
+    const select = String(g.log.find((c) => c.metodo === "select")?.args[0]);
+    for (const coluna of ["tentativas", "payload", "evento_original", "evento", "chave_evento", "recebido_em"]) expect(select).toContain(coluna);
+    expect(select.split(", ")).toContain("evento");
+  });
+
+  it("pendentes: erro de leitura sobe (fila vazia por engano perderia a venda)", async () => {
+    await expect(
+      bancoDaVenda(supabaseGravador(() => ({ error: { message: "timeout" } })).admin).pendentes(AGORA, 25),
+    ).rejects.toThrow("sales_events: timeout");
+  });
+
+  it("prender: UPDATE condicional falhou/recebido → recebido, só se a contagem e o horário ainda são os lidos", async () => {
+    const g = supabaseGravador(() => ({ data: [{ id: "ev-9" }] }));
+    expect(await bancoDaVenda(g.admin).prender(GUARDADA, AGORA)).toBe(true);
+    expect(g.log.find((c) => c.metodo === "update")?.args[0]).toEqual({
+      status: "recebido",
+      tentativas: 2,
+      proxima_tentativa_em: "2026-10-22T15:15:00.000Z",
+    });
+    expect(usou(g.log, "sales_events", "eq", "id", "ev-9")).toBe(true);
+    expect(usou(g.log, "sales_events", "eq", "organization_id", "org-1")).toBe(true);
+    expect(usou(g.log, "sales_events", "in", "status", ["falhou", "recebido"])).toBe(true);
+    expect(usou(g.log, "sales_events", "eq", "tentativas", 1)).toBe(true);
+    expect(usou(g.log, "sales_events", "lte", "proxima_tentativa_em", AGORA.toISOString())).toBe(true);
+    expect(usou(g.log, "sales_events", "not", "payload", "is", null)).toBe(true);
+    expect(await bancoDaVenda(supabaseGravador(() => ({ data: [] })).admin).prender(GUARDADA, AGORA)).toBe(false);
+    await expect(
+      bancoDaVenda(supabaseGravador(() => ({ error: { message: "caiu" } })).admin).prender(GUARDADA, AGORA),
+    ).rejects.toThrow("sales_events: caiu");
+  });
+
+  it("encerrar: a 3ª que caiu no meio fica falhou de vez, com motivo, só se ainda está presa", async () => {
+    const g = supabaseGravador(() => ({ data: [{ id: "ev-9" }] }));
+    const presa = { ...GUARDADA, tentativas: 3, status: "recebido" as const };
+    expect(await bancoDaVenda(g.admin).encerrar(presa, AGORA)).toBe(true);
+    expect(g.log.find((c) => c.metodo === "update")?.args[0]).toEqual({
+      status: "falhou",
+      motivo: "a tentativa parou no meio",
+      proxima_tentativa_em: null,
+    });
+    expect(usou(g.log, "sales_events", "eq", "organization_id", "org-1")).toBe(true);
+    expect(usou(g.log, "sales_events", "eq", "status", "recebido")).toBe(true);
+    expect(usou(g.log, "sales_events", "eq", "tentativas", 3)).toBe(true);
+    expect(await bancoDaVenda(supabaseGravador(() => ({ data: [] })).admin).encerrar(presa, AGORA)).toBe(false);
+    await expect(
+      bancoDaVenda(supabaseGravador(() => ({ error: { message: "caiu" } })).admin).encerrar(presa, AGORA),
+    ).rejects.toThrow("sales_events: caiu");
   });
 });

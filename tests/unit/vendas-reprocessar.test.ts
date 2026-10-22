@@ -5,7 +5,14 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { ContatoExistente } from "@/lib/vendas/contato";
 import { MOTIVO_DA_VENDA, SEIS_HORAS_MS, type FimDaVenda } from "@/lib/vendas/receber";
-import { tentarDeNovo, type BancoDaTentativa, type ConexaoAtual, type LinhaGuardada } from "@/lib/vendas/reprocessar";
+import {
+  reprocessarPendentes,
+  tentarDeNovo,
+  type BancoDaFila,
+  type BancoDaTentativa,
+  type ConexaoAtual,
+  type LinhaGuardada,
+} from "@/lib/vendas/reprocessar";
 
 const fixture = (nome: string) =>
   JSON.parse(readFileSync(join(__dirname, "..", "fixtures", "vendas", `${nome}.json`), "utf8"));
@@ -206,5 +213,91 @@ describe("tentarDeNovo — a decisão a partir da linha guardada", () => {
     const jaTinha = bancoFalso({ conexao: vi.fn(async () => personalizada) });
     await tentarDeNovo(jaTinha.banco, linha({ plataforma: "personalizada", payload: { email: "a@b.com" } }), AGORA);
     expect(jaTinha.fins[0]![1]).not.toHaveProperty("colunas");
+  });
+});
+
+function filaFalsa(over: Partial<BancoDaFila> = {}) {
+  const { banco, fins } = bancoFalso(over);
+  const fila: BancoDaFila = {
+    ...banco,
+    pendentes: vi.fn(async (): Promise<LinhaGuardada[]> => []),
+    prender: vi.fn(async () => true),
+    encerrar: vi.fn(async () => true),
+    ...over,
+  };
+  return { banco: fila, fins };
+}
+
+describe("reprocessarPendentes — a rodada do cron", () => {
+  it("lê a fila com o limite, prende antes de tentar e tenta com a contagem já somada", async () => {
+    const { banco, fins } = filaFalsa({
+      pendentes: vi.fn(async () => [linha({ tentativas: 0, status: "falhou" })]),
+      emitir: quebraOEmit(),
+    });
+    const r = await reprocessarPendentes(banco, AGORA);
+    expect(banco.pendentes).toHaveBeenCalledWith(AGORA, 25);
+    expect(banco.prender).toHaveBeenCalledWith(expect.objectContaining({ id: "ev-9", tentativas: 0 }), AGORA);
+    // Pegou a 1ª tentativa: se falhar, a 2ª sai em 30 min.
+    expect(fins[0]![1]).toEqual({ status: "falhou", motivo: "emit_event: caiu", proximaTentativaEm: minutos(30) });
+    expect(r).toEqual({ tentadas: 1, processadas: 0, falharam: 1, outras: 0, encerradas: 0 });
+  });
+
+  it("⭐ duas execuções ao mesmo tempo não pegam a mesma venda", async () => {
+    const presas = new Set<string>();
+    const { banco } = filaFalsa({
+      pendentes: vi.fn(async () => [linha({ tentativas: 0, status: "falhou" })]),
+      // O UPDATE condicional do banco: só o primeiro a chegar muda a linha.
+      prender: vi.fn(async (l: LinhaGuardada) => {
+        if (presas.has(l.id)) return false;
+        presas.add(l.id);
+        return true;
+      }),
+    });
+    const [a, b] = await Promise.all([reprocessarPendentes(banco, AGORA), reprocessarPendentes(banco, AGORA)]);
+    expect(a.tentadas + b.tentadas).toBe(1);
+    expect(banco.emitir).toHaveBeenCalledTimes(1);
+    expect(banco.concluir).toHaveBeenCalledTimes(1);
+  });
+
+  it("linha com 3 tentativas não é tentada: só encerrada (a 3ª caiu no meio)", async () => {
+    const presa = linha({ tentativas: 3, status: "recebido" });
+    const { banco } = filaFalsa({ pendentes: vi.fn(async () => [presa]) });
+    const r = await reprocessarPendentes(banco, AGORA);
+    expect(banco.prender).not.toHaveBeenCalled();
+    expect(banco.emitir).not.toHaveBeenCalled();
+    expect(banco.encerrar).toHaveBeenCalledWith(presa, AGORA);
+    expect(r.encerradas).toBe(1);
+  });
+
+  it("F15: recebido com prazo vencido depois das 24 h da chegada é encerrado, sem tentar nem agendar", async () => {
+    const velha = linha({ tentativas: 1, status: "recebido", recebido_em: "2026-10-21T14:59:00.000Z" });
+    const dentro = linha({ id: "ev-10", tentativas: 1, status: "recebido", recebido_em: "2026-10-21T15:00:00.000Z" });
+    const { banco, fins } = filaFalsa({ pendentes: vi.fn(async () => [velha, dentro]) });
+    const r = await reprocessarPendentes(banco, AGORA);
+    expect(banco.encerrar).toHaveBeenCalledTimes(1);
+    expect(banco.encerrar).toHaveBeenCalledWith(velha, AGORA);
+    expect(banco.prender).toHaveBeenCalledTimes(1);
+    expect(banco.prender).toHaveBeenCalledWith(dentro, AGORA);
+    expect(fins.map(([id]) => id)).toEqual(["ev-10"]);
+    expect(r).toEqual({ tentadas: 1, processadas: 1, falharam: 0, outras: 0, encerradas: 1 });
+  });
+
+  it("conta processadas, falhas e outras (ignorado)", async () => {
+    const { banco } = filaFalsa({
+      pendentes: vi.fn(async () => [linha({ id: "a", tentativas: 0 }), linha({ id: "b", tentativas: 0 })]),
+      conexao: vi.fn(async (_org: string, _id: string): Promise<ConexaoAtual | null> => CONEXAO),
+    });
+    vi.mocked(banco.conexao).mockResolvedValueOnce({ ...CONEXAO, config: { dispara: false } });
+    const r = await reprocessarPendentes(banco, AGORA);
+    expect(r).toEqual({ tentadas: 2, processadas: 1, falharam: 0, outras: 1, encerradas: 0 });
+  });
+
+  it("fila com erro derruba a rodada (o cron responde 500 e avisa)", async () => {
+    const { banco } = filaFalsa({
+      pendentes: vi.fn(async () => {
+        throw new Error("sales_events: timeout");
+      }),
+    });
+    await expect(reprocessarPendentes(banco, AGORA)).rejects.toThrow("sales_events: timeout");
   });
 });

@@ -77,6 +77,8 @@ const SEM_FILTRO: Record<string, string> = {
   "snooze-watcher": "só reabre conversa adiada; sem custo nem saída",
   "storage-redaction": "LGPD e retenção nunca são bloqueadas (spec §1.3)",
   "sync-model-catalog": "catálogo da instalação inteira; não pertence a organização nenhuma",
+  "vendas-reprocessar":
+    "refaz a decisão de uma venda que a plataforma já entregou, como a rota pública; o sale.received cai no automationRulesHandler, que é 'pula'",
   "webhook-log-retention": "retenção do arquivo de webhook: obrigação, nunca bloqueada",
   "webhook-replay": "reprocessa ENTRADA do WAHA; mensagem que chega continua gravada (spec §1.3)",
 };

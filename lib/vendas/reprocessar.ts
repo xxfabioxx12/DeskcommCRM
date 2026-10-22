@@ -11,6 +11,8 @@
 import type { StatusDoEventoDeVenda, PlataformaDeVenda } from "./eventos";
 import type { EntregaDaVenda, Identificacao } from "./plataformas/tipos";
 import {
+  JANELA_DA_TENTATIVA_MS,
+  MAXIMO_DE_TENTATIVAS,
   MOTIVO_DA_VENDA,
   colunasDerivadas,
   comProximaTentativa,
@@ -46,6 +48,29 @@ export type ConexaoAtual = ConexaoDeVenda & { ativa: boolean };
 export interface BancoDaTentativa extends BancoDaVenda {
   /** A conexão como está AGORA (config e ligada/desligada), só de venda, só da empresa. Erro sobe. */
   conexao(organizationId: string, conexaoId: string): Promise<ConexaoAtual | null>;
+}
+
+export interface BancoDaFila extends BancoDaTentativa {
+  /**
+   * A fila, de TODAS as empresas (é o cron): `falhou` das últimas 24 h no horário, e
+   * `recebido` com o prazo vencido de qualquer idade (F15). Erro sobe.
+   */
+  pendentes(agora: Date, limite: number): Promise<LinhaGuardada[]>;
+  /** Pega a venda (UPDATE condicional, conta +1, grava o prazo). `false` = outra execução pegou antes. Erro sobe. */
+  prender(linha: LinhaGuardada, agora: Date): Promise<boolean>;
+  /** A presa que não volta mais (3ª que caiu no meio, ou fora das 24 h): `falhou` de vez, com motivo. Erro sobe. */
+  encerrar(linha: LinhaGuardada, agora: Date): Promise<boolean>;
+}
+
+/** Cada venda faz poucas consultas; 25 cabem com folga nos 60 s que o scheduler dá ao cron. */
+export const LIMITE_DA_RODADA = 25;
+
+export interface ResultadoDaRodada {
+  tentadas: number;
+  processadas: number;
+  falharam: number;
+  outras: number;
+  encerradas: number;
 }
 
 /** O que a decisão precisa, tirado da linha guardada — sem cabeçalho HTTP nenhum (Divergência D5). */
@@ -100,4 +125,29 @@ export async function tentarDeNovo(banco: BancoDaTentativa, linha: LinhaGuardada
   if (completar.colunas) fim = { ...fim, colunas: completar.colunas };
   await banco.concluir(linha.id, fim);
   return fim;
+}
+
+/** A rodada do cron `vendas-reprocessar` (a cada 5 min). */
+export async function reprocessarPendentes(
+  banco: BancoDaFila,
+  agora: Date,
+  limite: number = LIMITE_DA_RODADA,
+): Promise<ResultadoDaRodada> {
+  const r: ResultadoDaRodada = { tentadas: 0, processadas: 0, falharam: 0, outras: 0, encerradas: 0 };
+  for (const linha of await banco.pendentes(agora, limite)) {
+    // Presa em `recebido` depois das 24 h da chegada (F15): não tenta nem agenda; fica para o botão.
+    const foraDaJanela =
+      linha.status === "recebido" && agora.getTime() - new Date(linha.recebido_em).getTime() > JANELA_DA_TENTATIVA_MS;
+    if (linha.tentativas >= MAXIMO_DE_TENTATIVAS || foraDaJanela) {
+      if (await banco.encerrar(linha, agora)) r.encerradas++;
+      continue;
+    }
+    if (!(await banco.prender(linha, agora))) continue; // outra execução pegou antes
+    r.tentadas++;
+    const fim = await tentarDeNovo(banco, { ...linha, status: "recebido", tentativas: linha.tentativas + 1 }, agora);
+    if (fim.status === "processado") r.processadas++;
+    else if (fim.status === "falhou") r.falharam++;
+    else r.outras++;
+  }
+  return r;
 }
