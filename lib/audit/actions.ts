@@ -1180,6 +1180,8 @@ export const AUDIT_ACTIONS = [
   // Fork, Parte 2b: a rodada do cron que tenta de novo as vendas que falharam
   // (só quando tentou ou encerrou algo, e na falha da rodada com `falhou: true`).
   "sales_event.retry_run",
+  // Fork, Parte 2b: alguém clicou "Tentar de novo" numa venda que falhou.
+  "sales_event.retry_requested",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

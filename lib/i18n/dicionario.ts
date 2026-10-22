@@ -16735,6 +16735,12 @@ export const DICIONARIO: Traducoes = {
   "Quem chega por esta conexão sem conversa com a empresa recebe a primeira mensagem do número marcado com mais folga no teto do dia. Quem já conversa segue no número de sempre. Sem nenhum marcado, vale o número padrão.": {
     es: "Quien llega por esta conexión sin conversación con la empresa recibe el primer mensaje del número marcado con más margen en el tope del día. Quien ya conversa sigue en su número de siempre. Sin ninguno marcado, vale el número predeterminado.",
   },
+  // Parte 2b — reprocessar as vendas que falharam (rota do botão).
+  "Venda não encontrada.": { es: "Venta no encontrada." },
+  "Só dá para tentar de novo uma venda que falhou.": { es: "Solo se puede reintentar una venta que falló." },
+  "Os dados desta venda já foram apagados: não há o que tentar de novo.": {
+    es: "Los datos de esta venta ya se eliminaron: no hay nada que reintentar.",
+  },
 };
 
 /**

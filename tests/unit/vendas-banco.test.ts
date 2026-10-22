@@ -329,3 +329,61 @@ describe("a fila da nova tentativa (Parte 2b)", () => {
     ).rejects.toThrow("sales_events: caiu");
   });
 });
+
+describe("prenderPeloBotao (Parte 2b)", () => {
+  const comUpdate = (dados: unknown, depois: unknown) =>
+    supabaseGravador((_tabela, chamadas) =>
+      chamadas.some((c) => c.metodo === "update") ? { data: depois } : { data: dados },
+    );
+
+  it("zera a contagem e pega a venda falhou da própria empresa", async () => {
+    const g = comUpdate(GUARDADA, [{ id: "ev-9" }]);
+    const preso = await bancoDaVenda(g.admin).prenderPeloBotao("org-1", "ev-9", AGORA);
+    expect(preso).toEqual({ ...GUARDADA, status: "recebido", tentativas: 0 });
+    expect(g.log.find((c) => c.metodo === "update")?.args[0]).toEqual({
+      status: "recebido",
+      tentativas: 0,
+      proxima_tentativa_em: "2026-10-22T15:15:00.000Z",
+    });
+    expect(g.log.filter((c) => c.metodo === "eq" && c.args[0] === "organization_id").map((c) => c.args[1])).toEqual([
+      "org-1",
+      "org-1",
+    ]);
+    expect(usou(g.log, "sales_events", "eq", "status", "falhou")).toBe(true);
+    expect(usou(g.log, "sales_events", "not", "payload", "is", null)).toBe(true);
+  });
+
+  it("não achou (ou é de outra empresa), não está falhou, ou já sem dados: recusa sem tocar a linha", async () => {
+    for (const [linha, esperado] of [
+      [null, "nao_achou"],
+      [{ ...GUARDADA, status: "processado" }, "nao_falhou"],
+      [{ ...GUARDADA, payload: null }, "sem_dados"],
+    ] as const) {
+      const g = comUpdate(linha, [{ id: "ev-9" }]);
+      expect(await bancoDaVenda(g.admin).prenderPeloBotao("org-1", "ev-9", AGORA)).toBe(esperado);
+      expect(g.log.some((c) => c.metodo === "update")).toBe(false);
+    }
+  });
+
+  it("outra mão pegou entre a leitura e o UPDATE → nao_falhou; erro de leitura sobe", async () => {
+    expect(await bancoDaVenda(comUpdate(GUARDADA, []).admin).prenderPeloBotao("org-1", "ev-9", AGORA)).toBe("nao_falhou");
+    await expect(
+      bancoDaVenda(supabaseGravador(() => ({ error: { message: "timeout" } })).admin).prenderPeloBotao("org-1", "ev-9", AGORA),
+    ).rejects.toThrow("sales_events: timeout");
+  });
+
+  it("F8: recebido com prazo vencido (travada) é pega; recebido dentro do prazo é recusada", async () => {
+    const travada = { ...GUARDADA, status: "recebido", tentativas: 2, proxima_tentativa_em: "2026-10-22T14:59:00.000Z" };
+    const g = comUpdate(travada, [{ id: "ev-9" }]);
+    const preso = await bancoDaVenda(g.admin).prenderPeloBotao("org-1", "ev-9", AGORA);
+    expect(preso).toMatchObject({ id: GUARDADA.id, status: "recebido", tentativas: 0 });
+    expect(preso).not.toHaveProperty("proxima_tentativa_em");
+    expect(usou(g.log, "sales_events", "eq", "status", "recebido")).toBe(true);
+    expect(usou(g.log, "sales_events", "lte", "proxima_tentativa_em", AGORA.toISOString())).toBe(true);
+    for (const prazo of ["2026-10-22T15:05:00.000Z", null]) {
+      const em = comUpdate({ ...GUARDADA, status: "recebido", proxima_tentativa_em: prazo }, [{ id: "ev-9" }]);
+      expect(await bancoDaVenda(em.admin).prenderPeloBotao("org-1", "ev-9", AGORA)).toBe("nao_falhou");
+      expect(em.log.some((c) => c.metodo === "update")).toBe(false);
+    }
+  });
+});

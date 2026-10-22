@@ -29,8 +29,15 @@ const COLUNAS_DO_CONTATO = "id, name, email, phone_number";
 const COLUNAS_DA_TENTATIVA =
   "id, organization_id, webhook_source_id, plataforma, evento_original, evento, chave_evento, teste, payload, tentativas, status, recebido_em";
 
+export type PegaPeloBotao = LinhaGuardada | "nao_achou" | "nao_falhou" | "sem_dados";
+
 export interface BancoDaVendaSupabase extends BancoDaFila {
   registrarRecusa(conexao: ConexaoDeVenda, motivo: string): Promise<void>;
+  /**
+   * O botão: zera a contagem e pega a venda `falhou` — ou `recebido` com o prazo vencido
+   * (travada, F8) — que ainda tem dados. Erro sobe.
+   */
+  prenderPeloBotao(organizationId: string, id: string, agora: Date): Promise<PegaPeloBotao>;
 }
 
 export function bancoDaVenda(admin: SupabaseClient): BancoDaVendaSupabase {
@@ -228,6 +235,36 @@ export function bancoDaVenda(admin: SupabaseClient): BancoDaVendaSupabase {
         .select("id");
       if (error) throw new Error(`sales_events: ${error.message}`);
       return (data ?? []).length > 0;
+    },
+
+    async prenderPeloBotao(organizationId, id, agora) {
+      const { data, error } = await admin
+        .from("sales_events")
+        .select(`${COLUNAS_DA_TENTATIVA}, proxima_tentativa_em`)
+        .eq("id", id)
+        .eq("organization_id", organizationId)
+        .maybeSingle();
+      if (error) throw new Error(`sales_events: ${error.message}`);
+      if (!data) return "nao_achou";
+      const { proxima_tentativa_em: prazo, ...resto } = data as unknown as LinhaGuardada & { proxima_tentativa_em: string | null };
+      const linha: LinhaGuardada = resto;
+      // F8: `recebido` com o prazo vencido é venda travada; dentro do prazo ainda está em curso.
+      const travada = linha.status === "recebido" && prazo != null && new Date(prazo).getTime() <= agora.getTime();
+      if (linha.status !== "falhou" && !travada) return "nao_falhou";
+      if (!linha.payload) return "sem_dados";
+      let pegar = admin
+        .from("sales_events")
+        .update({ status: "recebido", tentativas: 0, proxima_tentativa_em: prazoDaTentativa(agora) })
+        .eq("id", id)
+        .eq("organization_id", organizationId)
+        .eq("status", linha.status)
+        .not("payload", "is", null);
+      if (travada) pegar = pegar.lte("proxima_tentativa_em", agora.toISOString());
+      const pega = await pegar.select("id");
+      if (pega.error) throw new Error(`sales_events: ${pega.error.message}`);
+      // Outra mão (o cron ou outro clique) pegou entre a leitura e aqui.
+      if ((pega.data ?? []).length === 0) return "nao_falhou";
+      return { ...linha, status: "recebido", tentativas: 0 };
     },
 
     async conexao(organizationId, conexaoId) {
