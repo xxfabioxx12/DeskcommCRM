@@ -48,6 +48,11 @@ export type ConexaoAtual = ConexaoDeVenda & { ativa: boolean };
 export interface BancoDaTentativa extends BancoDaVenda {
   /** A conexão como está AGORA (config e ligada/desligada), só de venda, só da empresa. Erro sobe. */
   conexao(organizationId: string, conexaoId: string): Promise<ConexaoAtual | null>;
+  /**
+   * F1: grava as colunas derivadas na linha AINDA `recebido`, antes do gatilho — o motor lê
+   * `venda` da própria linha (`vendaDoEvento`). Erro sobe (vira `falhou` passageiro).
+   */
+  completarLinha(id: string, colunas: ColunasDerivadas): Promise<void>;
 }
 
 export interface BancoDaFila extends BancoDaTentativa {
@@ -91,20 +96,17 @@ export function entregaGuardada(
   };
 }
 
-async function decidirDeNovo(
-  banco: BancoDaTentativa,
-  linha: LinhaGuardada,
-  recebidoEm: Date,
-  completar: { colunas?: ColunasDerivadas },
-): Promise<FimDaVenda> {
+async function decidirDeNovo(banco: BancoDaTentativa, linha: LinhaGuardada, recebidoEm: Date): Promise<FimDaVenda> {
   if (!linha.payload) return { status: "falhou", motivo: MOTIVO_DA_VENDA.semDados };
+  // Sem a chave a tradução sairia com chave vazia (entidade e dedupe errados): não volta sozinha.
+  if (!linha.chave_evento) return { status: "falhou", motivo: MOTIVO_DA_VENDA.semChave };
   const conexao = await banco.conexao(linha.organization_id, linha.webhook_source_id);
   if (!conexao?.ativa) return { status: "ignorado", motivo: MOTIVO_DA_VENDA.conexaoDesligada };
   const { id, entrega } = entregaGuardada(linha, linha.payload, conexao);
   const { venda, dados } = traduzirParaDecidir(conexao.plataforma, entrega, id.chave);
-  // F1: a chegada não traduziu (config velha) e agora traduz — completa a linha, senão
-  // `{{venda.*}}` sai vazio e `jaComprou` não enxerga esta compra.
-  if (linha.evento == null && venda) completar.colunas = colunasDerivadas(venda, dados);
+  // F1: a chegada não traduziu (config velha) e agora traduz — completa a linha ANTES de decidir,
+  // senão a regra disparada lê `{{venda.*}}` vazio da linha e `jaComprou` não enxerga esta compra.
+  if (linha.evento == null && venda) await banco.completarLinha(linha.id, colunasDerivadas(venda, dados));
   return decidir(banco, conexao, id, venda, dados, linha.id, recebidoEm);
 }
 
@@ -114,15 +116,13 @@ async function decidirDeNovo(
  */
 export async function tentarDeNovo(banco: BancoDaTentativa, linha: LinhaGuardada, agora: Date): Promise<FimDaVenda> {
   const recebidoEm = new Date(linha.recebido_em);
-  const completar: { colunas?: ColunasDerivadas } = {};
   let fim: FimDaVenda;
   try {
-    fim = await decidirDeNovo(banco, linha, recebidoEm, completar);
+    fim = await decidirDeNovo(banco, linha, recebidoEm);
   } catch (err) {
     fim = falhaDoErro(err);
   }
   fim = comProximaTentativa(fim, linha.tentativas, recebidoEm, agora);
-  if (completar.colunas) fim = { ...fim, colunas: completar.colunas };
   await banco.concluir(linha.id, fim);
   return fim;
 }

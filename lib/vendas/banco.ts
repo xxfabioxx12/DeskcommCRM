@@ -1,8 +1,9 @@
 /**
  * O `BancoDaVenda` de produção, sobre o client de serviço do Supabase. Toda
  * consulta filtra a organização à mão (o client de serviço contorna a RLS), exceto
- * `concluir` e `marcarRecebimento`, que atualizam pelo id vindo de origem confiável
- * (o retorno do insert e a conexão achada pelo path_token), e `pendentes`, a fila do
+ * `concluir`, `completarLinha` e `marcarRecebimento`, que atualizam pelo id vindo de origem
+ * confiável (o retorno do insert, a linha que a tentativa pegou e a conexão achada pelo
+ * path_token), e `pendentes`, a fila do
  * cron, que é de todas as empresas por natureza: tudo depois dela filtra pela
  * organização da própria linha.
  *
@@ -84,13 +85,11 @@ export function bancoDaVenda(admin: SupabaseClient): BancoDaVendaSupabase {
       const { error } = await admin
         .from("sales_events")
         // Sempre reescreve a próxima tentativa: limpa o prazo de quem pegou, ou marca a próxima (Parte 2b).
-        // `colunas` só vem da tentativa que completou uma linha sem tradução (F1).
         .update({
           status: fim.status,
           motivo: fim.motivo,
           contact_id: fim.contactId ?? null,
           proxima_tentativa_em: fim.proximaTentativaEm?.toISOString() ?? null,
-          ...fim.colunas,
         })
         .eq("id", id)
         // F9: a chegada e a tentativa concluem a partir de `recebido`; não sobrescreve o desfecho de outra execução.
@@ -176,6 +175,12 @@ export function bancoDaVenda(admin: SupabaseClient): BancoDaVendaSupabase {
         p_organization_id: organizationId,
       });
       if (error) throw new Error(`emit_event: ${error.message}`);
+    },
+
+    async completarLinha(id, colunas) {
+      // Pelo id da linha que a tentativa já pegou (lida com a organização filtrada), ainda `recebido`.
+      const { error } = await admin.from("sales_events").update(colunas).eq("id", id).eq("status", "recebido");
+      if (error) throw new Error(`sales_events: ${error.message}`);
     },
 
     async pendentes(agora, limite) {

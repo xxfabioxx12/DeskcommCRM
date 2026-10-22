@@ -212,7 +212,7 @@ describe("concluir e conexão (Parte 2b)", () => {
     expect(usou(g.log, "sales_events", "eq", "status", "recebido")).toBe(true);
   });
 
-  it("F1: concluir também grava as colunas completadas pela tentativa (nunca payload/chave/recebido_em)", async () => {
+  it("F1: completarLinha grava só as colunas derivadas, só na linha ainda recebido; erro sobe", async () => {
     const g = supabaseGravador(() => ({}));
     const colunas = {
       evento: "compra.aprovada",
@@ -225,9 +225,13 @@ describe("concluir e conexão (Parte 2b)", () => {
       order_bump: false,
       venda: {},
     };
-    await bancoDaVenda(g.admin).concluir("ev-1", { status: "processado", motivo: null, contactId: "c1", colunas });
-    const [update] = g.log.filter((c) => c.metodo === "update").map((c) => c.args[0]);
-    expect(update).toEqual({ status: "processado", motivo: null, contact_id: "c1", proxima_tentativa_em: null, ...colunas });
+    await bancoDaVenda(g.admin).completarLinha("ev-1", colunas);
+    expect(g.log.find((c) => c.metodo === "update")?.args[0]).toEqual(colunas);
+    expect(usou(g.log, "sales_events", "eq", "id", "ev-1")).toBe(true);
+    expect(usou(g.log, "sales_events", "eq", "status", "recebido")).toBe(true);
+    await expect(
+      bancoDaVenda(supabaseGravador(() => ({ error: { message: "timeout" } })).admin).completarLinha("ev-1", colunas),
+    ).rejects.toThrow("sales_events: timeout");
   });
 
   it("conexao: só de venda, só da empresa; traz a config atual e se está ligada", async () => {

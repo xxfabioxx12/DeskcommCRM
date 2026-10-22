@@ -56,6 +56,7 @@ function bancoFalso(over: Partial<BancoDaTentativa> = {}) {
     completarContato: vi.fn(async () => undefined),
     emitir: vi.fn(async () => undefined),
     conexao: vi.fn(async (): Promise<ConexaoAtual | null> => CONEXAO),
+    completarLinha: vi.fn(async () => undefined),
     ...over,
   };
   return { banco, fins };
@@ -181,14 +182,10 @@ describe("tentarDeNovo — a decisão a partir da linha guardada", () => {
     );
   });
 
-  it("F1: linha que chegou sem tradução e agora traduz (mapa corrigido) completa as colunas derivadas, com os cortes da chegada", async () => {
+  it("F1: linha que chegou sem tradução e agora traduz (mapa corrigido) grava as colunas ANTES do gatilho, com os cortes da chegada", async () => {
     const mapa = { evento: { fixo: "compra.aprovada" }, entity: "pedido", produto_id: "pid", produto_nome: "pn", email: "email" };
     const personalizada: ConexaoAtual = { ...CONEXAO, plataforma: "personalizada", config: { dispara: true, mapa } };
-    const { banco, fins } = bancoFalso({ conexao: vi.fn(async () => personalizada) });
-    const longo = "🎁".repeat(600);
-    const payload = { pedido: "P-77", pid: "prod-1", pn: longo, email: "Ana@Email.com" };
-    const fim = await tentarDeNovo(banco, linha({ plataforma: "personalizada", evento: null, payload }), AGORA);
-    expect(fim.colunas).toEqual({
+    const esperadas = {
       evento: "compra.aprovada",
       entidade: "custom:P-77",
       pedido: "P-77",
@@ -198,21 +195,45 @@ describe("tentarDeNovo — a decisão a partir da linha guardada", () => {
       telefone: null,
       order_bump: false,
       venda: expect.objectContaining({ produto: "🎁".repeat(500) }),
+    };
+    const completarLinha = vi.fn(async () => undefined);
+    // O motor lê `venda` da própria linha: quando o gatilho sai, a linha já tem de estar completa.
+    const emitir = vi.fn(async () => {
+      expect(completarLinha).toHaveBeenCalledWith("ev-9", esperadas);
     });
-    expect(fins[0]![1]).toMatchObject({ status: "processado", colunas: fim.colunas });
-    expect(banco.emitir).toHaveBeenCalledTimes(1);
+    const { banco, fins } = bancoFalso({ conexao: vi.fn(async () => personalizada), completarLinha, emitir });
+    const payload = { pedido: "P-77", pid: "prod-1", pn: "🎁".repeat(600), email: "Ana@Email.com" };
+    const fim = await tentarDeNovo(banco, linha({ plataforma: "personalizada", evento: null, payload }), AGORA);
+    expect(fim).toEqual({ status: "processado", motivo: null, contactId: "contato-novo" });
+    expect(emitir).toHaveBeenCalledTimes(1);
+    expect(completarLinha).toHaveBeenCalledTimes(1);
+    expect(fins[0]![1]).not.toHaveProperty("colunas");
   });
 
-  it("F1: completa mesmo quando a decisão cai no meio; linha que já tinha evento não é reescrita", async () => {
+  it("F1: erro ao completar a linha é falha passageira e não dispara; linha que já tinha evento não é completada", async () => {
     const mapa = { evento: { fixo: "compra.aprovada" }, email: "email" };
     const personalizada: ConexaoAtual = { ...CONEXAO, plataforma: "personalizada", config: { dispara: true, mapa } };
-    const caiu = bancoFalso({ conexao: vi.fn(async () => personalizada), emitir: quebraOEmit() });
+    const caiu = bancoFalso({
+      conexao: vi.fn(async () => personalizada),
+      completarLinha: vi.fn(async () => {
+        throw new Error("sales_events: timeout");
+      }),
+    });
     await tentarDeNovo(caiu.banco, linha({ plataforma: "personalizada", evento: null, payload: { email: "a@b.com" } }), AGORA);
-    expect(caiu.fins[0]![1]).toMatchObject({ status: "falhou", proximaTentativaEm: minutos(30), colunas: { evento: "compra.aprovada", email: "a@b.com" } });
+    expect(caiu.banco.emitir).not.toHaveBeenCalled();
+    expect(caiu.fins[0]![1]).toEqual({ status: "falhou", motivo: "sales_events: timeout", proximaTentativaEm: minutos(30) });
 
     const jaTinha = bancoFalso({ conexao: vi.fn(async () => personalizada) });
     await tentarDeNovo(jaTinha.banco, linha({ plataforma: "personalizada", payload: { email: "a@b.com" } }), AGORA);
-    expect(jaTinha.fins[0]![1]).not.toHaveProperty("colunas");
+    expect(jaTinha.banco.completarLinha).not.toHaveBeenCalled();
+  });
+
+  it("linha com dados mas sem a chave do evento: falhou de configuração, sem traduzir nem agendar", async () => {
+    const { banco, fins } = bancoFalso();
+    await tentarDeNovo(banco, linha({ chave_evento: null }), AGORA);
+    expect(fins[0]![1]).toEqual({ status: "falhou", motivo: MOTIVO_DA_VENDA.semChave });
+    expect(banco.emitir).not.toHaveBeenCalled();
+    expect(banco.completarLinha).not.toHaveBeenCalled();
   });
 });
 

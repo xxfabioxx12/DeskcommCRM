@@ -67,8 +67,6 @@ export interface FimDaVenda {
   contactId?: string | null;
   /** Só em `falhou` passageiro: quando sai a próxima tentativa automática. */
   proximaTentativaEm?: Date;
-  /** Só na tentativa de uma linha que chegou sem tradução e agora traduz (F1): `concluir` grava junto. */
-  colunas?: ColunasDerivadas;
 }
 
 export interface NovoContato {
@@ -113,6 +111,7 @@ export const MOTIVO_DA_VENDA = {
   semMapa: "conexão sem mapa de campos: diga onde estão o evento, o e-mail e o telefone",
   contatoNaoCriado: "não foi possível criar o contato",
   semDados: "os dados desta venda já foram apagados",
+  semChave: "a venda foi guardada sem a chave do evento",
   conexaoDesligada: "conexão desligada",
   tentativaInterrompida: "a tentativa parou no meio",
 } as const;
@@ -128,7 +127,7 @@ export const PRAZO_DA_TENTATIVA_MS = 15 * 60_000;
 export const prazoDaTentativa = (agora: Date): string => new Date(agora.getTime() + PRAZO_DA_TENTATIVA_MS).toISOString();
 
 /** Falha que daria o mesmo erro de novo: só volta pelo botão, depois de arrumar (Divergência D8). */
-const FALHA_SEM_VOLTA = new Set<string>([MOTIVO_DA_VENDA.semMapa, MOTIVO_DA_VENDA.semDados]);
+const FALHA_SEM_VOLTA = new Set<string>([MOTIVO_DA_VENDA.semMapa, MOTIVO_DA_VENDA.semDados, MOTIVO_DA_VENDA.semChave]);
 
 export interface ResultadoDaVenda {
   duplicate: boolean;
