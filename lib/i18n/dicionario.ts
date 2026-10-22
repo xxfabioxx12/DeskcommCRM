@@ -16751,6 +16751,10 @@ export const DICIONARIO: Traducoes = {
   "Venda reavaliada: {situacao}": { es: "Venta reevaluada: {situacao}" },
   // Parte 3 — texto de reserva fora do lugar.
   "O texto de reserva só funciona no passo Mensagem do fluxo e no Gravar campo.": { es: "El texto de respaldo solo funciona en el paso Mensaje del flujo y en Grabar campo." },
+  // Parte 3 — dica do texto de reserva.
+  'Para não depender do dado, ponha um texto de reserva: {{primeiro_nome|"aluno"}}.': {
+    es: 'Para no depender del dato, pon un texto de respaldo: {{primeiro_nome|"alumno"}}.',
+  },
 };
 
 /**

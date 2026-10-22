@@ -152,6 +152,9 @@ export function LacunasDoTemplate({
             </div>
           ))}
           <p className="text-xs text-muted-foreground">{dicaDasVariaveis}</p>
+          <p className="text-xs text-muted-foreground">
+            {t('Para não depender do dado, ponha um texto de reserva: {{primeiro_nome|"aluno"}}.')}
+          </p>
         </div>
       )}
 

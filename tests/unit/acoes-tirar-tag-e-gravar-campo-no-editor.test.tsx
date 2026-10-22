@@ -66,4 +66,11 @@ describe("editor de automações — Tirar tag e Gravar campo", () => {
     await user.type(screen.getByLabelText("Valor do campo"), "https://area");
     expect(onChange.mock.calls.at(-1)?.[0]).toEqual({ type: "set_field", config: { destino: "contato", campo: "link", valor: "https://area" } });
   });
+
+  it("Gravar campo: a dica mostra o texto de reserva, com espanhol", () => {
+    const DICA = 'Para não depender do dado, ponha um texto de reserva: {{primeiro_nome|"aluno"}}.';
+    montar({ type: "set_field", config: { destino: "contato", campo: "", valor: "" } });
+    expect(screen.getByText(DICA)).toBeInTheDocument();
+    expect(DICIONARIO[DICA]?.es).toBe('Para no depender del dato, pon un texto de respaldo: {{primeiro_nome|"alumno"}}.');
+  });
 });

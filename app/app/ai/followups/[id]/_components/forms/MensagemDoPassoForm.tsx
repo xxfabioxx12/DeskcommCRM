@@ -100,6 +100,9 @@ export function MensagemDoPassoForm({
         <p className="text-xs text-text-muted">
           {t("Texto livre com as mesmas variáveis. Se faltar o dado de alguém, a mensagem não sai.")}
         </p>
+        <p className="text-xs text-text-muted">
+          {t('Para não depender do dado, ponha um texto de reserva: {{primeiro_nome|"aluno"}}.')}
+        </p>
       </section>
       <p className="text-xs text-text-muted">
         {t("Preencha ao menos uma das duas. O fluxo escolhe sozinho pelo tipo do número da conversa; sem a versão daquele tipo, a pessoa sai do fluxo com o motivo.")}

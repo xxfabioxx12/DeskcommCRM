@@ -662,6 +662,9 @@ function SetFieldForm({
         <p className="text-xs text-muted-foreground">
           {t("Pode usar {{nome}}, {{primeiro_nome}}, {{saudacao}}, {{contato.campo}} e {{lead.campo}}. Grava só este campo; os outros ficam como estão.")}
         </p>
+        <p className="text-xs text-muted-foreground">
+          {t('Para não depender do dado, ponha um texto de reserva: {{primeiro_nome|"aluno"}}.')}
+        </p>
         {gatilho === GATILHO_DA_VENDA ? (
           <p className="text-xs text-muted-foreground">
             {t("Nesta automação de venda também valem {{venda.nome}}, {{venda.primeiro_nome}}, {{venda.email}}, {{venda.telefone}}, {{venda.produto}}, {{venda.pedido}}, {{venda.valor}}, {{venda.checkout_url}}, {{venda.extra.campo}} e {{venda.payload.caminho}}.")}

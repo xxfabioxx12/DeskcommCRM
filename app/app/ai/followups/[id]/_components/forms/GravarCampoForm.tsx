@@ -71,6 +71,9 @@ export function GravarCampoForm({ config, onChange }: { config: Config; onChange
         <p className="text-xs text-text-muted">
           {t("Pode usar {{nome}}, {{primeiro_nome}}, {{saudacao}}, {{contato.campo}} e {{lead.campo}}. Grava só este campo; os outros ficam como estão.")}
         </p>
+        <p className="text-xs text-text-muted">
+          {t('Para não depender do dado, ponha um texto de reserva: {{primeiro_nome|"aluno"}}.')}
+        </p>
       </div>
       {erro && <p className="text-xs text-error-fg">{erro}</p>}
     </div>
