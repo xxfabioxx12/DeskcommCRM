@@ -25,6 +25,7 @@ import {
 import { deriveTemplateContract } from "./template-contract";
 import { graphBaseUrl } from "./graph-base";
 import { campoDaContaDeMensagens } from "./credentials";
+import { textoDoErroDaGraph, type ErroDaGraph } from "./erro-da-graph";
 
 export interface SendTemplateInput {
   phoneNumberId: string;
@@ -71,7 +72,7 @@ export type SendTemplateResult =
 
 interface GraphResponse {
   messages?: { id?: string }[];
-  error?: { code?: number; message?: string; error_data?: { details?: string } };
+  error?: ErroDaGraph;
 }
 
 export async function sendTemplate(input: SendTemplateInput): Promise<SendTemplateResult> {
@@ -146,9 +147,8 @@ export async function sendTemplate(input: SendTemplateInput): Promise<SendTempla
       sent: false,
       reason: "api_error",
       code: body.error?.code ?? res.status,
-      // O `details` da Meta é o que diz QUAL parâmetro divergiu; sem ele o operador
-      // recebe "Parameter format does not match" e nenhuma pista.
-      message: body.error?.error_data?.details ?? body.error?.message ?? `http_${res.status}`,
+      // `details` diz QUAL parâmetro divergiu; subcódigo e fbtrace vão junto.
+      message: textoDoErroDaGraph(body.error, res.status),
     };
   }
 

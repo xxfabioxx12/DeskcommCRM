@@ -19,7 +19,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { missingSlots } from "@/lib/channels/meta/build-components";
-import { falhaDeTemplate, problemaNaContaDoNumero } from "@/lib/channels/meta/erros-para-operador";
+import { acessoNegadoPelaMeta, falhaDeTemplate, problemaNaContaDoNumero } from "@/lib/channels/meta/erros-para-operador";
 import { renderTemplateBody } from "@/lib/channels/meta/render-template";
 import { logger } from "@/lib/logger";
 
@@ -148,6 +148,9 @@ export async function pausarACampanha(
  * para a pessoa (`null`)? Do template ou da CONTA do número (`numero_com_problema`).
  */
 export function falhaDoEnvioParaACampanha(codigo: string | null, detalhe: string | null): FalhaQuePausaACampanha | null {
+  // Caminho 1 do número oficial: sem autorização ou chave vencida vale para a lista
+  // inteira desde a 1ª pessoa — esperar 5 falhas só queimaria mais 4.
+  if (acessoNegadoPelaMeta(codigo, detalhe)) return "sem_autorizacao";
   if (problemaNaContaDoNumero(codigo, detalhe)) return "numero_com_problema";
   const falha = falhaDeTemplate(codigo, detalhe);
   if (falha === "template_parado") return "template_nao_aprovado";

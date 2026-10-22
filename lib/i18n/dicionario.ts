@@ -16763,6 +16763,15 @@ export const DICIONARIO: Traducoes = {
   "O ID da conta de mensagens tem só números.": { es: "El ID de la cuenta de mensajes tiene solo números." },
   // F17: agora são quatro campos (o quarto, opcional).
   "Os valores vêm do seu app na Meta (": { es: "Los valores vienen de tu app en Meta (" },
+  // Caminho 1 do número oficial — erros da Meta.
+  "Sem autorização da Meta para mandar por este número": { es: "Sin autorización de Meta para enviar por este número" },
+  "A chave de acesso da Meta venceu ou foi trocada: conecte o número de novo": {
+    es: "La clave de acceso de Meta venció o fue cambiada: conecta el número de nuevo",
+  },
+  "A conversa está com o ManyChat": { es: "La conversación está con ManyChat" },
+  "Pausada na primeira falha: a Meta recusou o envio por falta de autorização neste número ou porque a chave de acesso venceu. Confira na Meta antes de retomar.": {
+    es: "Pausada en la primera falla: Meta rechazó el envío por falta de autorización en este número o porque la clave de acceso venció. Revisa en Meta antes de reanudar.",
+  },
 };
 
 /**

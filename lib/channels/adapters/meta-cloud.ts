@@ -24,6 +24,7 @@ import { metaContactsPayload } from "@/lib/channels/meta/contact-card";
 import { graphBaseUrl } from "@/lib/channels/meta/graph-base";
 import { campoDaContaDeMensagens, resolveMetaCreds } from "../meta/credentials";
 import { metaCloudTemplateOps } from "../meta/template-ops";
+import { textoDoErroDaGraph, type ErroDaGraph } from "../meta/erro-da-graph";
 import type {
   ChannelAdapter,
   ChannelHealth,
@@ -314,11 +315,9 @@ export const metaCloudAdapter: ChannelAdapter = {
       // do indicador, que é decoração.
       signal: AbortSignal.timeout(5_000),
     });
-    const body = (await res.json().catch(() => ({}))) as {
-      error?: { code?: number; message?: string };
-    };
+    const body = (await res.json().catch(() => ({}))) as { error?: ErroDaGraph };
     if (!res.ok || body.error) {
-      throw new Error(`meta_${body.error?.code ?? res.status}: ${body.error?.message ?? `http_${res.status}`}`);
+      throw new Error(`meta_${body.error?.code ?? res.status}: ${textoDoErroDaGraph(body.error, res.status)}`);
     }
   },
 
@@ -366,14 +365,13 @@ export const metaCloudAdapter: ChannelAdapter = {
 
     const body = (await res.json().catch(() => ({}))) as {
       messages?: { id?: string }[];
-      error?: { code?: number; message?: string; error_data?: { details?: string } };
+      error?: ErroDaGraph;
     };
 
     if (!res.ok || body.error) {
-      // `details` é o campo que diz QUAL parâmetro divergiu; sem ele o operador lê
-      // "Parameter format does not match" e não tem pista nenhuma.
-      const detalhe = body.error?.error_data?.details ?? body.error?.message ?? `http_${res.status}`;
-      throw new Error(`meta_${body.error?.code ?? res.status}: ${detalhe}`);
+      // `details` diz QUAL parâmetro divergiu; subcódigo e fbtrace são o que o
+      // suporte da Meta pede (ver erro-da-graph.ts).
+      throw new Error(`meta_${body.error?.code ?? res.status}: ${textoDoErroDaGraph(body.error, res.status)}`);
     }
 
     return { externalId: body.messages?.[0]?.id ?? null };

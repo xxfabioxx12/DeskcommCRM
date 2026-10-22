@@ -34,6 +34,14 @@ const FRASES_POR_CODIGO: Readonly<Record<string, string>> = {
   "368": "A Meta bloqueou o número por violar as regras dela",
   "130429": "Limite de envio atingido: tente mais tarde",
   "131056": "Limite de envio atingido: tente mais tarde",
+  // Caminho 1 do número oficial (fork). Permissão do app no número: 10 é o que a
+  // Meta devolveu ao NODZ (subcódigo 2593181); 200 é a mesma família na Graph.
+  "10": "Sem autorização da Meta para mandar por este número",
+  "200": "Sem autorização da Meta para mandar por este número",
+  // Chave de acesso vencida, trocada ou revogada.
+  "190": "A chave de acesso da Meta venceu ou foi trocada: conecte o número de novo",
+  // Encaminhamento de conversas: outro app (o ManyChat) é o dono desta conversa.
+  "131070": "A conversa está com o ManyChat",
 };
 
 /** O pré-voo do envio (`conferir-definicao.ts`/`send-template-for-session.ts`) lança estes prefixos. */
@@ -56,9 +64,13 @@ const PARADO = new Set(["132001", "132015", "132016"]);
 const DESATUALIZADO = new Set(["132000", "132012"]);
 /** Conta bloqueada, pagamento/elegibilidade, limite por spam, bloqueio por política. */
 const CONTA_COM_PROBLEMA = new Set(["131031", "131042", "131048", "368"]);
+/** O app não pode mandar por este número (a saúde mostra "sem autorização"). */
+const SEM_AUTORIZACAO = new Set(["10", "200"]);
+/** Vale para a lista inteira e para a 1ª falha: sem autorização ou chave que não serve mais. */
+const ACESSO_NEGADO = new Set(["10", "200", "190"]);
 
 /** `<transporte>_<código>: …` — o formato da falha síncrona. */
-const CODIGO_NO_TEXTO = /^[a-z][a-z0-9]*_(\d{3,6})\s*:\s*/i;
+const CODIGO_NO_TEXTO = /^[a-z][a-z0-9]*_(\d{1,6})\s*:\s*/i;
 
 /** O código numérico da plataforma, venha ele do webhook ou do texto do envio. */
 export function codigoDaPlataforma(
@@ -66,7 +78,7 @@ export function codigoDaPlataforma(
   detalhe: string | null | undefined,
 ): string | null {
   const bruto = (codigo ?? "").trim();
-  if (/^\d{3,6}$/.test(bruto)) return bruto;
+  if (/^\d{1,6}$/.test(bruto)) return bruto;
   const m = CODIGO_NO_TEXTO.exec((detalhe ?? "").trim());
   return m?.[1] ?? null;
 }
@@ -132,6 +144,32 @@ export function problemaNaContaDoNumero(
 ): boolean {
   const daPlataforma = codigoDaPlataforma(codigo, detalhe);
   return !!daPlataforma && CONTA_COM_PROBLEMA.has(daPlataforma);
+}
+
+/** A Meta recusou porque o app não tem autorização neste número (10, 200). */
+export function semAutorizacaoParaMandar(
+  codigo: string | null | undefined,
+  detalhe: string | null | undefined,
+): boolean {
+  const daPlataforma = codigoDaPlataforma(codigo, detalhe);
+  return !!daPlataforma && SEM_AUTORIZACAO.has(daPlataforma);
+}
+
+/** Sem autorização ou chave que não serve mais (10, 200, 190): a campanha pausa na 1ª. */
+export function acessoNegadoPelaMeta(
+  codigo: string | null | undefined,
+  detalhe: string | null | undefined,
+): boolean {
+  const daPlataforma = codigoDaPlataforma(codigo, detalhe);
+  return !!daPlataforma && ACESSO_NEGADO.has(daPlataforma);
+}
+
+/** 131070: outro app é o dono desta conversa. Repetir dá o mesmo erro. */
+export function conversaComOutroApp(
+  codigo: string | null | undefined,
+  detalhe: string | null | undefined,
+): boolean {
+  return codigoDaPlataforma(codigo, detalhe) === "131070";
 }
 
 /**

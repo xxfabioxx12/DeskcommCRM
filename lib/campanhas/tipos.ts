@@ -142,7 +142,7 @@ export type FalhaDeTemplateDaCampanha = (typeof FALHAS_DE_TEMPLATE_DA_CAMPANHA)[
  * seguidas, de qualquer código. Não é do template — a saída é conferir o número
  * ou o motivo das falhas, e retomar.
  */
-export const FALHAS_DO_ENVIO_DA_CAMPANHA = ["numero_com_problema", "falhas_seguidas"] as const;
+export const FALHAS_DO_ENVIO_DA_CAMPANHA = ["numero_com_problema", "falhas_seguidas", "sem_autorizacao"] as const;
 
 export type FalhaDoEnvioDaCampanha = (typeof FALHAS_DO_ENVIO_DA_CAMPANHA)[number];
 
@@ -160,6 +160,8 @@ export const TEXTO_DA_FALHA_DA_CAMPANHA: Record<FalhaQuePausaACampanha, string> 
     "Pausada: a Meta recusou o envio por um problema na conta deste número (bloqueio, pagamento ou spam). Confira o número no Gerenciador do WhatsApp da Meta antes de retomar.",
   falhas_seguidas:
     "Pausada: as últimas 5 mensagens falharam. Confira o motivo nas pessoas abaixo antes de retomar.",
+  sem_autorizacao:
+    "Pausada na primeira falha: a Meta recusou o envio por falta de autorização neste número ou porque a chave de acesso venceu. Confira na Meta antes de retomar.",
 };
 
 export function ehFalhaDeTemplateDaCampanha(
