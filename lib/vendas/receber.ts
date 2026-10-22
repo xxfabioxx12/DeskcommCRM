@@ -189,6 +189,7 @@ export function colunasDerivadas(venda: VendaTraduzida | null, dados: DadosDaVen
 }
 
 export function falhaDoErro(err: unknown, salesEventId: string): FimDaVenda {
+  // shortcut: err.message pode trazer dado pessoal (e-mail, telefone) no log do servidor, como em banco.ts; mascarar se o log sair do servidor.
   logger.error("[vendas] erro ao processar a venda", {
     salesEventId,
     error: (err instanceof Error ? err.message : String(err)).slice(0, 500),
