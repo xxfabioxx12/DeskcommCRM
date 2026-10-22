@@ -213,7 +213,7 @@ describe("concluir e conexão (Parte 2b)", () => {
   });
 
   it("F1: completarLinha grava só as colunas derivadas, só na linha ainda recebido; erro sobe", async () => {
-    const g = supabaseGravador(() => ({}));
+    const g = supabaseGravador(() => ({ data: [{ id: "ev-1" }] }));
     const colunas = {
       evento: "compra.aprovada",
       entidade: "custom:P-1",
@@ -225,13 +225,32 @@ describe("concluir e conexão (Parte 2b)", () => {
       order_bump: false,
       venda: {},
     };
-    await bancoDaVenda(g.admin).completarLinha("ev-1", colunas);
+    await bancoDaVenda(g.admin).completarLinha("org-1", "ev-1", colunas);
     expect(g.log.find((c) => c.metodo === "update")?.args[0]).toEqual(colunas);
     expect(usou(g.log, "sales_events", "eq", "id", "ev-1")).toBe(true);
+    expect(usou(g.log, "sales_events", "eq", "organization_id", "org-1")).toBe(true);
     expect(usou(g.log, "sales_events", "eq", "status", "recebido")).toBe(true);
+    expect(usou(g.log, "sales_events", "not", "payload", "is", null)).toBe(true);
     await expect(
-      bancoDaVenda(supabaseGravador(() => ({ error: { message: "timeout" } })).admin).completarLinha("ev-1", colunas),
+      bancoDaVenda(supabaseGravador(() => ({ error: { message: "timeout" } })).admin).completarLinha("org-1", "ev-1", colunas),
     ).rejects.toThrow("sales_events: timeout");
+  });
+
+  it("M1: completarLinha numa linha anonimizada no meio (ou que saiu de recebido) não grava e LANÇA", async () => {
+    // O UPDATE filtra `payload is not null`: a anonimização zerou o payload, nenhuma linha muda.
+    const g = supabaseGravador(() => ({ data: [] }));
+    const colunas = {
+      evento: "compra.aprovada",
+      entidade: "custom:P-1",
+      pedido: "P-1",
+      produto_id: null,
+      produto: null,
+      email: "a@b.com",
+      telefone: null,
+      order_bump: false,
+      venda: {},
+    };
+    await expect(bancoDaVenda(g.admin).completarLinha("org-1", "ev-1", colunas)).rejects.toThrow(/sales_events/);
   });
 
   it("conexao: só de venda, só da empresa; traz a config atual e se está ligada", async () => {

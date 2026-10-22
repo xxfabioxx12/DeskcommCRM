@@ -50,9 +50,10 @@ export interface BancoDaTentativa extends BancoDaVenda {
   conexao(organizationId: string, conexaoId: string): Promise<ConexaoAtual | null>;
   /**
    * F1: grava as colunas derivadas na linha AINDA `recebido`, antes do gatilho — o motor lê
-   * `venda` da própria linha (`vendaDoEvento`). Erro sobe (vira `falhou` passageiro).
+   * `venda` da própria linha (`vendaDoEvento`). Erro, ou linha que mudou (anonimizada, saiu de
+   * `recebido`), sobe (vira `falhou` passageiro).
    */
-  completarLinha(id: string, colunas: ColunasDerivadas): Promise<void>;
+  completarLinha(organizationId: string, id: string, colunas: ColunasDerivadas): Promise<void>;
 }
 
 export interface BancoDaFila extends BancoDaTentativa {
@@ -106,7 +107,7 @@ async function decidirDeNovo(banco: BancoDaTentativa, linha: LinhaGuardada, rece
   const { venda, dados } = traduzirParaDecidir(conexao.plataforma, entrega, id.chave);
   // F1: a chegada não traduziu (config velha) e agora traduz — completa a linha ANTES de decidir,
   // senão a regra disparada lê `{{venda.*}}` vazio da linha e `jaComprou` não enxerga esta compra.
-  if (linha.evento == null && venda) await banco.completarLinha(linha.id, colunasDerivadas(venda, dados));
+  if (linha.evento == null && venda) await banco.completarLinha(linha.organization_id, linha.id, colunasDerivadas(venda, dados));
   return decidir(banco, conexao, id, venda, dados, linha.id, recebidoEm);
 }
 

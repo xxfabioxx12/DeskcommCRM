@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
+import { bancoDaVenda } from "@/lib/vendas/banco";
 import type { ContatoExistente } from "@/lib/vendas/contato";
 import { MOTIVO_DA_VENDA, SEIS_HORAS_MS, falhaDoErro, type FimDaVenda } from "@/lib/vendas/receber";
 import {
@@ -13,6 +14,8 @@ import {
   type ConexaoAtual,
   type LinhaGuardada,
 } from "@/lib/vendas/reprocessar";
+
+import { supabaseGravador } from "./helpers/supabase-gravador";
 
 const fixture = (nome: string) =>
   JSON.parse(readFileSync(join(__dirname, "..", "fixtures", "vendas", `${nome}.json`), "utf8"));
@@ -199,7 +202,7 @@ describe("tentarDeNovo — a decisão a partir da linha guardada", () => {
     const completarLinha = vi.fn(async () => undefined);
     // O motor lê `venda` da própria linha: quando o gatilho sai, a linha já tem de estar completa.
     const emitir = vi.fn(async () => {
-      expect(completarLinha).toHaveBeenCalledWith("ev-9", esperadas);
+      expect(completarLinha).toHaveBeenCalledWith("org-1", "ev-9", esperadas);
     });
     const { banco, fins } = bancoFalso({ conexao: vi.fn(async () => personalizada), completarLinha, emitir });
     const payload = { pedido: "P-77", pid: "prod-1", pn: "🎁".repeat(600), email: "Ana@Email.com" };
@@ -226,6 +229,21 @@ describe("tentarDeNovo — a decisão a partir da linha guardada", () => {
     const jaTinha = bancoFalso({ conexao: vi.fn(async () => personalizada) });
     await tentarDeNovo(jaTinha.banco, linha({ plataforma: "personalizada", payload: { email: "a@b.com" } }), AGORA);
     expect(jaTinha.banco.completarLinha).not.toHaveBeenCalled();
+  });
+
+  it("M1: anonimizada no meio: não regrava dado pessoal, não dispara e vira falhou passageiro", async () => {
+    const mapa = { evento: { fixo: "compra.aprovada" }, email: "email" };
+    const personalizada: ConexaoAtual = { ...CONEXAO, plataforma: "personalizada", config: { dispara: true, mapa } };
+    // O banco de verdade: o UPDATE com `payload is not null` não acha a linha (zerada no meio).
+    const g = supabaseGravador(() => ({ data: [] }));
+    const real = bancoDaVenda(g.admin);
+    const { banco, fins } = bancoFalso({
+      conexao: vi.fn(async () => personalizada),
+      completarLinha: (org, id, colunas) => real.completarLinha(org, id, colunas),
+    });
+    await tentarDeNovo(banco, linha({ plataforma: "personalizada", evento: null, payload: { email: "a@b.com" } }), AGORA);
+    expect(banco.emitir).not.toHaveBeenCalled();
+    expect(fins[0]![1]).toEqual({ status: "falhou", motivo: MOTIVO_DA_VENDA.erroPassageiro, proximaTentativaEm: minutos(30) });
   });
 
   it("linha com dados mas sem a chave do evento: falhou de configuração, sem traduzir nem agendar", async () => {

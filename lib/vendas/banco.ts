@@ -184,10 +184,18 @@ export function bancoDaVenda(admin: SupabaseClient): BancoDaVendaSupabase {
       if (error) throw new Error(`emit_event: ${error.message}`);
     },
 
-    async completarLinha(id, colunas) {
-      // Pelo id da linha que a tentativa já pegou (lida com a organização filtrada), ainda `recebido`.
-      const { error } = await admin.from("sales_events").update(colunas).eq("id", id).eq("status", "recebido");
+    async completarLinha(organizationId, id, colunas) {
+      // Só a linha que a tentativa pegou, ainda `recebido` e ainda com dados: anonimizada no meio, não regrava dado pessoal.
+      const { data, error } = await admin
+        .from("sales_events")
+        .update(colunas)
+        .eq("id", id)
+        .eq("organization_id", organizationId)
+        .eq("status", "recebido")
+        .not("payload", "is", null)
+        .select("id");
       if (error) throw new Error(`sales_events: ${error.message}`);
+      if ((data ?? []).length === 0) throw new Error("sales_events: a linha mudou durante a tentativa");
     },
 
     async pendentes(agora, limite) {
