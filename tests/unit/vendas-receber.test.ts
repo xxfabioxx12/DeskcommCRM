@@ -233,17 +233,17 @@ describe("receberVenda", () => {
     expect(banco.emitir).not.toHaveBeenCalled();
   });
 
-  it("erro depois do registro: falhou com a mensagem, e a resposta segue", async () => {
+  it("erro depois do registro: falhou com a frase fixa (não a mensagem), e a resposta segue", async () => {
     const { banco, fins } = bancoFalso({
       emitir: vi.fn(async () => {
         throw new Error("emit_event: boom");
       }),
     });
     const r = await receberVenda(banco, LIGADA, entrega(fixture("hotmart_purchase_approved")), AGORA);
-    expect(r).toMatchObject({ duplicate: false, status: "falhou", motivo: "emit_event: boom" });
+    expect(r).toMatchObject({ duplicate: false, status: "falhou", motivo: "erro passageiro ao processar a venda" });
     expect(fins[0]![1]).toEqual({
       status: "falhou",
-      motivo: "emit_event: boom",
+      motivo: "erro passageiro ao processar a venda",
       proximaTentativaEm: new Date(AGORA.getTime() + 5 * 60_000),
     });
   });

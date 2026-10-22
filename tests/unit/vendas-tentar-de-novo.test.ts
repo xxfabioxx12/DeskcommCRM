@@ -77,4 +77,30 @@ describe("POST tentar de novo", () => {
     expect((await clicar()).status).toBe(500);
     expect(h.tentar).not.toHaveBeenCalled();
   });
+
+  it("o motivo só sai se for uma frase fixa de MOTIVO_DA_VENDA: mensagem do banco nunca vai na resposta", async () => {
+    h.tentar.mockResolvedValue({ status: "falhou", motivo: "contacts: duplicate key (email)=(a@b.c)" });
+    const res = await clicar();
+    expect(res.status).toBe(200);
+    expect((await res.json()).data).toEqual({ status: "falhou", motivo: null });
+    h.tentar.mockResolvedValue({ status: "falhou", motivo: "erro passageiro ao processar a venda" });
+    expect((await (await clicar()).json()).data.motivo).toBe("erro passageiro ao processar a venda");
+  });
+
+  it("tentarDeNovo lança: 500 internal_error sem a mensagem", async () => {
+    h.tentar.mockRejectedValue(new Error("contacts: duplicate key (email)=(a@b.c)"));
+    const res = await clicar();
+    expect(res.status).toBe(500);
+    const texto = JSON.stringify(await res.json());
+    expect(texto).toContain("internal_error");
+    expect(texto).not.toContain("a@b.c");
+  });
+
+  it("a trilha do clique sai logo depois da pega, antes de tentar", async () => {
+    const ordem: string[] = [];
+    h.audit.mockImplementation(async () => void ordem.push("audit"));
+    h.tentar.mockImplementation(async () => (ordem.push("tentar"), { status: "processado", motivo: null }));
+    await clicar();
+    expect(ordem).toEqual(["audit", "tentar"]);
+  });
 });

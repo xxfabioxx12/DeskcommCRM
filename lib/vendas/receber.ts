@@ -17,6 +17,8 @@
  * grava o prazo de quem está decidindo: se a rota cair no meio, a venda volta
  * pela fila.
  */
+import { logger } from "@/lib/logger";
+
 import type { ConfigDaConexao } from "./config";
 import { camposParaCompletar, fraseDaOrigem, type CamposDoContato, type ContatoExistente } from "./contato";
 import { dadosDaVenda, type DadosDaVenda } from "./dados-da-venda";
@@ -114,6 +116,8 @@ export const MOTIVO_DA_VENDA = {
   semChave: "a venda foi guardada sem a chave do evento",
   conexaoDesligada: "conexão desligada",
   tentativaInterrompida: "a tentativa parou no meio",
+  // Frase fixa: a mensagem do erro pode trazer dado do contato (ex.: e-mail numa chave duplicada) e vai só para o log.
+  erroPassageiro: "erro passageiro ao processar a venda",
 } as const;
 
 /** Nova tentativa automática (Parte 2b): a 1ª 5 min depois da falha, a 2ª 30 min, a 3ª 2 h. */
@@ -184,8 +188,12 @@ export function colunasDerivadas(venda: VendaTraduzida | null, dados: DadosDaVen
   };
 }
 
-export function falhaDoErro(err: unknown): FimDaVenda {
-  return { status: "falhou", motivo: (err instanceof Error ? err.message : String(err)).slice(0, 500) };
+export function falhaDoErro(err: unknown, salesEventId: string): FimDaVenda {
+  logger.error("[vendas] erro ao processar a venda", {
+    salesEventId,
+    error: (err instanceof Error ? err.message : String(err)).slice(0, 500),
+  });
+  return { status: "falhou", motivo: MOTIVO_DA_VENDA.erroPassageiro };
 }
 
 /** Quando sai a próxima tentativa depois de `tentativas` feitas; `undefined` = não volta sozinha. */
@@ -230,7 +238,7 @@ export async function receberVenda(
   try {
     fim = await decidir(banco, conexao, id, venda, dados, registro.id, agora);
   } catch (err) {
-    fim = falhaDoErro(err);
+    fim = falhaDoErro(err, registro.id);
   }
   fim = comProximaTentativa(fim, 0, agora, agora);
   await banco.concluir(registro.id, fim);

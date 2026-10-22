@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ContatoExistente } from "@/lib/vendas/contato";
-import { MOTIVO_DA_VENDA, SEIS_HORAS_MS, type FimDaVenda } from "@/lib/vendas/receber";
+import { MOTIVO_DA_VENDA, SEIS_HORAS_MS, falhaDoErro, type FimDaVenda } from "@/lib/vendas/receber";
 import {
   reprocessarPendentes,
   tentarDeNovo,
@@ -124,11 +124,11 @@ describe("tentarDeNovo — a decisão a partir da linha guardada", () => {
     ] as const) {
       const { banco, fins } = bancoFalso({ emitir: quebraOEmit() });
       await tentarDeNovo(banco, linha({ tentativas }), AGORA);
-      expect(fins[0]![1]).toEqual({ status: "falhou", motivo: "emit_event: caiu", proximaTentativaEm: minutos(espera) });
+      expect(fins[0]![1]).toEqual({ status: "falhou", motivo: MOTIVO_DA_VENDA.erroPassageiro, proximaTentativaEm: minutos(espera) });
     }
     const { banco, fins } = bancoFalso({ emitir: quebraOEmit() });
     await tentarDeNovo(banco, linha({ tentativas: 3 }), AGORA);
-    expect(fins[0]![1]).toEqual({ status: "falhou", motivo: "emit_event: caiu" });
+    expect(fins[0]![1]).toEqual({ status: "falhou", motivo: MOTIVO_DA_VENDA.erroPassageiro });
   });
 
   it("contato não criado é passageiro; personalizada sem mapa (configuração) não volta sozinha", async () => {
@@ -153,7 +153,7 @@ describe("tentarDeNovo — a decisão a partir da linha guardada", () => {
       }),
     });
     await tentarDeNovo(banco, linha({ tentativas: 1 }), AGORA);
-    expect(fins[0]![1]).toEqual({ status: "falhou", motivo: "webhook_sources: timeout", proximaTentativaEm: minutos(30) });
+    expect(fins[0]![1]).toEqual({ status: "falhou", motivo: MOTIVO_DA_VENDA.erroPassageiro, proximaTentativaEm: minutos(30) });
   });
 
   it("linha sem dados (limpos): falhou de vez, sem próxima, sem tocar a conexão", async () => {
@@ -167,7 +167,7 @@ describe("tentarDeNovo — a decisão a partir da linha guardada", () => {
     const antiga = new Date(AGORA.getTime() - (23 * 60 + 50) * 60_000).toISOString();
     const { banco, fins } = bancoFalso({ emitir: quebraOEmit() });
     await tentarDeNovo(banco, linha({ tentativas: 1, recebido_em: antiga }), AGORA);
-    expect(fins[0]![1]).toEqual({ status: "falhou", motivo: "emit_event: caiu" });
+    expect(fins[0]![1]).toEqual({ status: "falhou", motivo: MOTIVO_DA_VENDA.erroPassageiro });
   });
 
   it("a janela de 6 h da recuperação conta da chegada da venda, não da tentativa", async () => {
@@ -221,7 +221,7 @@ describe("tentarDeNovo — a decisão a partir da linha guardada", () => {
     });
     await tentarDeNovo(caiu.banco, linha({ plataforma: "personalizada", evento: null, payload: { email: "a@b.com" } }), AGORA);
     expect(caiu.banco.emitir).not.toHaveBeenCalled();
-    expect(caiu.fins[0]![1]).toEqual({ status: "falhou", motivo: "sales_events: timeout", proximaTentativaEm: minutos(30) });
+    expect(caiu.fins[0]![1]).toEqual({ status: "falhou", motivo: MOTIVO_DA_VENDA.erroPassageiro, proximaTentativaEm: minutos(30) });
 
     const jaTinha = bancoFalso({ conexao: vi.fn(async () => personalizada) });
     await tentarDeNovo(jaTinha.banco, linha({ plataforma: "personalizada", payload: { email: "a@b.com" } }), AGORA);
@@ -249,6 +249,14 @@ function filaFalsa(over: Partial<BancoDaFila> = {}) {
   return { banco: fila, fins };
 }
 
+describe("falhaDoErro — a mensagem do erro não vira motivo", () => {
+  it("grava a frase fixa, nunca a mensagem (pode trazer e-mail do contato)", () => {
+    const fim = falhaDoErro(new Error("contacts: duplicate key (email)=(a@b.c)"), "ev-1");
+    expect(fim).toEqual({ status: "falhou", motivo: MOTIVO_DA_VENDA.erroPassageiro });
+    expect(JSON.stringify(fim)).not.toContain("a@b.c");
+  });
+});
+
 describe("reprocessarPendentes — a rodada do cron", () => {
   it("lê a fila com o limite, prende antes de tentar e tenta com a contagem já somada", async () => {
     const { banco, fins } = filaFalsa({
@@ -259,7 +267,7 @@ describe("reprocessarPendentes — a rodada do cron", () => {
     expect(banco.pendentes).toHaveBeenCalledWith(AGORA, 25);
     expect(banco.prender).toHaveBeenCalledWith(expect.objectContaining({ id: "ev-9", tentativas: 0 }), AGORA);
     // Pegou a 1ª tentativa: se falhar, a 2ª sai em 30 min.
-    expect(fins[0]![1]).toEqual({ status: "falhou", motivo: "emit_event: caiu", proximaTentativaEm: minutos(30) });
+    expect(fins[0]![1]).toEqual({ status: "falhou", motivo: MOTIVO_DA_VENDA.erroPassageiro, proximaTentativaEm: minutos(30) });
     expect(r).toEqual({ tentadas: 1, processadas: 0, falharam: 1, outras: 0, encerradas: 0 });
   });
 

@@ -20,6 +20,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { bancoDaVenda } from "@/lib/vendas/banco";
+import { MOTIVO_DA_VENDA } from "@/lib/vendas/receber";
 import { tentarDeNovo } from "@/lib/vendas/reprocessar";
 
 export const dynamic = "force-dynamic";
@@ -53,7 +54,6 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
     if (pega === "sem_dados") {
       return fail("conflict", t("Os dados desta venda já foram apagados: não há o que tentar de novo."), 409, { requestId });
     }
-    const fim = await tentarDeNovo(banco, pega, agora);
     void audit({
       action: "sales_event.retry_requested",
       actorUserId: authz.user.id,
@@ -61,9 +61,11 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
       resourceType: "sales_event",
       resourceId: id,
       requestId,
-      metadata: { status: fim.status },
     });
-    return ok({ status: fim.status, motivo: fim.motivo }, { requestId });
+    const fim = await tentarDeNovo(banco, pega, agora);
+    // Só frase fixa do sistema: motivo vindo de erro de banco nunca sai na resposta.
+    const motivo = (Object.values(MOTIVO_DA_VENDA) as string[]).includes(fim.motivo ?? "") ? fim.motivo : null;
+    return ok({ status: fim.status, motivo }, { requestId });
   } catch (err) {
     logger.error("[vendas] não foi possível tentar a venda de novo", {
       salesEventId: id,

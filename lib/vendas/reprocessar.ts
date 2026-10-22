@@ -120,7 +120,7 @@ export async function tentarDeNovo(banco: BancoDaTentativa, linha: LinhaGuardada
   try {
     fim = await decidirDeNovo(banco, linha, recebidoEm);
   } catch (err) {
-    fim = falhaDoErro(err);
+    fim = falhaDoErro(err, linha.id);
   }
   fim = comProximaTentativa(fim, linha.tentativas, recebidoEm, agora);
   await banco.concluir(linha.id, fim);
