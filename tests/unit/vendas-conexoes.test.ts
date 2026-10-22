@@ -175,6 +175,48 @@ describe("eventos de venda", () => {
     expect((await listarEventos(new NextRequest("http://localhost/api/v1/eventos-de-venda?status=perdido"))).status).toBe(400);
   });
 
+  it("a lista diz a tentativa, a próxima e se ainda há dados — sem ler o payload", async () => {
+    responder((_tabela, chamadas) =>
+      chamadas.some((c) => c.metodo === "not")
+        ? { data: [{ id: "e1" }, { id: "e4" }] }
+        : {
+            data: [
+              { id: "e1", status: "falhou", tentativas: 1, proxima_tentativa_em: "2026-10-22T15:30:00Z" },
+              { id: "e2", status: "falhou", tentativas: 3, proxima_tentativa_em: null },
+              { id: "e3", status: "processado", tentativas: 0, proxima_tentativa_em: null },
+              // travada: recebido com o prazo vencido (F8); a em andamento (prazo no futuro) não entra.
+              { id: "e4", status: "recebido", tentativas: 1, proxima_tentativa_em: "2020-01-01T00:00:00Z" },
+              { id: "e5", status: "recebido", tentativas: 1, proxima_tentativa_em: "2999-01-01T00:00:00Z" },
+            ],
+          },
+    );
+    const corpo = await (await listarEventos(new NextRequest("http://localhost/api/v1/eventos-de-venda"))).json();
+    expect(corpo.data.map((e: { id: string; tem_dados: boolean }) => [e.id, e.tem_dados])).toEqual([
+      ["e1", true],
+      ["e2", false],
+      ["e3", false],
+      ["e4", true],
+      ["e5", false],
+    ]);
+    const selects = log().filter((c) => c.metodo === "select").map((c) => String(c.args[0]));
+    expect(selects[0]).toMatch(/\btentativas\b/);
+    expect(selects[0]).toMatch(/\bproxima_tentativa_em\b/);
+    for (const s of selects) expect(s).not.toMatch(/\bpayload\b/);
+    // Só as candidatas vão para a 2ª consulta, sempre da empresa.
+    expect(usou(log(), "sales_events", "in", "id", ["e1", "e2", "e4"])).toBe(true);
+    expect(usou(log(), "sales_events", "not", "payload", "is", null)).toBe(true);
+    expect(log().filter((c) => c.metodo === "eq" && c.args[0] === "organization_id")).toHaveLength(2);
+  });
+
+  it("erro ao ler quem ainda tem dados: 500, não 'sem botão'", async () => {
+    responder((_tabela, chamadas) =>
+      chamadas.some((c) => c.metodo === "not")
+        ? { error: { message: "timeout" } }
+        : { data: [{ id: "e1", status: "falhou", tentativas: 1, proxima_tentativa_em: null }] },
+    );
+    expect((await listarEventos(new NextRequest("http://localhost/api/v1/eventos-de-venda"))).status).toBe(500);
+  });
+
   it("produtos: um por id, o mais recente primeiro", async () => {
     responder(() => ({
       data: [

@@ -159,7 +159,7 @@ export const filtroDosEventosSchema = z.object({
 
 /** Sem payload, `venda`, e-mail nem telefone: a lista mostra o que aconteceu, não quem comprou. */
 const COLUNAS_DO_EVENTO =
-  "id, webhook_source_id, plataforma, evento_original, evento, pedido, produto_id, produto, contact_id, status, motivo, recebido_em, teste, order_bump";
+  "id, webhook_source_id, plataforma, evento_original, evento, pedido, produto_id, produto, contact_id, status, motivo, recebido_em, teste, order_bump, tentativas, proxima_tentativa_em";
 
 export interface EventoDeVendaVisivel {
   id: string;
@@ -176,6 +176,12 @@ export interface EventoDeVendaVisivel {
   recebido_em: string;
   teste: boolean;
   order_bump: boolean;
+  /** Tentativas automáticas já feitas (Parte 2b). */
+  tentativas: number;
+  /** Quando sai a próxima, se a venda falhou por erro passageiro. */
+  proxima_tentativa_em: string | null;
+  /** Dá para tentar de novo: falhou (ou travou em recebido) e os dados não foram limpos. */
+  tem_dados: boolean;
 }
 
 export async function listarEventosDeVenda(
@@ -192,7 +198,28 @@ export async function listarEventosDeVenda(
   if (filtro.status) consulta = consulta.eq("status", filtro.status);
   const { data, error } = await consulta;
   if (error) throw new ApiError(500, "internal_error", undefined, deps.requestId, error.message);
-  return (data ?? []) as unknown as EventoDeVendaVisivel[];
+  const eventos = (data ?? []) as unknown as Array<Omit<EventoDeVendaVisivel, "tem_dados">>;
+  // "Ainda tem dados" sem ler o payload (D7): só falhou e recebido travado (prazo vencido, F8), só da empresa.
+  const agora = Date.now();
+  const candidatas = eventos
+    .filter(
+      (e) =>
+        e.status === "falhou" ||
+        (e.status === "recebido" && e.proxima_tentativa_em !== null && new Date(e.proxima_tentativa_em).getTime() <= agora),
+    )
+    .map((e) => e.id);
+  const comDados = new Set<string>();
+  if (candidatas.length > 0) {
+    const r = await deps.supabase
+      .from("sales_events")
+      .select("id")
+      .eq("organization_id", deps.organizationId)
+      .in("id", candidatas)
+      .not("payload", "is", null);
+    if (r.error) throw new ApiError(500, "internal_error", undefined, deps.requestId, r.error.message);
+    for (const l of (r.data ?? []) as Array<{ id: string }>) comDados.add(l.id);
+  }
+  return eventos.map((e) => ({ ...e, tem_dados: comDados.has(e.id) }));
 }
 
 export async function listarProdutosDaVenda(

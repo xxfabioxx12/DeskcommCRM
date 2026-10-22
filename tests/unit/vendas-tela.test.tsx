@@ -17,6 +17,7 @@ const h = vi.hoisted(() => ({
   filtros: [] as unknown[],
   criar: vi.fn(async () => ({ data: {} })),
   atualizar: vi.fn(async () => ({ data: {} })),
+  tentar: vi.fn(),
   canais: [] as Array<{ id: string; display_name: string }>,
 }));
 
@@ -31,6 +32,7 @@ vi.mock("@/hooks/vendas/useEventosDeVenda", () => ({
     return { data: { data: h.eventos }, isLoading: false };
   },
   useProdutosDaVenda: () => ({ data: { data: [] } }),
+  useTentarVendaDeNovo: () => ({ mutate: h.tentar, isPending: false, variables: undefined }),
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/hooks/channels/useChannelSessions", () => ({
@@ -64,6 +66,7 @@ const montar = () => {
 beforeEach(() => {
   h.conexoes = [];
   h.eventos = [];
+  h.tentar.mockClear();
   h.filtros.length = 0;
   h.criar.mockClear();
   h.atualizar.mockClear();
@@ -259,5 +262,47 @@ describe("aba Vendas — editar não apaga o que a tela não mostra", () => {
     const mapa = (h.atualizar.mock.calls[0] as unknown as [{ config: { mapa: Record<string, unknown> } }])[0].config.mapa;
     expect(mapa.valor).toEqual({ path: ["data.v1", "data.v2"], formato: "centavos" });
     expect(mapa.extras).toEqual({ link: ["data.l1", "data.l2"], codigo: "data.c" });
+  });
+});
+
+describe("aba Vendas — tentar de novo (Parte 2b)", () => {
+  const FALHOU = {
+    id: "e9", webhook_source_id: "c1", plataforma: "hotmart", evento_original: "PURCHASE_APPROVED", evento: "compra.aprovada",
+    pedido: "HP0009", produto_id: "4455", produto: "Curso Hotmart", contact_id: null, status: "falhou", motivo: "emit_event: caiu",
+    recebido_em: "2026-10-22T14:00:00Z", teste: false, order_bump: false,
+    tentativas: 2, proxima_tentativa_em: "2026-10-22T16:00:00Z", tem_dados: true,
+  };
+
+  it("falhou com dados: mostra a tentativa, a próxima e o botão que tenta na hora", async () => {
+    h.conexoes = [HOTMART];
+    h.eventos = [FALHOU];
+    const user = montar();
+    expect(screen.getByText("Tentativa 2 de 3")).toBeInTheDocument();
+    expect(screen.getByText(/^Próxima tentativa: \d{2}\/\d{2} \d{2}:\d{2}$/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Tentar de novo" }));
+    expect(h.tentar).toHaveBeenCalledWith("e9");
+  });
+
+  it("sem dados (limpos) ou sem falha: sem botão; a 3ª falha mostra Tentativa 3 de 3", () => {
+    h.conexoes = [HOTMART];
+    h.eventos = [
+      { ...FALHOU, id: "e10", tem_dados: false, tentativas: 3, proxima_tentativa_em: null },
+      { ...FALHOU, id: "e11", status: "processado", motivo: null, tem_dados: false },
+    ];
+    montar();
+    expect(screen.queryByRole("button", { name: "Tentar de novo" })).toBeNull();
+    expect(screen.getByText("Tentativa 3 de 3")).toBeInTheDocument();
+    expect(screen.queryByText(/^Próxima tentativa/)).toBeNull();
+  });
+
+  it("recebido travado com dados: botão, sem 'Próxima tentativa'; falhou sem dados não promete próxima (F10)", () => {
+    h.conexoes = [HOTMART];
+    h.eventos = [
+      { ...FALHOU, id: "e12", status: "recebido", motivo: null, tentativas: 0, proxima_tentativa_em: "2026-10-22T14:15:00Z" },
+      { ...FALHOU, id: "e13", tem_dados: false },
+    ];
+    montar();
+    expect(screen.getAllByRole("button", { name: "Tentar de novo" })).toHaveLength(1);
+    expect(screen.queryByText(/^Próxima tentativa/)).toBeNull();
   });
 });

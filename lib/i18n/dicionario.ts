@@ -16741,6 +16741,13 @@ export const DICIONARIO: Traducoes = {
   "Os dados desta venda já foram apagados: não há o que tentar de novo.": {
     es: "Los datos de esta venta ya se eliminaron: no hay nada que reintentar.",
   },
+  "Tentativa {n} de 3": { es: "Intento {n} de 3" },
+  "Próxima tentativa: {quando}": { es: "Próximo intento: {quando}" },
+  "A venda foi processada.": { es: "La venta fue procesada." },
+  "A venda foi reavaliada e ficou ignorada.": { es: "La venta se reevaluó y quedó ignorada." },
+  "A venda foi reavaliada, mas não há contato para ela.": { es: "La venta se reevaluó, pero no hay contacto para ella." },
+  "A venda falhou de novo. O motivo está na lista.": { es: "La venta falló de nuevo. El motivo está en la lista." },
+  "Venda reavaliada: {situacao}": { es: "Venta reevaluada: {situacao}" },
 };
 
 /**
