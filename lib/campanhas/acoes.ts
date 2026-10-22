@@ -24,6 +24,7 @@ import { renderTemplateBody } from "@/lib/channels/meta/render-template";
 import { baseLegalValida, motivoParaExcluir, recusouMarketing } from "./elegibilidade";
 import { ehStatusDaCampanha, podeTransitar } from "./maquina-de-estados";
 import { prepararCampanha } from "./preparacao";
+import { problemaNoTexto } from "./valores-do-contexto";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { camposDoDestinatario } from "./consulta-de-audiencia";
 import { renderizar } from "./renderizador";
@@ -189,6 +190,11 @@ export async function prepararAcao(
 ): Promise<Desfecho<{ resumo: { total: number; elegiveis: number; excluidos: number } }>> {
   const recusa = recusaDeTransicao(c.status, "preparing") ?? faltaParaEnviar(c);
   if (recusa) return recusa;
+  // Só aqui (não em iniciar/testar): campanha já preparada com variável torta segue rodando.
+  const problemaDoTexto = c.message_mode !== "template" ? problemaNoTexto(c.message_body ?? "") : null;
+  if (problemaDoTexto) {
+    return { ok: false, codigo: "campanha_conteudo_invalido", mensagem: problemaDoTexto, status: 422 };
+  }
   const mensagem = await conferirMensagem(admin, c);
   if (!mensagem.ok) return mensagem;
   if (await jaEnviou(admin, c.id)) {

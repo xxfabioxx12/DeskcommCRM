@@ -234,4 +234,12 @@ describe("iniciar e duplicar", () => {
       template_slot_map: CAMPANHA.template_slot_map,
     });
   });
+  it("texto com variável desconhecida ou mal escrita: recusa 422 no preparar, sem escrever nada", async () => {
+    for (const message_body of ['Oi {{first_name|"aluno"}}', "Oi {{nome|aluno}}"]) {
+      const { admin, escritas } = fakeAdmin({});
+      const r = await prepararAcao(admin, { ...CAMPANHA, message_mode: "text", message_body }, AGORA);
+      expect(r).toMatchObject({ ok: false, codigo: "campanha_conteudo_invalido", status: 422 });
+      expect(escritas).toEqual([]);
+    }
+  });
 });

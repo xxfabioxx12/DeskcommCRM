@@ -76,3 +76,26 @@ describe("editar e prévia", () => {
     expect(r.success).toBe(true);
   });
 });
+
+describe("message_body da campanha: conferência de variável e texto de reserva", () => {
+  const corpo = (message_body: string) => ({ ...BASE, message_body });
+  it.each([
+    '{{nome|aluno}}',
+    "{{nome|'aluno'}}",
+    '{{nome|""}}',
+    `{{nome|"${"a".repeat(101)}"}}`,
+    '{{first_name|"aluno"}}',
+    '{{sobrenome}}',
+  ])("recusa %s ao criar e ao editar", (texto) => {
+    expect(criarCampanhaSchema.safeParse(corpo(texto)).success).toBe(false);
+    expect(editarCampanhaSchema.safeParse({ message_body: texto }).success).toBe(false);
+  });
+  it.each(['Oi {{primeiro_nome|"aluno"}}!', "Sem chaves", "Oi {{nome}}", null])("aceita %s", (texto) => {
+    expect(criarCampanhaSchema.safeParse(corpo(texto as string)).success).toBe(true);
+    expect(editarCampanhaSchema.safeParse({ message_body: texto }).success).toBe(true);
+  });
+  it("a frase de recusa é a do problema da expressão", () => {
+    const r = criarCampanhaSchema.safeParse(corpo('{{first_name|"aluno"}}'));
+    expect(JSON.stringify(r.error?.issues)).toContain("variável desconhecida");
+  });
+});

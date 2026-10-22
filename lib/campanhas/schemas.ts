@@ -6,6 +6,7 @@
 import { z } from "zod";
 
 import { filtroDeAudienciaSchema } from "./audiencia";
+import { problemaNoTexto } from "./valores-do-contexto";
 import { MODOS_DA_MENSAGEM } from "./tipos";
 
 /**
@@ -51,7 +52,17 @@ const baseDaCampanha = {
   name: z.string().trim().min(1).max(160),
   description: z.string().trim().max(4000).nullable().optional(),
   channel_session_id: z.string().uuid(),
-  message_body: z.string().trim().max(4096).nullable().optional(),
+  // Só no salvar: campanha já salva com variável torta continua lendo e rodando.
+  message_body: z
+    .string()
+    .trim()
+    .max(4096)
+    .superRefine((t, ctx) => {
+      const problema = problemaNoTexto(t);
+      if (problema) ctx.addIssue({ code: "custom", message: problema });
+    })
+    .nullable()
+    .optional(),
   base_legal: z.enum(["consent", "legitimate_interest"]),
   lia_ref: z.string().trim().max(120).nullable().optional(),
   audience_filter: filtroDeAudienciaSchema.optional(),
