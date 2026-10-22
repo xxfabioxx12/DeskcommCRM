@@ -20,7 +20,7 @@ import { logger } from "@/lib/logger";
 import { configDaConexao } from "./config";
 import type { CamposDoContato, ContatoExistente } from "./contato";
 import { GATILHO_DA_VENDA, PLATAFORMAS_DE_VENDA, ehPlataformaDeVenda } from "./eventos";
-import { JANELA_DA_TENTATIVA_MS, MOTIVO_DA_VENDA, prazoDaTentativa, type ConexaoDeVenda } from "./receber";
+import { MOTIVO_DA_VENDA, prazoDaTentativa, type ConexaoDeVenda } from "./receber";
 import type { BancoDaFila, LinhaGuardada } from "./reprocessar";
 
 const UM_MINUTO_MS = 60_000;
@@ -206,8 +206,7 @@ export function bancoDaVenda(admin: SupabaseClient): BancoDaVendaSupabase {
         .in("status", ["falhou", "recebido"])
         .not("proxima_tentativa_em", "is", null)
         .lte("proxima_tentativa_em", agora.toISOString())
-        // F15: a janela de 24 h vale para a `falhou`; a `recebido` presa vem de qualquer idade (a rodada a encerra).
-        .or(`status.eq.recebido,recebido_em.gte.${new Date(agora.getTime() - JANELA_DA_TENTATIVA_MS).toISOString()}`)
+        // Sem janela de 24 h aqui (F15, M2): a que passou dela (presa, ou cron atrasado) vem para a rodada encerrar.
         .not("payload", "is", null)
         .order("proxima_tentativa_em", { ascending: true })
         .limit(limite);
@@ -232,12 +231,17 @@ export function bancoDaVenda(admin: SupabaseClient): BancoDaVendaSupabase {
     },
 
     async encerrar(linha, agora) {
+      // `falhou` fora da janela (cron atrasado, M2): só sai da fila, com o motivo que já tem.
+      const colunas =
+        linha.status === "falhou"
+          ? { proxima_tentativa_em: null }
+          : { status: "falhou", motivo: MOTIVO_DA_VENDA.tentativaInterrompida, proxima_tentativa_em: null };
       const { data, error } = await admin
         .from("sales_events")
-        .update({ status: "falhou", motivo: MOTIVO_DA_VENDA.tentativaInterrompida, proxima_tentativa_em: null })
+        .update(colunas)
         .eq("id", linha.id)
         .eq("organization_id", linha.organization_id)
-        .eq("status", "recebido")
+        .eq("status", linha.status === "falhou" ? "falhou" : "recebido")
         .eq("tentativas", linha.tentativas)
         .lte("proxima_tentativa_em", agora.toISOString())
         .select("id");

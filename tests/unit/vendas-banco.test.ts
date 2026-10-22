@@ -286,16 +286,15 @@ const GUARDADA: LinhaGuardada = {
 };
 
 describe("a fila da nova tentativa (Parte 2b)", () => {
-  it("pendentes: falhou das últimas 24 h e recebido com prazo vencido de qualquer idade, com dados, na ordem", async () => {
+  it("pendentes: falhou e recebido com o horário vencido, de qualquer idade, com dados, na ordem", async () => {
     const g = supabaseGravador(() => ({ data: [GUARDADA] }));
     expect(await bancoDaVenda(g.admin).pendentes(AGORA, 25)).toEqual([GUARDADA]);
     // Os três filtros do índice parcial sales_events_fila_da_tentativa_idx.
     expect(usou(g.log, "sales_events", "in", "status", ["falhou", "recebido"])).toBe(true);
     expect(usou(g.log, "sales_events", "not", "proxima_tentativa_em", "is", null)).toBe(true);
     expect(usou(g.log, "sales_events", "lte", "proxima_tentativa_em", AGORA.toISOString())).toBe(true);
-    // F15: a janela de 24 h vale só para a falhou; a recebido presa vem de qualquer idade.
-    expect(usou(g.log, "sales_events", "or", "status.eq.recebido,recebido_em.gte.2026-10-21T15:00:00.000Z")).toBe(true);
-    expect(g.log.some((c) => c.metodo === "gte")).toBe(false);
+    // M2: sem janela na leitura — a fora das 24 h (cron atrasado) vem para a rodada encerrar.
+    expect(g.log.some((c) => c.metodo === "or" || c.metodo === "gte")).toBe(false);
     expect(usou(g.log, "sales_events", "not", "payload", "is", null)).toBe(true);
     expect(usou(g.log, "sales_events", "order", "proxima_tentativa_em", { ascending: true })).toBe(true);
     expect(usou(g.log, "sales_events", "limit", 25)).toBe(true);
@@ -346,6 +345,17 @@ describe("a fila da nova tentativa (Parte 2b)", () => {
     await expect(
       bancoDaVenda(supabaseGravador(() => ({ error: { message: "caiu" } })).admin).encerrar(presa, AGORA),
     ).rejects.toThrow("sales_events: caiu");
+  });
+
+  it("M2: encerrar uma falhou fora da janela só apaga a próxima tentativa (o motivo fica)", async () => {
+    const g = supabaseGravador(() => ({ data: [{ id: "ev-9" }] }));
+    const atrasada = { ...GUARDADA, tentativas: 1, status: "falhou" as const };
+    expect(await bancoDaVenda(g.admin).encerrar(atrasada, AGORA)).toBe(true);
+    expect(g.log.find((c) => c.metodo === "update")?.args[0]).toEqual({ proxima_tentativa_em: null });
+    expect(usou(g.log, "sales_events", "eq", "organization_id", "org-1")).toBe(true);
+    expect(usou(g.log, "sales_events", "eq", "status", "falhou")).toBe(true);
+    expect(usou(g.log, "sales_events", "eq", "tentativas", 1)).toBe(true);
+    expect(usou(g.log, "sales_events", "lte", "proxima_tentativa_em", AGORA.toISOString())).toBe(true);
   });
 });
 

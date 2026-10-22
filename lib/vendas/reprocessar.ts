@@ -58,13 +58,16 @@ export interface BancoDaTentativa extends BancoDaVenda {
 
 export interface BancoDaFila extends BancoDaTentativa {
   /**
-   * A fila, de TODAS as empresas (é o cron): `falhou` das últimas 24 h no horário, e
-   * `recebido` com o prazo vencido de qualquer idade (F15). Erro sobe.
+   * A fila, de TODAS as empresas (é o cron): `falhou` no horário e `recebido` com o prazo
+   * vencido, de qualquer idade (F15, M2: a rodada encerra as de fora das 24 h). Erro sobe.
    */
   pendentes(agora: Date, limite: number): Promise<LinhaGuardada[]>;
   /** Pega a venda (UPDATE condicional, conta +1, grava o prazo). `false` = outra execução pegou antes. Erro sobe. */
   prender(linha: LinhaGuardada, agora: Date): Promise<boolean>;
-  /** A presa que não volta mais (3ª que caiu no meio, ou fora das 24 h): `falhou` de vez, com motivo. Erro sobe. */
+  /**
+   * A que não volta mais: presa (3ª que caiu no meio, ou fora das 24 h) vira `falhou` com motivo;
+   * `falhou` fora das 24 h (M2) só perde a próxima tentativa. Erro sobe.
+   */
   encerrar(linha: LinhaGuardada, agora: Date): Promise<boolean>;
 }
 
@@ -136,9 +139,8 @@ export async function reprocessarPendentes(
 ): Promise<ResultadoDaRodada> {
   const r: ResultadoDaRodada = { tentadas: 0, processadas: 0, falharam: 0, outras: 0, encerradas: 0 };
   for (const linha of await banco.pendentes(agora, limite)) {
-    // Presa em `recebido` depois das 24 h da chegada (F15): não tenta nem agenda; fica para o botão.
-    const foraDaJanela =
-      linha.status === "recebido" && agora.getTime() - new Date(linha.recebido_em).getTime() > JANELA_DA_TENTATIVA_MS;
+    // Depois das 24 h da chegada (presa em `recebido`, F15, ou cron atrasado, M2): não tenta nem agenda; fica para o botão.
+    const foraDaJanela = agora.getTime() - new Date(linha.recebido_em).getTime() > JANELA_DA_TENTATIVA_MS;
     if (linha.tentativas >= MAXIMO_DE_TENTATIVAS || foraDaJanela) {
       if (await banco.encerrar(linha, agora)) r.encerradas++;
       continue;

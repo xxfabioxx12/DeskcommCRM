@@ -329,6 +329,17 @@ describe("reprocessarPendentes — a rodada do cron", () => {
     expect(r).toEqual({ tentadas: 1, processadas: 1, falharam: 0, outras: 0, encerradas: 1 });
   });
 
+  it("M2: falhou cuja vez chegou depois das 24 h (cron atrasado) é encerrada, sem tentar", async () => {
+    const atrasada = linha({ tentativas: 2, status: "falhou", recebido_em: "2026-10-21T14:59:00.000Z" });
+    const { banco, fins } = filaFalsa({ pendentes: vi.fn(async () => [atrasada]) });
+    const r = await reprocessarPendentes(banco, AGORA);
+    expect(banco.prender).not.toHaveBeenCalled();
+    expect(banco.emitir).not.toHaveBeenCalled();
+    expect(banco.encerrar).toHaveBeenCalledWith(atrasada, AGORA);
+    expect(fins).toEqual([]);
+    expect(r.encerradas).toBe(1);
+  });
+
   it("conta processadas, falhas e outras (ignorado)", async () => {
     const { banco } = filaFalsa({
       pendentes: vi.fn(async () => [linha({ id: "a", tentativas: 0 }), linha({ id: "b", tentativas: 0 })]),
