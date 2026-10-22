@@ -4,7 +4,7 @@ Este fork tem mudanças que o oficial não tem, cada uma numa migration da faixa
 **9000**: a **9001** (`supabase/migrations/20261021130704_9001_campanha_com_template.sql`,
 colunas novas em `campaigns`) e, a partir da Parte 1 do motor de fluxo, a **9002**
 (`supabase/migrations/20261021150000_9002_etiquetas_e_campos_do_fluxo.sql`, funções de
-tirar etiqueta e gravar campo) e, a partir da Parte 2, a **9003** (`supabase/migrations/20261021180903_9003_entrada_das_vendas.sql`, conexões e eventos de venda).
+tirar etiqueta e gravar campo) e, a partir da Parte 2, a **9003** (`supabase/migrations/20261021180903_9003_entrada_das_vendas.sql`, conexões e eventos de venda) e, a partir da Parte 2b, a **9004** (`supabase/migrations/20261022141357_9004_reprocessar_vendas.sql`, nova tentativa das vendas que falharam).
 
 O número 9001 é de propósito. O oficial numera as migrations em sequência (0703,
 0704, 0705...). Se a nossa usasse o próximo número da fila, a próxima versão do
@@ -17,6 +17,7 @@ oficial:**
 - `supabase/migrations/20261021130704_9001_campanha_com_template.sql`
 - `supabase/migrations/20261021150000_9002_etiquetas_e_campos_do_fluxo.sql`
 - `supabase/migrations/20261021180903_9003_entrada_das_vendas.sql`
+- `supabase/migrations/20261022141357_9004_reprocessar_vendas.sql`
 - `supabase/fork/9NNN.sql` (cópia exata de cada bloco que vai no `baseline.sql`)
 - `scripts/fork/reaplicar-bloco-do-fork.sh`
 - este documento
@@ -96,6 +97,7 @@ oficial:**
      tests/unit/blocos-do-fork.test.ts \
      tests/unit/fork-9002-etiquetas-e-campos.test.ts \
      tests/unit/fork-9003-entrada-das-vendas.test.ts \
+     tests/unit/fork-9004-reprocessar-vendas.test.ts \
      tests/unit/baseline-reaplicavel.test.ts
    pnpm cercas
    pnpm test:unit
