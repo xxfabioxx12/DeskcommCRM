@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { camposUsadosNoTexto, renderizar, saudacaoDaHora, variaveisUsadas } from "./renderizador";
+import {
+  camposUsadosNoTexto,
+  problemaDasExpressoes,
+  renderizar,
+  saudacaoDaHora,
+  variaveisUsadas,
+} from "./renderizador";
+import { finalizarValores, resolverSlots } from "./template-da-campanha";
 
 const FUSO = "America/Sao_Paulo";
 /** 15h em São Paulo (UTC-3). */
@@ -208,5 +215,97 @@ describe("o valor do cadastro sai LITERAL, mesmo com o corpo renderizado duas ve
   it("no envio de teste (uma passada só, com instante) o valor também sai literal", () => {
     const r = renderizar("{{lead.gancho}}", { nome: null, lead: { gancho: VALOR } }, { agora: TARDE, fuso: FUSO });
     expect(r.texto).toBe(VALOR);
+  });
+});
+
+describe("texto de reserva: {{variavel|\"reserva\"}} (Parte 3)", () => {
+  it("sem o dado, sai a reserva — e não conta como falta", () => {
+    const r = renderizar('Olá {{primeiro_nome|"aluno"}}, tudo bem?', { nome: null });
+    expect(r.texto).toBe("Olá aluno, tudo bem?");
+    expect(r.faltando).toEqual([]);
+    expect(r.desconhecidas).toEqual([]);
+  });
+
+  it("com o dado, a reserva é ignorada", () => {
+    expect(renderizar('Olá {{primeiro_nome|"aluno"}}', { nome: "Ana Souza" }).texto).toBe("Olá Ana");
+    expect(renderizar('{{nome|"aluno"}}', { nome: "Ana Souza" }).texto).toBe("Ana Souza");
+  });
+
+  it("vale para nome, campo do contato, do card e da venda", () => {
+    const r = renderizar(
+      '{{nome|"cliente"}} {{contato.link|"sem link"}} {{lead.gancho|"seu negócio"}} {{venda.produto|"o curso"}}',
+      { nome: "  ", contato: { link: "" }, lead: null, venda: {} },
+    );
+    expect(r.texto).toBe("cliente sem link seu negócio o curso");
+    expect(r.faltando).toEqual([]);
+  });
+
+  it("aceita aspas tipográficas (como o ManyChat copia) e espaço em volta", () => {
+    expect(renderizar("Oi {{primeiro_nome|“aluno”}}", { nome: null }).texto).toBe("Oi aluno");
+    expect(renderizar('Oi {{ primeiro_nome | " aluno " }}', { nome: null }).texto).toBe("Oi aluno");
+  });
+
+  it("regressão: sem `|` o texto e a falta são os de antes", () => {
+    const r = renderizar("Olá {{primeiro_nome}}, {{lead.gancho}}", { nome: null });
+    expect(r.texto).toBe("Olá {{primeiro_nome}}, {{lead.gancho}}");
+    expect(r.faltando).toEqual(["primeiro_nome", "lead.gancho"]);
+  });
+
+  it("a saudação aceita reserva mas nunca a usa: sem instante fica literal, com instante resolve", () => {
+    expect(renderizar('{{saudacao|"Olá"}}', { nome: null }).texto).toBe('{{saudacao|"Olá"}}');
+    expect(renderizar('{{saudacao|"Olá"}}', { nome: null }, { agora: TARDE, fuso: FUSO }).texto).toBe("Boa tarde");
+  });
+
+  it("a reserva sai literal nas duas passadas ($& e $1 incluídos)", () => {
+    const prep = renderizar('{{saudacao}}, {{primeiro_nome|"aluno $& $1"}}', { nome: null });
+    expect(prep.faltando).toEqual([]);
+    const envio = renderizar(prep.texto, { nome: "Ana" }, { agora: TARDE, fuso: FUSO });
+    expect(envio.texto).toBe("Boa tarde, aluno $& $1");
+  });
+
+  it("a reserva não reabre expressão: chave, aspas e variável dentro são 'escrita errado'", () => {
+    for (const expressao of [
+      '{{nome|"{{saudacao}}"}}',
+      '{{nome|"a{b"}}',
+      '{{nome|"um "aluno""}}',
+      "{{nome|aluno}}",
+      "{{nome|'aluno'}}",
+      '{{nome|""}}',
+      '{{nome|"   "}}',
+      `{{nome|"${"x".repeat(101)}"}}`,
+    ]) {
+      expect(problemaDasExpressoes([expressao]), expressao).toBe("variavel_mal_escrita");
+    }
+  });
+
+  it("reserva de até 100 caracteres é aceita", () => {
+    expect(problemaDasExpressoes([`{{nome|"${"x".repeat(100)}"}}`])).toBeNull();
+  });
+
+  it("validação: aceita a reserva e continua recusando variável desconhecida com reserva", () => {
+    expect(problemaDasExpressoes(['Oi {{primeiro_nome|"aluno"}}', '{{lead.gancho|"x"}}'])).toBeNull();
+    expect(problemaDasExpressoes(['{{sobrenome|"x"}}'])).toBe("variavel_desconhecida");
+    expect(problemaDasExpressoes(['{{venda.produto|"x"}}'])).toBe("variavel_desconhecida");
+    expect(problemaDasExpressoes(['{{venda.produto|"x"}}'], { venda: true })).toBeNull();
+    expect(problemaDasExpressoes(['{{venda.inexistente|"x"}}'], { venda: true })).toBe("variavel_desconhecida");
+  });
+
+  it("variável desconhecida com reserva fica literal no texto (não vira a reserva)", () => {
+    const r = renderizar('Oi {{sobrenome|"x"}}', { nome: "Ana" });
+    expect(r.texto).toBe('Oi {{sobrenome|"x"}}');
+    expect(r.desconhecidas).toEqual(["sobrenome"]);
+  });
+
+  it("lacunas do template: a reserva preenche a lacuna e passa pela segunda passada", () => {
+    const mapa = { body_1: '{{primeiro_nome|"aluno"}}', body_2: '{{contato.link|"https://nodz.com.br"}}' };
+    const prep = resolverSlots(mapa, { nome: null, contato: null });
+    expect(prep.faltando).toEqual([]);
+    const final = finalizarValores(prep.valores, null, { agora: TARDE, fuso: FUSO });
+    expect(final).toEqual({ valores: { body_1: "aluno", body_2: "https://nodz.com.br" }, faltando: [] });
+  });
+
+  it("variaveisUsadas e camposUsadosNoTexto enxergam a variável com reserva", () => {
+    expect(variaveisUsadas('{{primeiro_nome|"aluno"}} {{lead.gancho|"x"}}')).toEqual(["primeiro_nome", "lead.gancho"]);
+    expect(camposUsadosNoTexto('{{contato.link|"x"}}')).toEqual({ lead: false, contato: true });
   });
 });

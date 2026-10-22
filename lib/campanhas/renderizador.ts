@@ -83,11 +83,15 @@ export interface ValoresDoDestinatario {
 }
 
 /**
- * O token aceita ponto — `{{lead.gancho}}`. Só palavra e ponto: um caminho com
- * espaço ou símbolo não casa e vira literal, que é o destino de todo token que
- * este módulo não conhece.
+ * O token aceita ponto — `{{lead.gancho}}` — e, opcionalmente, um TEXTO DE
+ * RESERVA entre aspas: `{{primeiro_nome|"aluno"}}` (Parte 3, como o ManyChat).
+ * Aspas retas ou tipográficas (o ManyChat copia “assim”). A reserva tem 1 a 100
+ * caracteres depois de aparada e não aceita `{`, `}` nem aspas: é texto, nunca
+ * variável, e não reabre expressão. Fora disso não casa e vira chave solta.
+ * Só palavra e ponto no caminho: o resto vira literal.
  */
-const TOKEN = /\{\{\s*([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*)\s*\}\}/g;
+const TOKEN =
+  /\{\{\s*([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*)\s*(?:\|\s*["“]\s*([^"“”{}\s](?:[^"“”{}]{0,98}[^"“”{}\s])?)\s*["”]\s*)?\}\}/g;
 
 /**
  * Sobrou `{{` ou `}}` depois de tirar todo token que o renderizador casa? Então
@@ -123,22 +127,27 @@ export function renderizar(
   const faltando = new Set<string>();
   const desconhecidas = new Set<string>();
 
-  const texto = template.replace(TOKEN, (literal, bruto: string) => {
+  const texto = template.replace(TOKEN, (literal, bruto: string, reserva: string | undefined) => {
     const chave = bruto.toLowerCase();
+    // Sem o dado: a reserva, se quem escreveu deu uma; senão FALTA, como sempre.
+    // Só aqui — variável desconhecida não ganha a reserva (continua literal).
+    const faltou = (variavel: string) =>
+      reserva !== undefined ? blindar(reserva) : marcarFalta(faltando, variavel, literal);
     switch (chave) {
       case "nome": {
-        if (nome === "") return marcarFalta(faltando, "nome", literal);
+        if (nome === "") return faltou("nome");
         return blindar(nome);
       }
       case "primeiro_nome": {
         const primeiro = nome.split(/\s+/)[0] ?? "";
-        if (primeiro === "") return marcarFalta(faltando, "primeiro_nome", literal);
+        if (primeiro === "") return faltou("primeiro_nome");
         return blindar(primeiro);
       }
       case "saudacao": {
         // Sem instante, a saudação fica literal: quem renderiza a PRÉVIA não
         // sabe a hora do envio, e cravar uma ali ensinaria o operador a esperar
-        // aquela. A prévia mostra `{{saudacao}}`; o envio resolve.
+        // aquela. A prévia mostra `{{saudacao}}`; o envio resolve. A reserva
+        // nunca é usada: saudação não falta.
         if (!quando) return literal;
         return saudacaoDaHora(quando.agora, quando.fuso);
       }
@@ -150,7 +159,7 @@ export function renderizar(
             return literal;
           }
           // Sem valor = FALTA, como `{{nome}}` sem nome: o set_field falha com "falta o dado".
-          if (valor === null) return marcarFalta(faltando, chave, literal);
+          if (valor === null) return faltou(chave);
           return blindar(valor);
         }
         const raiz = raizDeCampo(bruto);
@@ -159,7 +168,7 @@ export function renderizar(
           const valor = lerCampo(mapa, nomeDoCampo(bruto));
           // Sem valor = FALTA, igual a `{{nome}}` sem nome: o literal fica
           // visível na prévia e quem chama tira a pessoa da lista.
-          if (valor === null) return marcarFalta(faltando, chave, literal);
+          if (valor === null) return faltou(chave);
           return blindar(valor);
         }
         desconhecidas.add(bruto);

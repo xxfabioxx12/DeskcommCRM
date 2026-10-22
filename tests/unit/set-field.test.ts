@@ -2,7 +2,7 @@
  * AÇÃO `set_field` — grava UMA chave de campo personalizado (Set Custom Field
  * do ManyChat), com as variáveis da campanha, sem apagar as outras chaves.
  */
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { getAction } from "@/lib/automation/actions";
 import type { ActionCtx } from "@/lib/automation/types";
@@ -94,5 +94,31 @@ describe("set_field", () => {
     expect(ok({ destino: "contato", campo: "link", valor: "" })).toBe(false);
     expect(ok({ destino: "contato", campo: "link", valor: "{{sobrenome}}" })).toBe(false);
     expect(ok({ campo: "link", valor: "x" })).toBe(false);
+  });
+  it("reserva: sem o dado grava a reserva", async () => {
+    const { ctx, chamadas } = cenario({ contact: { id: "C", name: null } });
+    const r = await getAction("set_field")!.execute(ctx, { destino: "contato", campo: "nome_curto", valor: '{{primeiro_nome|"aluno"}}' });
+    expect(r).toMatchObject({ status: "success" });
+    expect(chamadas[0]?.args.p_campos).toEqual({ nome_curto: "aluno" });
+  });
+
+  describe("fuso com reserva", () => {
+    afterEach(() => vi.useRealTimers());
+    it("{{saudacao|…}} também lê o fuso da organização", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-09-18T12:00:00.000Z")); // 9h em São Paulo, 21h em Tóquio
+      const { ctx, chamadas } = cenario({ contact: CONTATO }, { ok: true }, "Asia/Tokyo");
+      await getAction("set_field")!.execute(ctx, { destino: "contato", campo: "s", valor: '{{saudacao|"Olá"}}' });
+      expect(chamadas[0]?.args.p_campos).toEqual({ s: "Boa noite" });
+    });
+  });
+
+  it("schema: aceita a reserva; desconhecida com reserva e reserva sem aspas são recusadas", () => {
+    const ok = (valor: string) => actionSchema.safeParse({ type: "set_field", config: { destino: "contato", campo: "x", valor } }).success;
+    expect(ok('{{primeiro_nome|"aluno"}}')).toBe(true);
+    expect(ok("{{primeiro_nome|“aluno”}}")).toBe(true);
+    expect(ok('{{venda.produto|"o curso"}}')).toBe(true);
+    expect(ok('{{sobrenome|"x"}}')).toBe(false);
+    expect(ok("{{primeiro_nome|aluno}}")).toBe(false);
   });
 });

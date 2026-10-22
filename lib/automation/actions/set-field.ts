@@ -18,7 +18,8 @@ import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
 import { renderizarValorDoCampo } from "@/lib/campanhas/valores-do-contexto";
 
 const TIPO = "set_field";
-const USA_SAUDACAO = /\{\{\s*saudacao\s*\}\}/i;
+/** `{{saudacao}}` ou `{{saudacao|"…"}}` (Parte 3): os dois pedem o fuso da organização. */
+const USA_SAUDACAO = /\{\{\s*saudacao\s*(?:\}\}|\|)/i;
 
 async function fusoDaOrg(ctx: ActionCtx): Promise<string> {
   const { data } = await ctx.admin
