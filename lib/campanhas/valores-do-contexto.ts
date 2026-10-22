@@ -55,6 +55,20 @@ export const FRASE_DO_PROBLEMA_DA_EXPRESSAO: Record<ProblemaDaExpressao, string>
     "Há uma variável desconhecida. Use {{nome}}, {{primeiro_nome}}, {{saudacao}}, {{contato.campo}} ou {{lead.campo}}.",
 };
 
+/**
+ * Parte 3 — o texto de reserva (`{{x|"…"}}`) só é entendido por este renderizador.
+ * O envio antigo do fluxo, as ações de envio da regra e os modelos do Inbox usam
+ * outro (`lib/automation/template.ts`) e o mandariam literal ao cliente: lá ele
+ * é recusado no salvar. Espanhol no dicionário.
+ */
+export const FRASE_DA_RESERVA_FORA_DO_LUGAR =
+  "O texto de reserva só funciona no passo Mensagem do fluxo e no Gravar campo.";
+
+/** Há `{{…|` no texto? Larga de propósito: qualquer tentativa de reserva conta. */
+export function temTextoDeReserva(texto: string): boolean {
+  return /\{\{[^{}]*\|/.test(texto);
+}
+
 export function problemaNoTexto(texto: string, opcoes: { venda?: boolean } = {}): string | null {
   const problema = problemaDasExpressoes([texto], opcoes);
   return problema ? FRASE_DO_PROBLEMA_DA_EXPRESSAO[problema] : null;

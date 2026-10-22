@@ -16749,6 +16749,8 @@ export const DICIONARIO: Traducoes = {
   "A venda falhou de novo. O motivo está na lista.": { es: "La venta falló de nuevo. El motivo está en la lista." },
   "Venda reavaliada.": { es: "Venta reevaluada." },
   "Venda reavaliada: {situacao}": { es: "Venta reevaluada: {situacao}" },
+  // Parte 3 — texto de reserva fora do lugar.
+  "O texto de reserva só funciona no passo Mensagem do fluxo e no Gravar campo.": { es: "El texto de respaldo solo funciona en el paso Mensaje del flujo y en Grabar campo." },
 };
 
 /**

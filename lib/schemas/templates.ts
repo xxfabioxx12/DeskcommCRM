@@ -1,6 +1,15 @@
 import { z } from "zod";
 
+import { FRASE_DA_RESERVA_FORA_DO_LUGAR, temTextoDeReserva } from "@/lib/campanhas/valores-do-contexto";
 import { MAXIMO_DE_MIDIAS } from "@/lib/templates/midias";
+
+/** O corpo é renderizado por `renderTemplate`, que não entende o texto de reserva (Parte 3). */
+const corpoDoModelo = z
+  .string()
+  .trim()
+  .min(1)
+  .max(4096)
+  .refine((body) => !temTextoDeReserva(body), FRASE_DA_RESERVA_FORA_DO_LUGAR);
 
 /**
  * Uma imagem carregada pelo OPERADOR na resposta rápida (#2526).
@@ -19,7 +28,7 @@ export const midiaDoTemplateSchema = z.object({
 
 export const createTemplateSchema = z.object({
   title: z.string().trim().min(1).max(80),
-  body: z.string().trim().min(1).max(4096),
+  body: corpoDoModelo,
   shortcut: z.string().trim().min(1).max(40).optional(),
   /** true = compartilhado da org (owner null, exige manager+); false = pessoal. */
   shared: z.boolean().default(false),
@@ -35,7 +44,7 @@ export type CreateTemplateInput = z.infer<typeof createTemplateSchema>;
 export const updateTemplateSchema = z
   .object({
     title: z.string().trim().min(1).max(80),
-    body: z.string().trim().min(1).max(4096),
+    body: corpoDoModelo,
     shortcut: z.string().trim().min(1).max(40).nullable(),
     midias: z.array(midiaDoTemplateSchema).max(MAXIMO_DE_MIDIAS).optional(),
   })

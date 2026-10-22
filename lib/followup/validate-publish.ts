@@ -9,7 +9,12 @@ import { recusaDeMotivoForaDoVocabulario } from '../leads/motivo-da-perda';
 import { capabilitiesOf, transportaMensagem, type ChannelProvider } from '../channels/capabilities';
 import { CUSTO_NO_MOTOR, TETO_DE_PASSOS_DO_MOTOR } from './custo-no-motor';
 import { MENSAGEM_CAMPO_INVALIDO, campoValido } from '../automation/etiquetas-e-campos';
-import { FRASE_DO_PROBLEMA_DA_EXPRESSAO, problemaNoTexto } from '../campanhas/valores-do-contexto';
+import {
+  FRASE_DA_RESERVA_FORA_DO_LUGAR,
+  FRASE_DO_PROBLEMA_DA_EXPRESSAO,
+  problemaNoTexto,
+  temTextoDeReserva,
+} from '../campanhas/valores-do-contexto';
 import type { LinhaDoModelo } from '../campanhas/conferir-template';
 import { problemaDasExpressoes } from '../campanhas/renderizador';
 import { chaveDoModelo, falhaDoModeloNaConta, fraseDaFalhaNoFluxo } from './mensagem-do-passo';
@@ -940,6 +945,15 @@ function conferirMensagem(
   errors: PublishValidationError[]
 ): void {
   const cfg = node.config;
+  // Parte 3 — o passo antigo de texto renderiza por `renderTemplate`, que não
+  // entende o texto de reserva: sairia literal ao cliente.
+  if (cfg.mode === 'text' && temTextoDeReserva(cfg.body)) {
+    errors.push({
+      node_id: node.id,
+      code: 'variavel_desconhecida',
+      message: `A caixa "${node.label}": ${FRASE_DA_RESERVA_FORA_DO_LUGAR}`,
+    });
+  }
   if (cfg.mode !== 'mensagem') return;
   const texto = cfg.texto?.body.trim() ?? '';
   if (!cfg.modelo && texto === '') {

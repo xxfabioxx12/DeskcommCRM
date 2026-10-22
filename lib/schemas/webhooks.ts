@@ -25,7 +25,7 @@ import {
   campoValido,
   etiquetaLongaDoContato,
 } from "@/lib/automation/etiquetas-e-campos";
-import { problemaNoTexto } from "@/lib/campanhas/valores-do-contexto";
+import { FRASE_DA_RESERVA_FORA_DO_LUGAR, problemaNoTexto, temTextoDeReserva } from "@/lib/campanhas/valores-do-contexto";
 import { GATILHO_DA_VENDA } from "@/lib/vendas/eventos";
 import { configDaVendaSchema } from "@/lib/vendas/filtro-da-regra";
 
@@ -330,6 +330,20 @@ function recusaEtiquetaLongaDoContato(
  *
  * Os objetos são os MESMOS de sempre, byte a byte — só mudou onde moram.
  */
+/**
+ * Parte 3 — WhatsApp e e-mail da regra renderizam por `renderTemplate`, que não
+ * entende o texto de reserva: `{{x|"…"}}` sairia literal ao cliente. Recusa no salvar.
+ */
+function recusaReserva<K extends string>(...campos: K[]) {
+  return (config: Record<K, string>, ctx: z.RefinementCtx): void => {
+    for (const campo of campos) {
+      if (temTextoDeReserva(config[campo])) {
+        ctx.addIssue({ code: "custom", path: [campo], message: FRASE_DA_RESERVA_FORA_DO_LUGAR });
+      }
+    }
+  };
+}
+
 const acoesFixas = [
   z.object({ type: z.literal("create_or_move_lead"), config: z.object({ pipeline_id: z.string().uuid(), stage_id: z.string().uuid() }) }),
   z.object({
@@ -348,7 +362,7 @@ const acoesFixas = [
        * config criaria uma segunda verdade que envelhece se a URL mudar.
        */
       media_url: z.string().url().max(2000).nullish(),
-    }),
+    }).superRefine(recusaReserva("template")),
   }),
   // #2726 — o e-mail como SAÍDA. O transporte não é configuração da regra: ele
   // já existe em `lib/email` (SMTP ou Resend, escolhido em Admin › E-mail), e
@@ -375,6 +389,7 @@ const acoesFixas = [
       // Texto simples (padrão) ou HTML simples — negrito, links e quebras.
       formato: z.enum(["texto", "html"]).optional(),
     }).superRefine((config, ctx) => {
+      recusaReserva("assunto", "corpo")(config, ctx);
       // Sem isto, `fixo` sem endereço salvaria e só falharia na execução
       // (`missing_config` em send-email.ts) — a regra "salva" que nunca envia.
       if (config.destinatario === "fixo" && !config.email_fixo) {
