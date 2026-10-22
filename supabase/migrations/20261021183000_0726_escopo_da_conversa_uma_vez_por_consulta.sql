@@ -93,9 +93,10 @@
 -- ─── O que NÃO mudou (e por quê) ────────────────────────────────────────────
 --
 -- · `fn_can_view_conversation` segue intacta e continua sendo a fonte da verdade
---   da escada: ela é chamada por `messages` (herança do escopo da conversa),
---   `conversation_notes`, `ai_reply_drafts`, `conversation_assignment_events`,
---   `crm_cases` e pelos comandos de atribuição — trocar o corpo dela mudaria o
+--   da escada: ela é chamada por `conversation_notes`, `ai_reply_drafts`,
+--   `conversation_assignment_events`, `crm_cases` e pelos comandos de atribuição
+--   (`messages` não a chama: a policy dela consulta `conversations` e por isso
+--   herda a regra nova) — trocar o corpo dela mudaria o
 --   custo de todas elas e ampliaria o raio desta fatia sem necessidade. O novo
 --   invariante compara, pessoa por pessoa, o que a policy devolve com o que ela
 --   devolve: se as duas escadas divergirem no futuro, o teste fica vermelho.

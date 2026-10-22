@@ -24,11 +24,12 @@ import { sql } from "./gov-helpers";
  *
  * O segundo item é o que uma regressão de desempenho quebra: devolver a policy ao
  * estado por linha NÃO muda quem vê o quê (o item 1 continua verde) e derruba os
- * casos de plano e de tempo. Foi sabotado e conferido — ver
- * `evidencias-dk/3090.md`.
+ * casos de plano e de tempo. Foi sabotado e conferido na triagem: a policy por
+ * linha derruba os casos de plano e de tempo; o atalho mode <> own derruba os de
+ * visibilidade.
  *
- * Namespace 99999999 = exclusivo deste arquivo (cada invariante tem banco próprio,
- * mas a convenção do diretório é não compartilhar ids).
+ * Namespace 99999999 (cada invariante tem banco próprio; followup-schema.test.ts
+ * usa o mesmo prefixo sem colidir).
  */
 
 const ORG_PERF = "99999999-0000-4000-8000-000000000001"; // settings ausente (=G1-06a)
