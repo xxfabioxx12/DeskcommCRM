@@ -6,6 +6,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  *      null (compartilhado) e exige role manager+; `shared=false` (default) grava
  *      owner_user_id = user.id (pessoal, role agent+ já garantido pelo requireRole).
  */
+import { FRASE_DA_RESERVA_FORA_DO_LUGAR } from "@/lib/campanhas/valores-do-contexto";
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
@@ -56,8 +57,11 @@ export async function POST(req: NextRequest): Promise<Response> {
   const parsed = createTemplateSchema.safeParse(raw);
   if (!parsed.success) {
     // A frase de recusa do corpo (reserva fora do lugar) é a que a tela precisa mostrar.
-    const fraseDoCorpo = parsed.error.flatten().fieldErrors.body?.[0];
-    return fail("validation_failed", fraseDoCorpo ? traduzir(fraseDoCorpo, authz.user.idioma) : t("Dados inválidos."), 422, {
+    const reservaForaDoLugar = parsed.error.flatten().fieldErrors.body?.[0] === FRASE_DA_RESERVA_FORA_DO_LUGAR;
+    const mensagem = reservaForaDoLugar
+      ? t("O texto de reserva só funciona no passo Mensagem do fluxo e no Gravar campo.")
+      : t("Dados inválidos.");
+    return fail("validation_failed", mensagem, 422, {
       requestId,
       details: parsed.error.flatten().fieldErrors as Record<string, unknown>,
     });

@@ -23,6 +23,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * O apagado sai do bucket SÓ DEPOIS do update dar certo — arquivo órfão se
  * recupera, linha apontando para arquivo sumido é tela quebrada.
  */
+import { FRASE_DA_RESERVA_FORA_DO_LUGAR } from "@/lib/campanhas/valores-do-contexto";
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
@@ -63,8 +64,11 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
   const parsed = updateTemplateSchema.safeParse(raw);
   if (!parsed.success) {
     // A frase de recusa do corpo (reserva fora do lugar) é a que a tela precisa mostrar.
-    const fraseDoCorpo = parsed.error.flatten().fieldErrors.body?.[0];
-    return fail("validation_failed", fraseDoCorpo ? traduzir(fraseDoCorpo, authz.user.idioma) : t("Dados inválidos."), 422, {
+    const reservaForaDoLugar = parsed.error.flatten().fieldErrors.body?.[0] === FRASE_DA_RESERVA_FORA_DO_LUGAR;
+    const mensagem = reservaForaDoLugar
+      ? t("O texto de reserva só funciona no passo Mensagem do fluxo e no Gravar campo.")
+      : t("Dados inválidos.");
+    return fail("validation_failed", mensagem, 422, {
       requestId,
       details: parsed.error.flatten().fieldErrors as Record<string, unknown>,
     });
