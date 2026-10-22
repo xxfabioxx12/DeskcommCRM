@@ -110,10 +110,18 @@ oficial:**
    (`docs/ATUALIZANDO.md`). A migration 9001 só acrescenta colunas e pode rodar mais
    de uma vez sem estragar nada.
 
+   **A 9004 entra no banco ANTES da troca das imagens.** Ela acrescenta as colunas de
+   tentativa em `sales_events` e termina com `notify pgrst, 'reload schema';`, que faz a
+   API do banco enxergar as colunas novas. A imagem nova lê e grava essas colunas em toda
+   venda que chega: se ela subir num banco ainda sem a 9004, **toda venda recebida dá
+   erro 500** até a migration entrar. Ordem: backup, 9004 aplicada (com o reload), só
+   então as imagens novas.
+
 ## Se der errado
 
-- Teste de baseline reprovando por causa do bloco 9001: confira se o bloco está no
-  fim do arquivo e igual ao `supabase/fork/9001.sql` (rode o script de novo).
+- Teste de baseline reprovando por causa de um bloco do fork: confira se ele aparece
+  uma vez, igual ao `supabase/fork/9NNN.sql`, e no lugar certo (sem função: depois da
+  VARREDURA anon, em ordem de número) — rode o script de novo.
 - Colisão de número 9001 ou do timestamp `20261021130704`: o oficial nunca deve chegar
   na faixa 9000. Se chegar, renumere para outro número da faixa 9000 com outro
   timestamp e atualize migration, `supabase/fork/9001.sql`, baseline, testes e este
