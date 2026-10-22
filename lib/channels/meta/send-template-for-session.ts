@@ -132,6 +132,10 @@ export async function sendTemplateForSession(
     token: creds.token,
     graphVersion: creds.graphVersion,
     ...(input.transport?.graphBase ? { graphBase: input.transport.graphBase } : {}),
+    // Só a conexão oficial direta tem conta de mensagens; o parceiro (transport) não.
+    messagingAccountId: input.transport
+      ? null
+      : ((creds as { messagingAccountId?: string | null }).messagingAccountId ?? null),
     to: input.to,
     binding: {
       name: input.name,

@@ -33,7 +33,9 @@ const ingeridos: unknown[] = [];
 let linhaDoBanco: { app_secret_encrypted: string | null; verify_token_encrypted: string | null } | null = null;
 let erroDaLeitura: { code: string; message: string } | null = null;
 
-vi.mock("@/lib/channels/meta/session", () => ({
+vi.mock("@/lib/channels/meta/session", async (orig) => ({
+  // Mantém o resto do módulo real (eventoDaSessao, campoDaContaDeMensagens).
+  ...(await orig<Record<string, unknown>>()),
   metaSessionByWebhookToken: async () => SESSAO,
 }));
 

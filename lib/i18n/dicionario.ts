@@ -6569,7 +6569,6 @@ export const DICIONARIO: Traducoes = {
   "Campos a assinar": { es: "Campos a suscribir" },
   "Trocar credencial": { es: "Cambiar credencial" },
   "Conectar canal oficial": { es: "Conectar canal oficial" },
-  "Os três valores vêm do seu app na Meta (": { es: "Los tres valores vienen de tu app en Meta (" },
   "Configuração da API": { es: "Configuración de la API" },
   "). A credencial é": { es: "). La credencial es" },
   "validada com a Meta antes de ser gravada": { es: "validada con Meta antes de guardarse" },
@@ -16755,6 +16754,15 @@ export const DICIONARIO: Traducoes = {
   'Para não depender do dado, ponha um texto de reserva: {{primeiro_nome|"aluno"}}.': {
     es: 'Para no depender del dato, pon un texto de respaldo: {{primeiro_nome|"alumno"}}.',
   },
+  // Caminho 1 do número oficial — conta de mensagens.
+  "conta de mensagens": { es: "cuenta de mensajes" },
+  "ID da conta de mensagens (opcional)": { es: "ID de la cuenta de mensajes (opcional)" },
+  "A conta que paga os envios deste número. Vazio: a Meta escolhe, como hoje.": {
+    es: "La cuenta que paga los envíos de este número. Vacío: Meta elige, como hoy.",
+  },
+  "O ID da conta de mensagens tem só números.": { es: "El ID de la cuenta de mensajes tiene solo números." },
+  // F17: agora são quatro campos (o quarto, opcional).
+  "Os valores vêm do seu app na Meta (": { es: "Los valores vienen de tu app en Meta (" },
 };
 
 /**

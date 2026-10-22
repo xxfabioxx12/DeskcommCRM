@@ -306,7 +306,9 @@ describe("a rota do webhook oficial entrega o contato do app à ingestão", () =
     vi.stubEnv("META_APP_SECRET", segredo);
     const sincronizados: unknown[] = [];
 
-    vi.doMock("@/lib/channels/meta/session", () => ({
+    vi.doMock("@/lib/channels/meta/session", async (orig) => ({
+  // Mantém o resto do módulo real (eventoDaSessao, campoDaContaDeMensagens).
+  ...(await orig<Record<string, unknown>>()),
       metaSessionByWebhookToken: async () => ({ id: "sess-1", organizationId: "org-1", wabaId: "waba-1" }),
     }));
     vi.doMock("@/lib/channels/meta/app", () => ({
@@ -371,7 +373,9 @@ describe("contato do app sem assinatura válida não chega à ingestão", () => 
       vi.resetModules();
       vi.stubEnv("META_APP_SECRET", segredo);
       const sincronizados: unknown[] = [];
-      vi.doMock("@/lib/channels/meta/session", () => ({
+      vi.doMock("@/lib/channels/meta/session", async (orig) => ({
+  // Mantém o resto do módulo real (eventoDaSessao, campoDaContaDeMensagens).
+  ...(await orig<Record<string, unknown>>()),
         metaSessionByWebhookToken: async () => ({ id: "sess-1", organizationId: "org-1", wabaId: "waba-1" }),
       }));
       vi.doMock("@/lib/channels/meta/app", () => ({

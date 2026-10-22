@@ -24,6 +24,7 @@ import {
 } from "./template-binding";
 import { deriveTemplateContract } from "./template-contract";
 import { graphBaseUrl } from "./graph-base";
+import { campoDaContaDeMensagens } from "./credentials";
 
 export interface SendTemplateInput {
   phoneNumberId: string;
@@ -39,6 +40,8 @@ export interface SendTemplateInput {
    * campo por sessão (o parceiro) e um knob de instalação (o receiver de prova).
    */
   graphBase?: string;
+  /** A conta de mensagens que paga (fork 9005). Nulo/ausente = a Meta escolhe pela chave. */
+  messagingAccountId?: string | null;
   /** Destinatário em dígitos E.164, sem `+` — é o que a Graph API aceita. */
   to: string;
   binding: TemplateBinding;
@@ -124,6 +127,7 @@ export async function sendTemplate(input: SendTemplateInput): Promise<SendTempla
     },
     body: JSON.stringify({
       messaging_product: "whatsapp",
+      ...campoDaContaDeMensagens(input.messagingAccountId),
       to: input.to,
       type: "template",
       template: {

@@ -22,7 +22,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { metaContactsPayload } from "@/lib/channels/meta/contact-card";
 import { graphBaseUrl } from "@/lib/channels/meta/graph-base";
-import { resolveMetaCreds } from "../meta/credentials";
+import { campoDaContaDeMensagens, resolveMetaCreds } from "../meta/credentials";
 import { metaCloudTemplateOps } from "../meta/template-ops";
 import type {
   ChannelAdapter,
@@ -303,6 +303,7 @@ export const metaCloudAdapter: ChannelAdapter = {
       },
       body: JSON.stringify({
         messaging_product: "whatsapp",
+        ...campoDaContaDeMensagens(creds.messagingAccountId),
         status: "read",
         message_id: input.inboundExternalId,
         typing_indicator: { type: "text" },
@@ -355,6 +356,7 @@ export const metaCloudAdapter: ChannelAdapter = {
         },
         body: JSON.stringify({
           messaging_product: "whatsapp",
+          ...campoDaContaDeMensagens(creds.messagingAccountId),
           recipient_type: "individual",
           to: envelope.to,
           ...corpo,

@@ -19,7 +19,9 @@ const SESSAO = { id: "sess-1", organizationId: "org-1", wabaId: "243404543373517
 const APP_SECRET = "app-secret-de-teste";
 const ingeridos: unknown[] = [];
 
-vi.mock("@/lib/channels/meta/session", () => ({
+vi.mock("@/lib/channels/meta/session", async (orig) => ({
+  // Mantém o resto do módulo real (eventoDaSessao, campoDaContaDeMensagens).
+  ...(await orig<Record<string, unknown>>()),
   metaSessionByWebhookToken: async () => SESSAO,
 }));
 

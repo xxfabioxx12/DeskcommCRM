@@ -11,6 +11,7 @@ export interface OfficialChannelState {
   hasToken: boolean;
   phoneNumberId: string | null;
   wabaId: string | null;
+  contaDeMensagensId?: string | null;
   /** Base pública da API — usada no painel "Para integrar". */
   endpoint: string | null;
   displayName: string | null;
@@ -49,6 +50,7 @@ export interface ConnectInput {
   phone_number_id: string;
   waba_id: string;
   token: string;
+  messaging_account_id?: string;
 }
 
 export interface RegistroDoWebhook {

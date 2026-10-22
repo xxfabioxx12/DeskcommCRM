@@ -51,6 +51,9 @@ const conectarSchema = z.object({
   phone_number_id: z.string().min(5),
   waba_id: z.string().min(5),
   token: z.string().min(20),
+  // Fork 9005, opcional: a conta de mensagens que paga os envios. Vazio = nulo
+  // (a Meta escolhe pela chave, como antes). Só dígitos: é o CHECK do banco.
+  messaging_account_id: z.union([z.string().trim().regex(/^\d{5,30}$/), z.literal("")]).optional(),
 });
 
 interface DesfechoGravado {
@@ -134,7 +137,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const consultar = () =>
     admin
       .from("channel_sessions")
-      .select("id, meta_phone_number_id, meta_waba_id, meta_token_encrypted, phone_number, display_name, webhook_path_token, status")
+      .select("id, meta_phone_number_id, meta_waba_id, meta_messaging_account_id, meta_token_encrypted, phone_number, display_name, webhook_path_token, status")
       .eq("organization_id", orgId)
       .eq("provider", CHANNEL_PROVIDER_META);
   const { data } = await queryTolerantToMissingArchived(
@@ -152,6 +155,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     hasToken: Boolean(data?.meta_token_encrypted),
     phoneNumberId: data?.meta_phone_number_id ?? null,
     wabaId: data?.meta_waba_id ?? null,
+    /** A conta de mensagens que paga os envios (fork 9005); nulo = a Meta escolhe. */
+    contaDeMensagensId: data?.meta_messaging_account_id ?? null,
     /** Base pública da Graph API — para o operador reaproveitar em outro sistema. */
     endpoint: data ? metaGraphBase() : null,
     displayName: data?.display_name ?? null,
@@ -211,11 +216,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const parsed = conectarSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
-    return fail("invalid_request", t("phone_number_id, waba_id e token são obrigatórios"), 422, {
-      requestId,
-    });
+    const daConta = parsed.error.issues.some((i) => i.path[0] === "messaging_account_id");
+    return fail(
+      "invalid_request",
+      daConta ? t("O ID da conta de mensagens tem só números.") : t("phone_number_id, waba_id e token são obrigatórios"),
+      422,
+      { requestId },
+    );
   }
   const { phone_number_id, waba_id, token } = parsed.data;
+  // F14: sem a chave no corpo, a conta salva fica como está (reconectar não a apaga).
+  const campoDaConta =
+    parsed.data.messaging_account_id === undefined
+      ? {}
+      : { meta_messaging_account_id: parsed.data.messaging_account_id || null };
 
   // VALIDA ANTES DE GRAVAR — a rota não sabe com quem fala; ela pergunta se a
   // credencial presta e o canal responde.
@@ -272,6 +286,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     provider: CHANNEL_PROVIDER_META,
     meta_phone_number_id: phone_number_id,
     meta_waba_id: waba_id,
+    ...campoDaConta,
     meta_token_encrypted: cifrado,
     phone_number: validacao.displayPhoneNumber ? `+${validacao.displayPhoneNumber.replace(/\D/g, "")}` : null,
     // O nome do provedor só batiza a conexão; depois dela o nome é do operador

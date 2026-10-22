@@ -50,6 +50,11 @@ export interface MetaCredentials {
   graphVersion: string;
   /** De onde veio — aparece no log de diagnóstico, nunca no payload. */
   source: "session" | "env";
+  /**
+   * `channel_sessions.meta_messaging_account_id` (fork 9005): a conta de mensagens
+   * que paga os envios. Ausente/nulo = a Meta escolhe pela chave, como antes.
+   */
+  messagingAccountId?: string | null;
 }
 
 /**
@@ -114,7 +119,7 @@ export async function metaCredsForPhoneNumberId(
   const base = () =>
     admin
       .from("channel_sessions")
-      .select("meta_phone_number_id, meta_token_encrypted")
+      .select("meta_phone_number_id, meta_token_encrypted, meta_messaging_account_id")
       .eq("organization_id", organizationId)
       .eq("meta_phone_number_id", phoneNumberId);
   const { data, error } = await queryTolerantToMissingArchived(
@@ -141,6 +146,7 @@ export async function metaCredsForPhoneNumberId(
     token,
     graphVersion: graphVersion(),
     source: "session",
+    messagingAccountId: (data.meta_messaging_account_id as string | null) ?? null,
   };
 }
 
@@ -155,4 +161,13 @@ export async function resolveMetaCreds(
   lookup: MetaCredsLookup,
 ): Promise<MetaCredentials | null> {
   return (await metaCredsForPhoneNumberId(admin, lookup)) ?? metaCredsFromEnv();
+}
+
+/**
+ * O pedaço do corpo que diz à Meta qual conta de mensagens paga o envio. Vazio =
+ * o corpo de antes, byte a byte. Um helper só para os três envios (texto/mídia,
+ * template, "digitando…"): três cópias divergiriam no primeiro ajuste.
+ */
+export function campoDaContaDeMensagens(conta: string | null | undefined): { messaging_account_id?: string } {
+  return conta ? { messaging_account_id: conta } : {};
 }

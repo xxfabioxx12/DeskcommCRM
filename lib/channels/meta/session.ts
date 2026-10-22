@@ -19,6 +19,8 @@ export interface MetaWebhookSession {
   id: string;
   organizationId: string;
   wabaId: string | null;
+  /** `channel_sessions.meta_messaging_account_id` (fork 9005). */
+  contaDeMensagensId?: string | null;
 }
 
 /**
@@ -62,7 +64,7 @@ export async function metaSessionByWebhookToken(
   const base = () =>
     admin
       .from("channel_sessions")
-      .select("id, organization_id, meta_waba_id")
+      .select("id, organization_id, meta_waba_id, meta_messaging_account_id")
       .eq("webhook_path_token", token)
       .eq("provider", CHANNEL_PROVIDER_META);
   const { data } = await queryTolerantToMissingArchived(
@@ -75,6 +77,7 @@ export async function metaSessionByWebhookToken(
     id: data.id,
     organizationId: data.organization_id,
     wabaId: data.meta_waba_id ?? null,
+    contaDeMensagensId: data.meta_messaging_account_id ?? null,
   };
 }
 
@@ -116,4 +119,14 @@ export async function metaSessionForOrg(
     wabaId: data.meta_waba_id ?? null,
     phoneNumberId: data.meta_phone_number_id ?? null,
   };
+}
+
+/**
+ * O evento é deste número? A WABA da conexão ou, desde a 9005, a conta de
+ * mensagens: com a conta nova, a Meta pode carimbar os avisos de mensagem com o ID
+ * dela. Sem um dos dois lados, não filtra (comportamento de antes).
+ */
+export function eventoDaSessao(session: MetaWebhookSession, wabaDoEvento: string | null | undefined): boolean {
+  if (!session.wabaId || !wabaDoEvento) return true;
+  return wabaDoEvento === session.wabaId || wabaDoEvento === (session.contaDeMensagensId ?? null);
 }

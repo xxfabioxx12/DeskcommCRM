@@ -67,13 +67,21 @@ export function CanalOficialClient() {
   const { data, isPending } = useOfficialChannel();
   const conectar = useConnectOfficialChannel();
   const registrarWebhook = useRegistrarWebhookOficial();
-  const [form, setForm] = useState({ phone_number_id: "", waba_id: "", token: "" });
+  // `messaging_account_id` nulo = intocado: o campo mostra (e reenvia) a conta salva,
+  // para trocar só o token não a apagar. Derivado, sem efeito que copie o estado.
+  const [form, setForm] = useState({
+    phone_number_id: "",
+    waba_id: "",
+    messaging_account_id: null as string | null,
+    token: "",
+  });
 
   const estado = data?.data;
+  const contaDoForm = form.messaging_account_id ?? estado?.contaDeMensagensId ?? "";
 
   async function enviar(e: React.FormEvent) {
     e.preventDefault();
-    const r = await conectar.mutateAsync(form);
+    const r = await conectar.mutateAsync({ ...form, messaging_account_id: contaDoForm });
     toast.success(`${t("Conectado:")} ${r.data.displayName} ${r.data.phoneNumber ?? ""}`.trim());
     // O token some do formulário assim que grava — deixá-lo na tela seria mantê-lo
     // em memória do navegador sem motivo, e ele não volta em nenhum GET.
@@ -102,6 +110,12 @@ export function CanalOficialClient() {
           <p className="mt-1 text-xs text-muted-foreground">
             WABA <span className="font-mono">{estado.wabaId}</span> · {t("número")}{" "}
             <span className="font-mono">{estado.phoneNumberId}</span>
+            {estado.contaDeMensagensId ? (
+              <>
+                {" "}
+                · {t("conta de mensagens")} <span className="font-mono">{estado.contaDeMensagensId}</span>
+              </>
+            ) : null}
           </p>
         </Card>
       ) : null}
@@ -241,7 +255,7 @@ export function CanalOficialClient() {
           {estado?.connected ? t("Trocar credencial") : t("Conectar canal oficial")}
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          {t("Os três valores vêm do seu app na Meta (")}
+          {t("Os valores vêm do seu app na Meta (")}
           <strong>WhatsApp → {t("Configuração da API")}</strong>
           {t("). A credencial é")} <strong>{t("validada com a Meta antes de ser gravada")}</strong>
           {t(" — se o número não responder, nada é salvo.")}
@@ -267,6 +281,19 @@ export function CanalOficialClient() {
               placeholder="2434045433735175"
               required
             />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="conta-de-mensagens">{t("ID da conta de mensagens (opcional)")}</Label>
+            <Input
+              id="conta-de-mensagens"
+              inputMode="numeric"
+              value={contaDoForm}
+              onChange={(e) => setForm((f) => ({ ...f, messaging_account_id: e.target.value }))}
+              placeholder="1234567890123456"
+            />
+            <span className="text-xs text-muted-foreground">
+              {t("A conta que paga os envios deste número. Vazio: a Meta escolhe, como hoje.")}
+            </span>
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="tok">{t("Token de acesso")}</Label>

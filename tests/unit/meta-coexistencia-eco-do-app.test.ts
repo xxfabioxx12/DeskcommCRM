@@ -291,7 +291,9 @@ describe("a rota do webhook oficial entrega o eco à ingestão", () => {
     vi.stubEnv("META_APP_SECRET", segredo);
     const ecosIngeridos: unknown[] = [];
 
-    vi.doMock("@/lib/channels/meta/session", () => ({
+    vi.doMock("@/lib/channels/meta/session", async (orig) => ({
+  // Mantém o resto do módulo real (eventoDaSessao, campoDaContaDeMensagens).
+  ...(await orig<Record<string, unknown>>()),
       metaSessionByWebhookToken: async () => ({ id: "sess-1", organizationId: "org-1", wabaId: "waba-1" }),
     }));
     vi.doMock("@/lib/channels/meta/app", () => ({

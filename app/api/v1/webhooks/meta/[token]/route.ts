@@ -40,7 +40,7 @@ import {
   ingestMetaInbound,
   ingestMetaReaction,
 } from "@/lib/channels/meta/ingest";
-import { metaSessionByWebhookToken } from "@/lib/channels/meta/session";
+import { eventoDaSessao, metaSessionByWebhookToken } from "@/lib/channels/meta/session";
 import { logger } from "@/lib/logger";
 import {
   emitirFalhaDeEntrega,
@@ -134,7 +134,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
   for (const e of eventos) {
     // O evento chega carimbado com a WABA; se não for a desta sessão, ignoramos.
     // Confiar no `entry.id` para escolher a org seria aceitar o corpo como fonte.
-    if (session.wabaId && e.wabaId && e.wabaId !== session.wabaId) continue;
+    if (!eventoDaSessao(session, e.wabaId)) continue;
 
     if (e.kind === "inbound_message") {
       // A metade que faltava: mensagem do contato vira linha no inbox, move lead,
