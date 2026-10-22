@@ -56214,7 +56214,7 @@ grant  execute on function public.emit_event(text, text, uuid, jsonb, jsonb, uui
 
 notify pgrst, 'reload schema';
 
--- 0704 — avaliação única de permissões (#3087)
+-- 0734 — avaliação única de permissões (#3087)
 -- manifest: Avalia papel e contexto de suporte uma vez por verificação RBAC (#3087), preservando regras, grants e limites.
 -- Mesmo RBAC; o InitPlan avalia o papel uma vez por chamada, não uma vez
 -- para cada linha da tabela de níveis. Não altera timeout, grants ou triggers.
