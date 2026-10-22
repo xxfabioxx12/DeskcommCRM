@@ -52,11 +52,11 @@ describe("migration 9004 — reprocessar as vendas", () => {
     expect(sql.trimEnd().endsWith("notify pgrst, 'reload schema';")).toBe(true);
   });
 
-  it("⭐ o bloco está no baseline UMA vez, depois da varredura anon, e fecha o arquivo", () => {
+  it("⭐ o bloco está no baseline UMA vez, depois da varredura anon e depois do 9001", () => {
     const baseline = ler("supabase/baseline.sql");
     const bloco = ler(BLOCO);
     expect(baseline.split(bloco)).toHaveLength(2);
     expect(baseline.indexOf(bloco)).toBeGreaterThan(baseline.indexOf(VARREDURA));
-    expect(baseline.endsWith(bloco)).toBe(true);
+    expect(baseline.indexOf(bloco)).toBeGreaterThan(baseline.indexOf(ler("supabase/fork/9001.sql")));
   });
 });

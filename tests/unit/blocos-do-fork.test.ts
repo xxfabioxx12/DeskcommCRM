@@ -104,6 +104,15 @@ describe("blocos do fork no baseline", () => {
     else expect(onde).toBeGreaterThan(varredura);
   });
 
+  it("blocos sem função ficam depois da varredura em ordem de número", () => {
+    const baseline = ler("supabase/baseline.sql");
+    const posicoes = BLOCOS.map((a) => ler(join("supabase", "fork", a)))
+      .filter((b) => !CRIA_FUNCAO.test(b))
+      .map((b) => baseline.indexOf(b));
+    expect(posicoes.length).toBeGreaterThan(1);
+    expect(posicoes).toEqual([...posicoes].sort((x, y) => x - y));
+  });
+
   it("⭐ o script reaplica os blocos no baseline do oficial e devolve o de hoje, byte a byte", () => {
     const hoje = ler("supabase/baseline.sql");
     const doOficial = semOsBlocos(hoje);

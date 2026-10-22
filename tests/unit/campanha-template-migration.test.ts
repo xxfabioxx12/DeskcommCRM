@@ -75,12 +75,17 @@ describe("migration 9001 — campanha com template aprovado", () => {
     expect(baseline.includes(corpo)).toBe(true);
   });
 
-  it("a cópia do fork (supabase/fork/9001.sql) é o fim exato do baseline", () => {
+  it("a cópia do fork (supabase/fork/9001.sql) está no baseline uma vez, depois da varredura e antes do 9004", () => {
     // O script scripts/fork/reaplicar-bloco-do-fork.sh reacrescenta esta cópia
     // depois de cada atualização do oficial; cópia diferente reaplicaria outro SQL.
+    // Blocos sem função ficam depois da varredura anon, em ordem de número.
     const copia = ler("supabase/fork/9001.sql");
     expect(copia.startsWith("-- ---- campanha com template aprovado (migration 9001")).toBe(true);
-    expect(ler("supabase/baseline.sql").endsWith(copia)).toBe(true);
+    const baseline = ler("supabase/baseline.sql");
+    expect(baseline.split(copia)).toHaveLength(2);
+    const onde = baseline.indexOf(copia);
+    expect(onde).toBeGreaterThan(baseline.indexOf("-- ---- VARREDURA anon:"));
+    expect(onde).toBeLessThan(baseline.indexOf(ler("supabase/fork/9004.sql")));
   });
 
   it("toda falha de template da campanha tem frase, e a frase tem espanhol", () => {
