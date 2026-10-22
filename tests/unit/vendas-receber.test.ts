@@ -120,6 +120,14 @@ describe("receberVenda", () => {
     expect(banco.concluir).toHaveBeenCalledTimes(1);
   });
 
+  it("a chegada grava o prazo de quem está decidindo (se a rota cair, a venda volta pela fila)", async () => {
+    const { banco, linhas, fins } = bancoFalso();
+    await receberVenda(banco, LIGADA, entrega(fixture("hotmart_purchase_approved")), AGORA);
+    expect(linhas[0]!.proxima_tentativa_em).toBe(new Date(AGORA.getTime() + 15 * 60_000).toISOString());
+    // Concluiu: o prazo some (concluir sempre reescreve a coluna).
+    expect(fins[0]![1].proximaTentativaEm).toBeUndefined();
+  });
+
   it("teste da Kookie: registra como ignorado e nada roda", async () => {
     const kookie: ConexaoDeVenda = { ...LIGADA, plataforma: "kookie" };
     const { banco, linhas, fins } = bancoFalso();
@@ -216,7 +224,12 @@ describe("receberVenda", () => {
   it("não conseguiu criar o contato: falhou, sem gatilho", async () => {
     const { banco, fins } = bancoFalso({ criarContato: vi.fn(async () => null) });
     await receberVenda(banco, LIGADA, entrega(fixture("hotmart_purchase_approved")), AGORA);
-    expect(fins[0]![1]).toEqual({ status: "falhou", motivo: MOTIVO_DA_VENDA.contatoNaoCriado });
+    // Passageiro (Parte 2b): a 1ª tentativa automática sai 5 min depois.
+    expect(fins[0]![1]).toEqual({
+      status: "falhou",
+      motivo: MOTIVO_DA_VENDA.contatoNaoCriado,
+      proximaTentativaEm: new Date(AGORA.getTime() + 5 * 60_000),
+    });
     expect(banco.emitir).not.toHaveBeenCalled();
   });
 
@@ -228,7 +241,11 @@ describe("receberVenda", () => {
     });
     const r = await receberVenda(banco, LIGADA, entrega(fixture("hotmart_purchase_approved")), AGORA);
     expect(r).toMatchObject({ duplicate: false, status: "falhou", motivo: "emit_event: boom" });
-    expect(fins[0]![1]).toEqual({ status: "falhou", motivo: "emit_event: boom" });
+    expect(fins[0]![1]).toEqual({
+      status: "falhou",
+      motivo: "emit_event: boom",
+      proximaTentativaEm: new Date(AGORA.getTime() + 5 * 60_000),
+    });
   });
 
   it("erro NO registro sobe (a rota responde 500 e a plataforma reentrega)", async () => {

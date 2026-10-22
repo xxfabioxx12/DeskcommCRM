@@ -14,14 +14,16 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { encontrarContatoPorTelefoneComNome } from "@/lib/channels/contato-por-telefone";
 import { logger } from "@/lib/logger";
 
+import { configDaConexao } from "./config";
 import type { CamposDoContato, ContatoExistente } from "./contato";
-import { GATILHO_DA_VENDA } from "./eventos";
-import type { BancoDaVenda, ConexaoDeVenda } from "./receber";
+import { GATILHO_DA_VENDA, PLATAFORMAS_DE_VENDA, ehPlataformaDeVenda } from "./eventos";
+import type { ConexaoDeVenda } from "./receber";
+import type { BancoDaTentativa } from "./reprocessar";
 
 const UM_MINUTO_MS = 60_000;
 const COLUNAS_DO_CONTATO = "id, name, email, phone_number";
 
-export interface BancoDaVendaSupabase extends BancoDaVenda {
+export interface BancoDaVendaSupabase extends BancoDaTentativa {
   registrarRecusa(conexao: ConexaoDeVenda, motivo: string): Promise<void>;
 }
 
@@ -76,7 +78,15 @@ export function bancoDaVenda(admin: SupabaseClient): BancoDaVendaSupabase {
     async concluir(id, fim) {
       const { error } = await admin
         .from("sales_events")
-        .update({ status: fim.status, motivo: fim.motivo, contact_id: fim.contactId ?? null })
+        // Sempre reescreve a próxima tentativa: limpa o prazo de quem pegou, ou marca a próxima (Parte 2b).
+        // `colunas` só vem da tentativa que completou uma linha sem tradução (F1).
+        .update({
+          status: fim.status,
+          motivo: fim.motivo,
+          contact_id: fim.contactId ?? null,
+          proxima_tentativa_em: fim.proximaTentativaEm?.toISOString() ?? null,
+          ...fim.colunas,
+        })
         .eq("id", id);
       if (error) logger.error("[vendas] não foi possível concluir o evento de venda", { salesEventId: id, error: error.message });
     },
@@ -159,6 +169,25 @@ export function bancoDaVenda(admin: SupabaseClient): BancoDaVendaSupabase {
         p_organization_id: organizationId,
       });
       if (error) throw new Error(`emit_event: ${error.message}`);
+    },
+
+    async conexao(organizationId, conexaoId) {
+      const { data, error } = await admin
+        .from("webhook_sources")
+        .select("id, organization_id, kind, config, is_active")
+        .eq("id", conexaoId)
+        .eq("organization_id", organizationId)
+        .in("kind", [...PLATAFORMAS_DE_VENDA])
+        .maybeSingle();
+      if (error) throw new Error(`webhook_sources: ${error.message}`);
+      if (!data || !ehPlataformaDeVenda(data.kind)) return null;
+      return {
+        id: data.id as string,
+        organizationId: data.organization_id as string,
+        plataforma: data.kind,
+        config: configDaConexao(data.config),
+        ativa: data.is_active === true,
+      };
     },
 
     async registrarRecusa(conexao, motivo) {

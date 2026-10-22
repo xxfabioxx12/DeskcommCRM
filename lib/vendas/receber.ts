@@ -10,6 +10,12 @@
  * Erro DEPOIS do registro vira `falhou` com o motivo e a resposta segue 200 (a
  * linha aparece na tela); erro NO registro sobe, e a rota responde 500 para a
  * plataforma reentregar.
+ *
+ * Parte 2b: `decidir` também roda a partir da linha guardada
+ * (`lib/vendas/reprocessar.ts`). O erro passageiro marca a próxima tentativa
+ * automática (5 min, 30 min, 2 h); a falha de configuração não marca. A chegada
+ * grava o prazo de quem está decidindo: se a rota cair no meio, a venda volta
+ * pela fila.
  */
 import type { ConfigDaConexao } from "./config";
 import { camposParaCompletar, fraseDaOrigem, type CamposDoContato, type ContatoExistente } from "./contato";
@@ -30,13 +36,9 @@ export interface ConexaoDeVenda {
   config: ConfigDaConexao;
 }
 
-export interface LinhaNovaDaVenda {
-  organization_id: string;
-  webhook_source_id: string;
-  plataforma: PlataformaDeVenda;
-  evento_original: string;
+/** As colunas que saem da tradução (nunca `payload`, `chave_evento`, `recebido_em`). */
+export interface ColunasDerivadas {
   evento: string | null;
-  chave_evento: string;
   entidade: string | null;
   pedido: string | null;
   produto_id: string | null;
@@ -44,15 +46,29 @@ export interface LinhaNovaDaVenda {
   email: string | null;
   telefone: string | null;
   order_bump: boolean;
-  teste: boolean;
   venda: DadosDaVenda | Record<string, never>;
+}
+
+export interface LinhaNovaDaVenda extends ColunasDerivadas {
+  organization_id: string;
+  webhook_source_id: string;
+  plataforma: PlataformaDeVenda;
+  evento_original: string;
+  chave_evento: string;
+  teste: boolean;
   payload: Record<string, unknown>;
+  /** Prazo de quem está decidindo (ISO). `concluir` sempre reescreve. */
+  proxima_tentativa_em: string;
 }
 
 export interface FimDaVenda {
   status: "ignorado" | "sem_contato" | "processado" | "falhou";
   motivo: string | null;
   contactId?: string | null;
+  /** Só em `falhou` passageiro: quando sai a próxima tentativa automática. */
+  proximaTentativaEm?: Date;
+  /** Só na tentativa de uma linha que chegou sem tradução e agora traduz (F1): `concluir` grava junto. */
+  colunas?: ColunasDerivadas;
 }
 
 export interface NovoContato {
@@ -96,7 +112,23 @@ export const MOTIVO_DA_VENDA = {
   semContato: "sem telefone e sem e-mail",
   semMapa: "conexão sem mapa de campos: diga onde estão o evento, o e-mail e o telefone",
   contatoNaoCriado: "não foi possível criar o contato",
+  semDados: "os dados desta venda já foram apagados",
+  conexaoDesligada: "conexão desligada",
+  tentativaInterrompida: "a tentativa parou no meio",
 } as const;
+
+/** Nova tentativa automática (Parte 2b): a 1ª 5 min depois da falha, a 2ª 30 min, a 3ª 2 h. */
+export const ESPERA_DA_TENTATIVA_MS = [5 * 60_000, 30 * 60_000, 2 * 60 * 60_000] as const;
+export const MAXIMO_DE_TENTATIVAS = ESPERA_DA_TENTATIVA_MS.length;
+/** Só a venda das últimas 24 h volta sozinha. */
+export const JANELA_DA_TENTATIVA_MS = 24 * 60 * 60_000;
+/** Quem pega a venda tem este prazo para concluir; passou (caiu no meio), ela volta para a fila. */
+export const PRAZO_DA_TENTATIVA_MS = 15 * 60_000;
+/** O prazo (ISO) de quem pega a venda agora: a chegada e a pega da tentativa usam este, e só este (F7). */
+export const prazoDaTentativa = (agora: Date): string => new Date(agora.getTime() + PRAZO_DA_TENTATIVA_MS).toISOString();
+
+/** Falha que daria o mesmo erro de novo: só volta pelo botão, depois de arrumar (Divergência D8). */
+const FALHA_SEM_VOLTA = new Set<string>([MOTIVO_DA_VENDA.semMapa, MOTIVO_DA_VENDA.semDados]);
 
 export interface ResultadoDaVenda {
   duplicate: boolean;
@@ -128,23 +160,20 @@ function cortada(v: VendaTraduzida | null): VendaTraduzida | null {
   );
 }
 
-export async function receberVenda(
-  banco: BancoDaVenda,
-  conexao: ConexaoDeVenda,
+/** Tradução + corte + `venda.*`: o mesmo na chegada e na nova tentativa. */
+export function traduzirParaDecidir(
+  plataforma: PlataformaDeVenda,
   entrega: EntregaDaVenda,
-  agora: Date = new Date(),
-): Promise<ResultadoDaVenda> {
-  const id = identificarEntrega(conexao.plataforma, entrega);
-  const venda = cortada(traduzirVenda(conexao.plataforma, entrega, id.chave));
-  const dados = venda ? dadosDaVenda(venda, conexao.plataforma) : null;
+  chave: string,
+): { venda: VendaTraduzida | null; dados: DadosDaVenda | null } {
+  const venda = cortada(traduzirVenda(plataforma, entrega, chave));
+  return { venda, dados: venda ? dadosDaVenda(venda, plataforma) : null };
+}
 
-  const registro = await banco.registrar({
-    organization_id: conexao.organizationId,
-    webhook_source_id: conexao.id,
-    plataforma: conexao.plataforma,
-    evento_original: id.eventoOriginal,
+/** As colunas derivadas, iguais na chegada e no completar da tentativa (mesmos cortes, F1). */
+export function colunasDerivadas(venda: VendaTraduzida | null, dados: DadosDaVenda | null): ColunasDerivadas {
+  return {
     evento: venda?.evento ?? null,
-    chave_evento: id.chave,
     entidade: venda?.entidade ?? null,
     pedido: venda?.pedido ?? null,
     produto_id: venda?.produtoId ?? null,
@@ -152,9 +181,48 @@ export async function receberVenda(
     email: venda?.email ?? null,
     telefone: venda?.telefone ?? null,
     order_bump: venda?.orderBump ?? false,
-    teste: id.teste,
     venda: dados ?? {},
+  };
+}
+
+export function falhaDoErro(err: unknown): FimDaVenda {
+  return { status: "falhou", motivo: (err instanceof Error ? err.message : String(err)).slice(0, 500) };
+}
+
+/** Quando sai a próxima tentativa depois de `tentativas` feitas; `undefined` = não volta sozinha. */
+export function proximaTentativa(tentativas: number, recebidoEm: Date, agora: Date): Date | undefined {
+  const espera = ESPERA_DA_TENTATIVA_MS[tentativas];
+  if (espera === undefined) return undefined;
+  const quando = new Date(agora.getTime() + espera);
+  return quando.getTime() <= recebidoEm.getTime() + JANELA_DA_TENTATIVA_MS ? quando : undefined;
+}
+
+/** Erro passageiro marca a próxima tentativa; falha de configuração e desfecho que não é falha, não. */
+export function comProximaTentativa(fim: FimDaVenda, tentativas: number, recebidoEm: Date, agora: Date): FimDaVenda {
+  if (fim.status !== "falhou" || FALHA_SEM_VOLTA.has(fim.motivo ?? "")) return fim;
+  const quando = proximaTentativa(tentativas, recebidoEm, agora);
+  return quando ? { ...fim, proximaTentativaEm: quando } : fim;
+}
+
+export async function receberVenda(
+  banco: BancoDaVenda,
+  conexao: ConexaoDeVenda,
+  entrega: EntregaDaVenda,
+  agora: Date = new Date(),
+): Promise<ResultadoDaVenda> {
+  const id = identificarEntrega(conexao.plataforma, entrega);
+  const { venda, dados } = traduzirParaDecidir(conexao.plataforma, entrega, id.chave);
+
+  const registro = await banco.registrar({
+    organization_id: conexao.organizationId,
+    webhook_source_id: conexao.id,
+    plataforma: conexao.plataforma,
+    evento_original: id.eventoOriginal,
+    chave_evento: id.chave,
+    ...colunasDerivadas(venda, dados),
+    teste: id.teste,
     payload: entrega.payload,
+    proxima_tentativa_em: prazoDaTentativa(agora),
   });
   if (registro === "repetido") return { duplicate: true, status: "recebido", motivo: null, salesEventId: null };
 
@@ -163,20 +231,26 @@ export async function receberVenda(
   try {
     fim = await decidir(banco, conexao, id, venda, dados, registro.id, agora);
   } catch (err) {
-    fim = { status: "falhou", motivo: (err instanceof Error ? err.message : String(err)).slice(0, 500) };
+    fim = falhaDoErro(err);
   }
+  fim = comProximaTentativa(fim, 0, agora, agora);
   await banco.concluir(registro.id, fim);
   return { duplicate: false, status: fim.status, motivo: fim.motivo, salesEventId: registro.id };
 }
 
-async function decidir(
+/**
+ * A decisão. `recebidoEm` é a hora da CHEGADA da venda (na chegada, o próprio
+ * agora): a janela da recuperação e a data da origem do contato contam dela,
+ * também na nova tentativa (Parte 2b, Divergência D6).
+ */
+export async function decidir(
   banco: BancoDaVenda,
   conexao: ConexaoDeVenda,
   id: Identificacao,
   venda: VendaTraduzida | null,
   dados: DadosDaVenda | null,
   salesEventId: string,
-  agora: Date,
+  recebidoEm: Date,
 ): Promise<FimDaVenda> {
   if (id.teste) return { status: "ignorado", motivo: MOTIVO_DA_VENDA.teste };
   if (!venda || !dados) {
@@ -195,7 +269,7 @@ async function decidir(
       email: venda.email,
       telefone: venda.telefone,
       produtoId: venda.produtoId,
-      desde: new Date(agora.getTime() - SEIS_HORAS_MS),
+      desde: new Date(recebidoEm.getTime() - SEIS_HORAS_MS),
     });
     if (comprou) return { status: "ignorado", motivo: MOTIVO_DA_VENDA.jaComprou };
   }
@@ -215,7 +289,7 @@ async function decidir(
       email: venda.email,
       phone_number: venda.telefone,
       source_metadata: {
-        origem: fraseDaOrigem(venda, conexao.plataforma, agora),
+        origem: fraseDaOrigem(venda, conexao.plataforma, recebidoEm),
         webhook_source_id: conexao.id,
         sales_event_id: salesEventId,
         plataforma: conexao.plataforma,

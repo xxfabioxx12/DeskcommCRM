@@ -25,6 +25,7 @@ const LINHA: LinhaNovaDaVenda = {
   teste: false,
   venda: {},
   payload: { id: "hm-evt-0001" },
+  proxima_tentativa_em: "2026-10-22T15:15:00.000Z",
 };
 const CONEXAO: ConexaoDeVenda = { id: "conexao-1", organizationId: "org-1", plataforma: "hotmart", config: {} };
 
@@ -187,5 +188,52 @@ describe("recusa e gatilho", () => {
     });
     g.responderRpc(() => ({ error: { message: "support_readonly" } }));
     await expect(bancoDaVenda(g.admin).emitir("org-1", "c1", {}, "r")).rejects.toThrow("emit_event: support_readonly");
+  });
+});
+
+describe("concluir e conexão (Parte 2b)", () => {
+  it("concluir grava a próxima tentativa, e nulo quando não há (limpa o prazo de quem pegou)", async () => {
+    const g = supabaseGravador(() => ({}));
+    const banco = bancoDaVenda(g.admin);
+    await banco.concluir("ev-1", { status: "falhou", motivo: "x", proximaTentativaEm: new Date("2026-10-22T15:05:00Z") });
+    await banco.concluir("ev-2", { status: "processado", motivo: null, contactId: "c1" });
+    const updates = g.log.filter((c) => c.metodo === "update").map((c) => c.args[0]);
+    expect(updates).toEqual([
+      { status: "falhou", motivo: "x", contact_id: null, proxima_tentativa_em: "2026-10-22T15:05:00.000Z" },
+      { status: "processado", motivo: null, contact_id: "c1", proxima_tentativa_em: null },
+    ]);
+  });
+
+  it("F1: concluir também grava as colunas completadas pela tentativa (nunca payload/chave/recebido_em)", async () => {
+    const g = supabaseGravador(() => ({}));
+    const colunas = {
+      evento: "compra.aprovada",
+      entidade: "custom:P-1",
+      pedido: "P-1",
+      produto_id: null,
+      produto: null,
+      email: "a@b.com",
+      telefone: null,
+      order_bump: false,
+      venda: {},
+    };
+    await bancoDaVenda(g.admin).concluir("ev-1", { status: "processado", motivo: null, contactId: "c1", colunas });
+    const [update] = g.log.filter((c) => c.metodo === "update").map((c) => c.args[0]);
+    expect(update).toEqual({ status: "processado", motivo: null, contact_id: "c1", proxima_tentativa_em: null, ...colunas });
+  });
+
+  it("conexao: só de venda, só da empresa; traz a config atual e se está ligada", async () => {
+    const g = supabaseGravador(() => ({
+      data: { id: "conexao-1", organization_id: "org-1", kind: "hotmart", config: { dispara: true }, is_active: false },
+    }));
+    const conexao = await bancoDaVenda(g.admin).conexao("org-1", "conexao-1");
+    expect(conexao).toEqual({ id: "conexao-1", organizationId: "org-1", plataforma: "hotmart", config: { dispara: true }, ativa: false });
+    expect(usou(g.log, "webhook_sources", "eq", "id", "conexao-1")).toBe(true);
+    expect(usou(g.log, "webhook_sources", "eq", "organization_id", "org-1")).toBe(true);
+    expect(usou(g.log, "webhook_sources", "in", "kind", ["hotmart", "kiwify", "kookie", "personalizada"])).toBe(true);
+    expect(await bancoDaVenda(supabaseGravador(() => ({ data: null })).admin).conexao("org-1", "x")).toBeNull();
+    await expect(
+      bancoDaVenda(supabaseGravador(() => ({ error: { message: "timeout" } })).admin).conexao("org-1", "x"),
+    ).rejects.toThrow("webhook_sources: timeout");
   });
 });
