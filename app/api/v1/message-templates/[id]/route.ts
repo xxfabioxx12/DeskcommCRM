@@ -62,7 +62,9 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
   const raw = await req.json().catch(() => null);
   const parsed = updateTemplateSchema.safeParse(raw);
   if (!parsed.success) {
-    return fail("validation_failed", t("Dados inválidos."), 422, {
+    // A frase de recusa do corpo (reserva fora do lugar) é a que a tela precisa mostrar.
+    const fraseDoCorpo = parsed.error.flatten().fieldErrors.body?.[0];
+    return fail("validation_failed", fraseDoCorpo ? traduzir(fraseDoCorpo, authz.user.idioma) : t("Dados inválidos."), 422, {
       requestId,
       details: parsed.error.flatten().fieldErrors as Record<string, unknown>,
     });

@@ -184,3 +184,22 @@ describe("POST /api/v1/message-templates — idempotência", () => {
     expect(db.recibos).toHaveLength(0);
   });
 });
+
+describe("POST /api/v1/message-templates — recusa da reserva", () => {
+  it("a mensagem do erro é a frase da reserva, não 'Dados inválidos.'", async () => {
+    banco();
+    const resposta = await POST(req({ title: "Oi", body: 'Oi {{nome|"aluno"}}' }));
+    expect(resposta.status).toBe(422);
+    const { error } = await resposta.json();
+    expect(error.message).toBe("O texto de reserva só funciona no passo Mensagem do fluxo e no Gravar campo.");
+  });
+});
+
+describe("POST /api/v1/message-templates — recusa da reserva em espanhol", () => {
+  it("idioma es traduz a frase", async () => {
+    banco();
+    h.guard.mockResolvedValue({ ok: true, user: { id: USER, idioma: "es" }, org: { orgId: ORG, role: "agent" } });
+    const resposta = await POST(req({ title: "Oi", body: 'Oi {{nome|"aluno"}}' }));
+    expect((await resposta.json()).error.message).toContain("respaldo");
+  });
+});
