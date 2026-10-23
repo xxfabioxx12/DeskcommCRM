@@ -47,3 +47,23 @@ describe("tela da conexão oficial — conta de mensagens", () => {
     );
   });
 });
+
+describe("tela da conexão oficial — sem autorização", () => {
+  it("⭐ troca o WORKING pela frase e mostra o último erro", () => {
+    h.estado = {
+      ...CONECTADO,
+      semAutorizacao: { detalhe: "meta_10: (subcode 2593181; fbtrace AbC) Application does not have permission", em: "2026-10-22T15:00:00Z" },
+    };
+    render(<CanalOficialClient />);
+    const cartao = screen.getByTestId("canal-conectado").textContent ?? "";
+    expect(cartao).toContain("Recebe, mas não tem autorização para mandar");
+    expect(cartao).not.toContain("WORKING");
+    expect(screen.getByTestId("sem-autorizacao").textContent).toContain("subcode 2593181");
+  });
+
+  it("sem recusa: o status de sempre", () => {
+    render(<CanalOficialClient />);
+    expect(screen.getByTestId("canal-conectado").textContent).toContain("WORKING");
+    expect(screen.queryByTestId("sem-autorizacao")).toBeNull();
+  });
+});

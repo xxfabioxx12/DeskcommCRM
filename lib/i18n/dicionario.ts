@@ -16790,6 +16790,9 @@ export const DICIONARIO: Traducoes = {
   "Resposta automática desligada neste número: só sai o que alguém digita no Inbox.": {
     es: "Respuesta automática apagada en este número: solo sale lo que alguien escribe en el Inbox.",
   },
+  // Caminho 1 do número oficial — saúde.
+  "Recebe, mas não tem autorização para mandar": { es: "Recibe, pero no tiene autorización para enviar" },
+  "Último erro da Meta": { es: "Último error de Meta" },
 };
 
 /**

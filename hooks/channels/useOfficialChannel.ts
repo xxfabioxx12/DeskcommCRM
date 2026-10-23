@@ -17,6 +17,8 @@ export interface OfficialChannelState {
   displayName: string | null;
   phoneNumber: string | null;
   status: string | null;
+  /** "Recebe, mas não tem autorização para mandar" (caminho 1): o último erro e quando. */
+  semAutorizacao?: { detalhe: string; em: string } | null;
   webhook: {
     callbackUrl: string;
     verifyToken: string | null;

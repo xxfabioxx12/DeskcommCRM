@@ -1,4 +1,5 @@
 "use client";
+import { format } from "date-fns";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -14,6 +15,7 @@ import {
   useRegistrarWebhookOficial,
 } from "@/hooks/channels/useOfficialChannel";
 import { copyToClipboard } from "@/lib/clipboard";
+import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
 import { ChannelAiAccess } from "./ChannelAiAccess";
 import { RespostaAutomatica } from "./RespostaAutomatica";
@@ -65,6 +67,7 @@ function ParaColar({
 
 export function CanalOficialClient() {
   const t = useT();
+  const localeDaData = useLocaleDeData();
   const { data, isPending } = useOfficialChannel();
   const conectar = useConnectOfficialChannel();
   const registrarWebhook = useRegistrarWebhookOficial();
@@ -102,7 +105,11 @@ export function CanalOficialClient() {
                 {estado.phoneNumber}
               </Badge>
             ) : null}
-            <Badge>{estado.status ?? "—"}</Badge>
+            {estado.semAutorizacao ? (
+              <Badge variant="destructive">{t("Recebe, mas não tem autorização para mandar")}</Badge>
+            ) : (
+              <Badge>{estado.status ?? "—"}</Badge>
+            )}
             {/* Mostra que o token EXISTE, nunca qual é. */}
             <Badge variant={estado.hasToken ? "outline" : "destructive"}>
               {estado.hasToken ? t("credencial guardada") : t("sem credencial")}
@@ -118,6 +125,12 @@ export function CanalOficialClient() {
               </>
             ) : null}
           </p>
+          {estado.semAutorizacao ? (
+            <p className="mt-2 text-xs text-destructive" data-testid="sem-autorizacao">
+              {t("Último erro da Meta")} ({format(new Date(estado.semAutorizacao.em), "Pp", { locale: localeDaData })}):{" "}
+              <span className="font-mono">{estado.semAutorizacao.detalhe}</span>
+            </p>
+          ) : null}
         </Card>
       ) : null}
       {estado?.channel_session_id && <ChannelAiAccess channelId={estado.channel_session_id} />}

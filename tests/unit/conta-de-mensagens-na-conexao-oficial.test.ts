@@ -35,6 +35,9 @@ vi.mock("@/lib/channels/meta/webhook-da-sessao", async (original) => ({
   ...(await original<Record<string, unknown>>()),
   registrarWebhookDaSessao: vi.fn(async () => null),
 }));
+vi.mock("@/lib/channels/meta/sem-autorizacao", () => ({
+  ultimaRecusaPorAutorizacao: vi.fn(async () => ({ detalhe: "meta_10: x", em: "2026-10-22T15:00:00Z" })),
+}));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => dubleDoBanco() }));
 
 import { GET, POST } from "@/app/api/v1/channels/official/route";
@@ -134,5 +137,14 @@ describe("GET — a tela lê a conta", () => {
     const r = await GET(new NextRequest("https://crm.test/api/v1/channels/official"));
     const corpo = (await r.json()) as { data: { contaDeMensagensId: string | null } };
     expect(corpo.data.contaDeMensagensId).toBe("1288526903016074");
+  });
+
+  it("devolve semAutorizacao da última saída", async () => {
+    await conectar();
+    Object.assign(h.linhas[0]!, { organization_id: "11111111-1111-4111-8111-111111111111", provider: "meta_cloud" });
+    const corpo = (await (await GET(new NextRequest("https://crm.test/api/v1/channels/official"))).json()) as {
+      data: { semAutorizacao: { detalhe: string } | null };
+    };
+    expect(corpo.data.semAutorizacao?.detalhe).toBe("meta_10: x");
   });
 });

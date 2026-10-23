@@ -36,6 +36,7 @@ import {
   COLUNAS_DO_DESFECHO_DO_WEBHOOK,
   registrarWebhookDaSessao,
 } from "@/lib/channels/meta/webhook-da-sessao";
+import { ultimaRecusaPorAutorizacao } from "@/lib/channels/meta/sem-autorizacao";
 import { reactivateChannelSession } from "@/lib/channels/reactivate";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { metadataInicialDoCanal } from "@/lib/ai/elegibilidade/pre-go-live";
@@ -162,6 +163,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     displayName: data?.display_name ?? null,
     phoneNumber: data?.phone_number ?? null,
     status: data?.status ?? null,
+    /** A última saída que chegou à Meta foi recusada por permissão (10/200)? */
+    semAutorizacao: data?.id
+      ? await ultimaRecusaPorAutorizacao(admin, { organizationId: orgId, channelSessionId: data.id })
+      : null,
     /** O que o operador precisa colar do NOSSO lado no dashboard da Meta. */
     webhook: data
       ? {
