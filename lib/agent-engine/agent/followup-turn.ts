@@ -612,14 +612,27 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
         // dead-man a mata com `action_turn_never_completed` (mesmo padrão do texto
         // fixo inline, lib/followup/enviar-texto-fixo.ts).
         if (err instanceof EnvioSemNovaTentativaError && payload.purpose === 'send_message' && deps.completeFollowupTurn) {
-          await deps.completeFollowupTurn(pool, {
-            jobId: job.id,
-            jobClaim: claimOfJob(job),
-            organizationId: tenantId,
-            enrollmentId: payload.followup_enrollment_id,
-            nodeId: payload.node_id!,
-            result: { kind: 'skipped', reason: err.motivo },
-          });
+          // Falhar ao fechar a inscrição não pode trocar o erro terminal por um
+          // comum (o job voltaria para retry): loga e segue relançando o ORIGINAL.
+          try {
+            await deps.completeFollowupTurn(pool, {
+              jobId: job.id,
+              jobClaim: claimOfJob(job),
+              organizationId: tenantId,
+              enrollmentId: payload.followup_enrollment_id,
+              nodeId: payload.node_id!,
+              result: { kind: 'skipped', reason: err.motivo },
+            });
+          } catch (fechar) {
+            withFields(deps.log, {
+              job_id: job.id,
+              tenant_id: tenantId,
+              enrollment_id: payload.followup_enrollment_id,
+            }).error('turno de fluxo: não fechou a inscrição após envio sem nova tentativa', {
+              motivo: err.motivo,
+              erro: fechar instanceof Error ? fechar.message : String(fechar),
+            });
+          }
         }
         throw err;
       }

@@ -88,6 +88,13 @@ describe("turno de follow-up do fluxo com envio sem nova tentativa", () => {
       expect.objectContaining({ enrollmentId: INSCRICAO, nodeId: "passo", result: { kind: "skipped", reason: motivo } }),
     );
   });
+  it("⭐ fechar a inscrição falha: loga e relança o erro terminal ORIGINAL", async () => {
+    desfecho.atual = { kind: "failed", idempotencyKey: "k", messageId: "m", erro: { codigo: "resposta_automatica_desligada", detalhe: "x" } };
+    const { d, completeFollowupTurn } = deps();
+    completeFollowupTurn.mockRejectedValueOnce(new Error("banco fora"));
+    await expect(criarHandler(d)(job(), pool, { workerId: "w1" })).rejects.toBeInstanceOf(Terminal);
+    expect((d as { log: { error: ReturnType<typeof vi.fn> } }).log.error).toHaveBeenCalled();
+  });
   it("falha comum: erro comum, inscrição não é fechada", async () => {
     desfecho.atual = { kind: "failed", idempotencyKey: "k", messageId: "m", erro: { codigo: "meta_error", detalhe: "meta_131047: x" } };
     const { d, completeFollowupTurn } = deps();
