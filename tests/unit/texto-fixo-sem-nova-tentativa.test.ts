@@ -5,7 +5,11 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { completeTurn, sendWithLedger } = vi.hoisted(() => ({ completeTurn: vi.fn(async () => undefined), sendWithLedger: vi.fn() }));
+const { completeTurn, sendWithLedger, gate } = vi.hoisted(() => ({
+  completeTurn: vi.fn(async () => undefined),
+  sendWithLedger: vi.fn(),
+  gate: vi.fn<() => Promise<unknown>>(async () => null),
+}));
 vi.mock("@/lib/agent-engine/edge/crm/send-ledger", () => ({ sendWithLedger, supabaseSendLedger: () => ({}) }));
 vi.mock("@/lib/followup/turn-bridge", () => ({ completeTurnForEnrollment: completeTurn }));
 vi.mock("@/lib/followup/engine", () => ({ createSupabaseAdminClient: () => ({}) }));
@@ -16,7 +20,7 @@ vi.mock("@/lib/atendimento/fronteira", () => ({
   parseServiceBoundary: () => ({ conversation_id: "conv" }),
   StaleServiceBoundaryError: class extends Error {},
 }));
-vi.mock("@/lib/ai/elegibilidade/consulta-supabase", () => ({ decidirElegibilidadeDaConversaViaSupabase: async () => null }));
+vi.mock("@/lib/ai/elegibilidade/consulta-supabase", () => ({ decidirElegibilidadeDaConversaViaSupabase: gate }));
 vi.mock("@/lib/followup/janela-de-disparo", () => ({ canalDaConversa: async () => null, decidirAdiamentoPorJanela: async () => null }));
 vi.mock("@/lib/agent-engine/pacing/ledger-supabase", () => ({ criarPacingDoCanal: async () => ({}) }));
 
@@ -46,7 +50,10 @@ function adminFalso(settle: (a: unknown) => void) {
   } as never;
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  gate.mockResolvedValue(null);
+});
 
 describe("enviarTextoFixoPendente diante de falha sem nova tentativa", () => {
   it.each([
@@ -68,5 +75,16 @@ describe("enviarTextoFixoPendente diante de falha sem nova tentativa", () => {
     await enviarTextoFixoPendente(adminFalso(settle));
     expect(completeTurn).not.toHaveBeenCalled();
     expect(settle).toHaveBeenCalledWith(expect.objectContaining({ p_done: false, p_error: "message_failed" }));
+  });
+  it("gate barra por resposta_automatica_desligada: inscrição recebe skipped com o motivo, sem envio", async () => {
+    gate.mockResolvedValue({ permite: false, motivo: "resposta_automatica_desligada" });
+    const settle = vi.fn<(a: unknown) => void>();
+    const enviados = await enviarTextoFixoPendente(adminFalso(settle));
+    expect(enviados).toBe(0);
+    expect(sendWithLedger).not.toHaveBeenCalled();
+    expect(completeTurn).toHaveBeenCalledWith(
+      expect.anything(), "org", "enr", "no", { kind: "skipped", reason: "resposta_automatica_desligada" }, undefined, "job", expect.anything(),
+    );
+    expect(settle).toHaveBeenCalledWith(expect.objectContaining({ p_done: true, p_error: "resposta_automatica_desligada" }));
   });
 });
