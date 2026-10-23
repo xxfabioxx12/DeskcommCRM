@@ -85,7 +85,12 @@ export function CanalOficialClient() {
 
   async function enviar(e: React.FormEvent) {
     e.preventDefault();
-    const r = await conectar.mutateAsync({ ...form, messaging_account_id: contaDoForm });
+    // Só manda a conta se o campo foi mexido: ausente = o servidor mantém a salva
+    // (com o GET falho, `contaDoForm` seria "" e apagaria a conta).
+    const { messaging_account_id, ...resto } = form;
+    const r = await conectar.mutateAsync(
+      messaging_account_id === null ? resto : { ...resto, messaging_account_id },
+    );
     toast.success(`${t("Conectado:")} ${r.data.displayName} ${r.data.phoneNumber ?? ""}`.trim());
     // O token some do formulário assim que grava — deixá-lo na tela seria mantê-lo
     // em memória do navegador sem motivo, e ele não volta em nenhum GET.
