@@ -32,7 +32,6 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { respondeSozinho } from "@/lib/channels/responde-sozinho";
 import {
-  CHANNEL_SESSION_REF_COLUMNS,
   DEFAULT_CHANNEL_PROVIDER,
   getAdapter,
   resolveSessionRef,
@@ -72,7 +71,8 @@ export async function sinalizarDigitando(
     .from("conversations")
     .select(
       `is_group, group_chat_id, contacts:contact_id(phone_number, wa_identity, wa_lid), ` +
-        `channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS}, status, responde_sozinho)`,
+        // `(*)`: pedir o interruptor pelo nome quebra a leitura num banco sem a 9005.
+        `channel_sessions:channel_session_id(*)`,
     )
     .eq("id", input.conversationId)
     .eq("organization_id", input.organizationId)

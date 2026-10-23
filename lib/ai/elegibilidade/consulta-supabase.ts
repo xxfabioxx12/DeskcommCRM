@@ -53,10 +53,12 @@ export async function decidirElegibilidadeDaConversaViaSupabase(
   admin: SupabaseClient,
   input: { organizationId: string; conversationId: string; agora: Date; ttlMs: number },
 ): Promise<DecisaoDeElegibilidade | null> {
+  // Embed `(*)` e não o nome do interruptor: num banco sem a 9005 o PostgREST recusaria
+  // a consulta inteira e derrubaria também os números por QR Code.
   const { data, error } = await admin
     .from("conversations")
     .select(
-      "bot_silenced_until, assignee_kind, organizations:organization_id(status), contacts:contact_id(force_human, ai_opt_out, ai_authorized_at, phone_number), channel_sessions:channel_session_id(metadata, provider, responde_sozinho)",
+      "bot_silenced_until, assignee_kind, organizations:organization_id(status), contacts:contact_id(force_human, ai_opt_out, ai_authorized_at, phone_number), channel_sessions:channel_session_id(*)",
     )
     .eq("organization_id", input.organizationId)
     .eq("id", input.conversationId)
