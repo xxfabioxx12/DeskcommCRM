@@ -6,8 +6,7 @@ import { parseServiceBoundary, StaleServiceBoundaryError } from "@/lib/atendimen
 import { assertServiceBoundarySupabase } from "@/lib/atendimento/origem";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { envioSemNovaTentativa } from "@/lib/agent-engine/agent/falha-do-envio";
-import { RESPOSTA_AUTOMATICA_DESLIGADA } from "@/lib/channels/responde-sozinho";
+import { envioSemNovaTentativa, motivoSemNovaTentativa } from "@/lib/agent-engine/agent/falha-do-envio";
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import { ApiError } from "@/lib/api/types";
 import { decidirElegibilidadeDaConversaViaSupabase } from "@/lib/ai/elegibilidade/consulta-supabase";
@@ -310,7 +309,7 @@ export async function enviarTextoFixoPendente(
       // Fecha o job SEM retry e avisa a inscrição com o motivo verdadeiro (senão o
       // dead-man a mataria com `action_turn_never_completed`).
       if(resultado.kind==="failed" && envioSemNovaTentativa(resultado.erro?.codigo ?? null,resultado.erro?.detalhe ?? null)){
-        const motivo=resultado.erro?.codigo===RESPOSTA_AUTOMATICA_DESLIGADA?RESPOSTA_AUTOMATICA_DESLIGADA:"conversa_com_outro_app";
+        const motivo=motivoSemNovaTentativa(resultado.erro?.codigo ?? null);
         logger.info("[followup] texto fixo não enviado — sem nova tentativa",{organization_id:job.organization_id,conversation_id:conversationId,motivo});
         await completeTurnForEnrollment(ponte,job.organization_id,enrollmentId,nodeId,{kind:"skipped",reason:motivo},undefined,job.id,jobClaim);
         await settle(job.organization_id,job.id,jobClaim.acquired_at,true,motivo);

@@ -51,7 +51,7 @@ import {
   type InboundTurnDeps,
   type LeadCheckpointRow,
 } from './inbound-turn';
-import { erroDoEnvioQueFalhou } from './falha-do-envio';
+import { EnvioSemNovaTentativaError, erroDoEnvioQueFalhou } from './falha-do-envio';
 import { isLeadInHandoff } from './human-handoff';
 import { aplicarPessoaNoComandoAoTurno } from '@/lib/followup/pessoa-no-comando-no-turno';
 import { mensagemDoPassoSchema, type MensagemDoPasso } from '@/lib/followup/graph-schema';
@@ -606,6 +606,20 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
         // dead-man mata a inscrição com `action_turn_never_completed`.
         if (err instanceof OrgNaoOperanteError && payload.purpose === 'send_message') {
           await pool.query('select public.fn_followup_turno_descartado($1, $2)', [tenantId, job.id]);
+        }
+        // 131070 / interruptor desligado: o job é cancelado sem retry, então a
+        // inscrição precisa ouvir `skipped` com o motivo verdadeiro — senão o
+        // dead-man a mata com `action_turn_never_completed` (mesmo padrão do texto
+        // fixo inline, lib/followup/enviar-texto-fixo.ts).
+        if (err instanceof EnvioSemNovaTentativaError && payload.purpose === 'send_message' && deps.completeFollowupTurn) {
+          await deps.completeFollowupTurn(pool, {
+            jobId: job.id,
+            jobClaim: claimOfJob(job),
+            organizationId: tenantId,
+            enrollmentId: payload.followup_enrollment_id,
+            nodeId: payload.node_id!,
+            result: { kind: 'skipped', reason: err.motivo },
+          });
         }
         throw err;
       }

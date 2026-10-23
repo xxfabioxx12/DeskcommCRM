@@ -19,9 +19,20 @@ import { RESPOSTA_AUTOMATICA_DESLIGADA } from '@/lib/channels/responde-sozinho';
 
 import type { ChannelSendResult } from '../channel-adapter';
 
+/** O motivo verdadeiro, na língua do `skipped` da inscrição (e do log). */
+export function motivoSemNovaTentativa(codigo: string | null): string {
+  return codigo === RESPOSTA_AUTOMATICA_DESLIGADA ? RESPOSTA_AUTOMATICA_DESLIGADA : 'conversa_com_outro_app';
+}
+
 export class EnvioSemNovaTentativaError extends Error {
   readonly terminal = true as const;
   override readonly name = 'envio_sem_nova_tentativa';
+  // Sem param-property (o worker roda em strip-types).
+  readonly motivo: string;
+  constructor(message: string, motivo: string) {
+    super(message);
+    this.motivo = motivo;
+  }
 }
 
 export function envioSemNovaTentativa(codigo: string | null, detalhe: string | null): boolean {
@@ -38,5 +49,7 @@ export function erroDoEnvioQueFalhou(falhas: readonly ChannelSendResult[], mensa
     falhas.every((o) => o.kind === 'failed' && envioSemNovaTentativa(o.erro?.codigo ?? null, o.erro?.detalhe ?? null));
   if (!semNovaTentativa) return new Error(mensagemDaNovaTentativa);
   const codigos = falhas.map((o) => (o.kind === 'failed' ? (o.erro?.codigo ?? '') : '')).join(',');
-  return new EnvioSemNovaTentativaError(`envio sem nova tentativa (${codigos}) — job encerrado sem retry`);
+  const primeira = falhas[0];
+  const motivo = motivoSemNovaTentativa(primeira?.kind === 'failed' ? (primeira.erro?.codigo ?? null) : null);
+  return new EnvioSemNovaTentativaError(`envio sem nova tentativa (${codigos}) — job encerrado sem retry`, motivo);
 }

@@ -4987,9 +4987,9 @@ async function executarTurnoDoAgente(
       if (runError !== null) throw runError;
       if (outcomes.some((o) => o.kind === 'failed')) {
         throw erroDoEnvioQueFalhou(
-        outcomes.filter((o) => o.kind === 'failed'),
-        'envio marcado como failed pelo CRM — run re-tentado pela fila',
-      );
+          outcomes.filter((o) => o.kind === 'failed'),
+          'envio marcado como failed pelo CRM — run re-tentado pela fila',
+        );
       }
       runLog.info('correção do turno mudo concluída', { messages_sent: outcomes.length });
     }

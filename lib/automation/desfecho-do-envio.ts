@@ -29,7 +29,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { logger } from "@/lib/logger";
 import type { ActionResultDetail } from "@/lib/automation/types";
-import { envioSemNovaTentativa } from "@/lib/agent-engine/agent/falha-do-envio";
+import { envioSemNovaTentativa, motivoSemNovaTentativa } from "@/lib/agent-engine/agent/falha-do-envio";
 import { fraseDaFalhaDeCanal } from "@/lib/channels/frases-de-falha";
 
 /** O subconjunto de `messages` de que a tradução precisa. */
@@ -120,6 +120,7 @@ export async function reportarEnvio(
     logger.info("[automation] envio não saiu por motivo esperado — sem alerta", {
       organization_id: ctx.organizationId,
       conversation_id: conversationId,
+      motivo: motivoSemNovaTentativa(mensagem.error_code ?? null),
       error_code: mensagem.error_code ?? null,
     });
   } else if (desfecho.status === "failed") {
