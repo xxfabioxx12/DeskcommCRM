@@ -69,8 +69,12 @@ const SEM_AUTORIZACAO = new Set(["10", "200"]);
 /** Vale para a lista inteira e para a 1ª falha: sem autorização ou chave que não serve mais. */
 const ACESSO_NEGADO = new Set(["10", "200", "190"]);
 
-/** `<transporte>_<código>: …` — o formato da falha síncrona. */
-const CODIGO_NO_TEXTO = /^[a-z][a-z0-9]*_(\d{1,6})\s*:\s*/i;
+/**
+ * `<transporte>_<código>: …` — o formato da falha síncrona. Código de 1–2 dígitos
+ * (10, 190…) só vem da Meta (direto ou via parceiro): nos outros prefixos é status
+ * HTTP de 3 dígitos, e um número curto ali não é código da plataforma.
+ */
+const CODIGO_NO_TEXTO = /^(?:(?:meta|datafy)_(\d{1,2})|[a-z][a-z0-9]*_(\d{3,6}))\s*:\s*/i;
 
 /** O código numérico da plataforma, venha ele do webhook ou do texto do envio. */
 export function codigoDaPlataforma(
@@ -80,7 +84,7 @@ export function codigoDaPlataforma(
   const bruto = (codigo ?? "").trim();
   if (/^\d{1,6}$/.test(bruto)) return bruto;
   const m = CODIGO_NO_TEXTO.exec((detalhe ?? "").trim());
-  return m?.[1] ?? null;
+  return m?.[1] ?? m?.[2] ?? null;
 }
 
 export interface FalhaExplicada {

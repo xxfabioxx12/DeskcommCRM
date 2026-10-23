@@ -110,6 +110,13 @@ describe("tradução dos códigos novos", () => {
     expect(codigoDaPlataforma("valores_faltando", "Faltam valores do template para esta pessoa: x")).toBeNull();
   });
 
+  it("⭐ 1–2 dígitos só valem nos prefixos meta_ e datafy_ (QR Code não muda)", () => {
+    expect(codigoDaPlataforma("datafy_error", "datafy_10: x")).toBe("10");
+    expect(codigoDaPlataforma("send_failed", "waha_10: x")).toBeNull();
+    expect(codigoDaPlataforma("send_failed", "zernio_42: x")).toBeNull();
+    expect(codigoDaPlataforma("send_failed", "waha_500: x")).toBe("500");
+  });
+
   it("toda frase do tradutor segue com espanhol", () => {
     for (const frase of FRASES_PARA_OPERADOR) expect(DICIONARIO[frase]?.es, frase).toBeTruthy();
   });
