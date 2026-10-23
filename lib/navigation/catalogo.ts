@@ -177,6 +177,14 @@ export const NAV_CATALOG = [
     contador: "fila",
   },
   {
+    href: "/app/painel",
+    label: "Painel do setor",
+    description: "Quem espera resposta, quem está em atendimento e quem foi atendido hoje, por número.",
+    icon: "ListChecks",
+    group: "atendimento",
+    sidebar: true,
+  },
+  {
     href: "/app/radar",
     label: "Radar",
     description: "Quem esfriou e ainda está aberto — o que corre risco de morrer sem resposta.",

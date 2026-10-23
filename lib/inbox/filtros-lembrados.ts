@@ -22,7 +22,7 @@ export interface FiltrosLembrados {
 
 type Armazenamento = Pick<Storage, "getItem" | "setItem">;
 
-export const CHAVE_DOS_FILTROS = "deskcomm:inbox:filtros:v1";
+export const CHAVE_DOS_FILTROS = "inbox:filtros-lembrados:v1";
 
 function lerTudo(storage: Armazenamento): Record<string, FiltrosLembrados> {
   try {
