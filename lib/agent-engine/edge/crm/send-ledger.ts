@@ -11,6 +11,8 @@ export type SendOutcome =
       kind: "already_sent" | "queued" | "failed";
       idempotencyKey: string;
       crmMessageId: string | null;
+      /** Só em `failed`: o `error_code`/`error_message` da mensagem (decide se repete). */
+      erro?: { codigo: string | null; detalhe: string | null };
     }
   | { kind: "blocked"; idempotencyKey: string };
 type Intent = { tenantId: string; leadId: string | null; jobId: string; seq: number; body: string };
@@ -31,13 +33,14 @@ interface LedgerStore {
     error: string | null,
   ): Promise<void>;
 }
+type MensagemDoEnvio = { id: string; status: string; error_code?: string | null; error_message?: string | null };
 /** Inline e daemon compartilham identidade (job,seq), reconciliação e mensagem.
  * Página/worker perdido não cria uma segunda intenção. queued é reavaliado pelo
  * handler com o MESMO id; somente sent/delivered/read confirmam entrega. */
 export async function sendWithLedger(
   store: LedgerStore,
   input: Intent,
-  send: (key: string, messageId: string) => Promise<{ id: string; status: string }>,
+  send: (key: string, messageId: string) => Promise<MensagemDoEnvio>,
 ): Promise<SendOutcome> {
   const hash = createHash("sha256").update(input.body).digest("hex");
   let key: string;
@@ -60,7 +63,7 @@ export async function sendWithLedger(
     else replay = true;
   }
   const existing = replay ? await store.message(input.tenantId, key) : null;
-  let message = existing;
+  let message: MensagemDoEnvio | null = existing;
   if (!message || message.status === "queued") {
     try {
       message = await send(key, existing?.id ?? key);
@@ -89,9 +92,16 @@ export async function sendWithLedger(
     message.id,
     status === "failed" ? "handler marcou a mensagem como failed" : null,
   );
-  return status === "accepted"
-    ? { kind: "sent", idempotencyKey: key, crmMessageId: message.id }
-    : { kind: status, idempotencyKey: key, crmMessageId: message.id };
+  if (status === "accepted") return { kind: "sent", idempotencyKey: key, crmMessageId: message.id };
+  if (status === "failed") {
+    return {
+      kind: "failed",
+      idempotencyKey: key,
+      crmMessageId: message.id,
+      erro: { codigo: message.error_code ?? null, detalhe: message.error_message ?? null },
+    };
+  }
+  return { kind: status, idempotencyKey: key, crmMessageId: message.id };
 }
 /** Reconcilia um recibo já existente sem criar intenção nem chamar o canal.
  * Consumidores determinísticos consultam isto antes dos gates de um NOVO envio. */

@@ -29,6 +29,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { logger } from "@/lib/logger";
 import type { ActionResultDetail } from "@/lib/automation/types";
+import { envioSemNovaTentativa } from "@/lib/agent-engine/agent/falha-do-envio";
 import { fraseDaFalhaDeCanal } from "@/lib/channels/frases-de-falha";
 
 /** O subconjunto de `messages` de que a tradução precisa. */
@@ -112,7 +113,16 @@ export async function reportarEnvio(
   const desfecho = desfechoDoEnvio(tipo, mensagem);
   desfecho.detail = { ...(desfecho.detail ?? {}), conversation_id: conversationId };
 
-  if (desfecho.status === "failed") {
+  // Barrado pelo interruptor ou 131070 (conversa com o ManyChat): esperado, não é
+  // incidente. O run já fica `failed` com a frase; a Central não ganha alerta.
+  const esperado = envioSemNovaTentativa(mensagem.error_code ?? null, mensagem.error_message ?? null);
+  if (desfecho.status === "failed" && esperado) {
+    logger.info("[automation] envio não saiu por motivo esperado — sem alerta", {
+      organization_id: ctx.organizationId,
+      conversation_id: conversationId,
+      error_code: mensagem.error_code ?? null,
+    });
+  } else if (desfecho.status === "failed") {
     await avisarEnvioQueFalhou(ctx.admin, {
       organizationId: ctx.organizationId,
       ruleName: ctx.ruleName,

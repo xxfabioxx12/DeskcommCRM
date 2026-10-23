@@ -51,6 +51,7 @@ import {
   type InboundTurnDeps,
   type LeadCheckpointRow,
 } from './inbound-turn';
+import { erroDoEnvioQueFalhou } from './falha-do-envio';
 import { isLeadInHandoff } from './human-handoff';
 import { aplicarPessoaNoComandoAoTurno } from '@/lib/followup/pessoa-no-comando-no-turno';
 import { mensagemDoPassoSchema, type MensagemDoPasso } from '@/lib/followup/graph-schema';
@@ -1285,7 +1286,7 @@ async function sendFixedOutbound(
       });
       throw new JobSettledError('envio fixo vetado pelo sink (is_blocked) — job cancelado em definitivo');
     case 'failed':
-      throw new Error('envio fixo: CRM marcou o envio como failed — run re-tentado pela fila');
+      throw erroDoEnvioQueFalhou([outcome], 'envio fixo: CRM marcou o envio como failed — run re-tentado pela fila');
     case 'unavailable':
       throw new Error(`envio fixo: canal indisponível (${outcome.reason}) — run re-tentado pela fila`);
   }

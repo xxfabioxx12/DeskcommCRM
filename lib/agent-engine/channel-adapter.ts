@@ -68,7 +68,7 @@ export type ChannelSendResult =
   /** veto PERMANENTE de negócio (opt-out/is_blocked, irrevogável — regra dura nº 2) */
   | { kind: 'blocked'; idempotencyKey: string }
   /** o canal registrou a mensagem como falha (retry consome tentativa) */
-  | { kind: 'failed'; idempotencyKey: string; messageId: string | null }
+  | { kind: 'failed'; idempotencyKey: string; messageId: string | null; erro?: { codigo: string | null; detalhe: string | null } }
   /** transporte/tool indisponível (transiente) — o job re-tenta com a MESMA key */
   | { kind: 'unavailable'; reason: string };
 

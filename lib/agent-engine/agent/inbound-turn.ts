@@ -36,6 +36,7 @@ import { currentExecutionBoundary, guardServiceEffect } from '@/lib/atendimento/
  */
 import type pg from 'pg';
 import { z } from 'zod';
+import { erroDoEnvioQueFalhou } from './falha-do-envio';
 import { auxModelArgs, type AuxModelArgs } from './aux-model-args';
 import type { ChannelAdapter, ChannelSendResult } from '../channel-adapter';
 
@@ -4919,7 +4920,10 @@ async function executarTurnoDoAgente(
     if (outcomes.some((o) => o.kind === 'failed')) {
       // ponytail: retry re-roda o run inteiro (LLM incluso); seq N re-encontra a
       // linha do ledger — 'accepted' pula, 'failed' rotaciona a key (F2-06).
-      throw new Error('envio marcado como failed pelo CRM — run re-tentado pela fila');
+      throw erroDoEnvioQueFalhou(
+        outcomes.filter((o) => o.kind === 'failed'),
+        'envio marcado como failed pelo CRM — run re-tentado pela fila',
+      );
     }
 
     // TURNO MUDO: o turno de resposta terminou sem mensagem ao cliente e sem
@@ -4982,7 +4986,10 @@ async function executarTurnoDoAgente(
       mensagensDoTurno = [...mensagensDoTurno, pedidoDeCorrecao, ...correcao.result.responseMessages];
       if (runError !== null) throw runError;
       if (outcomes.some((o) => o.kind === 'failed')) {
-        throw new Error('envio marcado como failed pelo CRM — run re-tentado pela fila');
+        throw erroDoEnvioQueFalhou(
+        outcomes.filter((o) => o.kind === 'failed'),
+        'envio marcado como failed pelo CRM — run re-tentado pela fila',
+      );
       }
       runLog.info('correção do turno mudo concluída', { messages_sent: outcomes.length });
     }
