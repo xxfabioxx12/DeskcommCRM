@@ -2,7 +2,7 @@
  * A TELA DIZ A VERDADE (caminho 1, item 4): a última saída que CHEGOU à Meta foi
  * recusada por permissão → "Recebe, mas não tem autorização para mandar".
  */
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ultimaRecusaPorAutorizacao } from "@/lib/channels/meta/sem-autorizacao";
 
@@ -18,7 +18,12 @@ function admin(linhas: unknown[] | null, erro: { message: string } | null = null
     in: () => q,
     gte: (c: string, v: unknown) => (filtros.push([c, v]), q),
     order: () => q,
-    limit: () => Promise.resolve({ data: linhas, error: erro }),
+    // O `gte` vale como no banco: a linha mais velha que o corte não volta.
+    limit: () => {
+      const corte = filtros.find(([c]) => c === "created_at")?.[1] as string | undefined;
+      const dentro = linhas && corte ? (linhas as Array<{ created_at: string }>).filter((l) => Date.parse(l.created_at) >= Date.parse(corte)) : linhas;
+      return Promise.resolve({ data: dentro, error: erro });
+    },
   };
   return { db: { from: () => q } as never, filtros };
 }
@@ -29,6 +34,13 @@ const saida = (status: string, error_message: string | null, created_at: string,
   error_message,
   created_at,
 });
+
+const AGORA = new Date("2026-10-22T18:00:00Z");
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(AGORA);
+});
+afterEach(() => vi.useRealTimers());
 
 describe("ultimaRecusaPorAutorizacao", () => {
   it("⭐ a última que chegou à Meta foi recusada por 10: devolve o erro inteiro e quando", async () => {
@@ -41,7 +53,12 @@ describe("ultimaRecusaPorAutorizacao", () => {
     expect(filtros).toContainEqual(["channel_session_id", CANAL]);
     expect(filtros).toContainEqual(["direction", "outbound"]);
     // F7: só os últimos 7 dias — recusa antiga não vira selo eterno.
-    expect(filtros.some(([c]) => c === "created_at")).toBe(true);
+    expect(filtros).toContainEqual(["created_at", "2026-10-15T18:00:00.000Z"]);
+  });
+
+  it("⭐ recusa vencida (mais de 7 dias): não marca o selo", async () => {
+    const { db } = admin([saida("failed", RECUSA_10, "2026-10-15T17:59:59Z")]);
+    expect(await ultimaRecusaPorAutorizacao(db, { organizationId: ORG, channelSessionId: CANAL })).toBeNull();
   });
 
   it("pula as barradas antes da Meta (modo de teste, interruptor)", async () => {
