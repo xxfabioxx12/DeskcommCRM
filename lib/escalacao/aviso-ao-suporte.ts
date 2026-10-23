@@ -55,6 +55,7 @@ import { createHash } from "node:crypto";
 
 import { canalDesativado } from "@/lib/channels/desativado";
 import { phoneLookupVariants } from "@/lib/channels/phone-variants";
+import { RESPOSTA_AUTOMATICA_DESLIGADA } from "@/lib/channels/responde-sozinho";
 import type { EventRow } from "@/lib/event-log/dispatcher";
 import type { Idioma } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
@@ -522,6 +523,19 @@ export async function aplicaAvisoDeCaso(
     externalId = resposta.externalId;
   } catch (err) {
     const causa = err instanceof Error ? err.message : String(err);
+    // Interruptor "responder automaticamente" desligado no canal dos avisos: é
+    // escolha do operador, não falha. Re-tentar não muda nada, e a Central diria
+    // "não chegou" por algo que ninguém precisa consertar. Código do conjunto
+    // fechado do banco (CHECK da 0292); o motivo vai no detalhe.
+    if (causa.startsWith(RESPOSTA_AUTOMATICA_DESLIGADA)) {
+      await deps.db.atualizaEntrega(orgId, entrega.id, {
+        status: "cancelado",
+        tentativas,
+        erro_codigo: "falha_no_envio",
+        erro_detalhe: causa.slice(0, 300),
+      });
+      return skipped(`cancelado:${RESPOSTA_AUTOMATICA_DESLIGADA}`);
+    }
     if (tentativas >= TETO_DE_TENTATIVAS_DE_ENVIO) {
       return await condena(deps, orgId, caso, entrega, "falha_no_envio", causa, agora);
     }

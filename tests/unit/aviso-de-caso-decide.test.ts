@@ -355,6 +355,21 @@ describe("aviso ao suporte — o que impede o envio", () => {
     expect(estado.central).toHaveLength(1);
   });
 
+  it("⭐ interruptor desligado no canal dos avisos: cancela, sem nova tentativa e sem item na Central", async () => {
+    const { deps, estado } = monta();
+    deps.transporte = {
+      ...deps.transporte,
+      async envia() {
+        throw new Error("resposta_automatica_desligada: Resposta automática desligada neste número.");
+      },
+    };
+    const r = await aplicaAvisoDeCaso(deps, evento());
+    expect(r.status).toBe("skipped");
+    expect(estado.patches.at(-1)).toMatchObject({ status: "cancelado" });
+    expect(String(estado.patches.at(-1)?.erro_detalhe)).toContain("resposta_automatica_desligada");
+    expect(estado.central).toHaveLength(0);
+  });
+
   it("canal fora do ar é RETRY, não falha — ele volta sozinho", async () => {
     const { deps, estado } = monta({
       canal: { id: CANAL, status: "STOPPED", archived_at: null, aceitaMensagemLivre: true },
