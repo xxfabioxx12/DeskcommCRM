@@ -12523,6 +12523,11 @@ create policy channel_sessions_tenant_write on public.channel_sessions
     or public.fn_is_platform_admin_full()
   );
 
+-- A escrita não é mais criada aqui: a migration 0752 (#3202) a divide em
+-- insert/update/delete no fim do arquivo. Recriá-la aqui fazia a regra `for all`
+-- voltar a valer entre esta linha e o apêndice da 0752 (numa re-aplicação pelo
+-- update.sh, somada às novas).
+
 -- ---- agentes de IA ----
 drop policy if exists tenant_isolation_ai_agents_all on public.ai_agents;
 
@@ -59386,7 +59391,7 @@ notify pgrst, 'reload schema';
 revoke all on public.external_db_connections_safe from anon;
 grant select on public.external_db_connections_safe to authenticated;
 
--- ---- #3202: channel_sessions — a regra de escrita deixa de valer para a leitura (migration 0707) ----
+-- ---- #3202: channel_sessions — a regra de escrita deixa de valer para a leitura (migration 0752) ----
 -- `for all` também vale para SELECT: fn_role_at_least (~4 ms) rodava por linha em todo embed de channel_sessions.
 drop policy if exists channel_sessions_tenant_write on public.channel_sessions;
 drop policy if exists channel_sessions_tenant_insert on public.channel_sessions;
