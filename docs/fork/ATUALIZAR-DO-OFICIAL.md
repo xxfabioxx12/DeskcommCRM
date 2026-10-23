@@ -127,6 +127,22 @@ oficial:**
    status from channel_sessions where provider = 'meta_cloud' and archived_at is null;`):
    todas ficam com a resposta automática DESLIGADA até alguém ligar na tela.
 
+   **Troque as imagens `web`, `agent-worker` e `scheduler` sempre JUNTAS.** Só a imagem
+   nova conhece o interruptor "Responder automaticamente por este número". Uma `web`
+   nova com um `agent-worker` velho envia pelo caminho antigo, embutido no worker, que
+   não olha o interruptor.
+
+   **Desfazer (voltar às imagens antigas):**
+   - **Antes da Fase 3** (a Meta ainda não liberou a permissão de envio): voltar as
+     imagens é inofensivo. A imagem velha não lê nem grava as colunas da 9005, e todo
+     envio automático pelo oficial é recusado pela própria Meta.
+   - **Depois da Fase 3, NÃO é inofensivo.** A imagem velha ignora o interruptor: IA,
+     regras, follow-ups e "digitando…" voltariam a sair pelo número oficial junto com o
+     ManyChat. Antes de voltar as imagens, desligue a IA no canal oficial pelo caminho
+     que a imagem velha respeita: desative o canal (`metadata.disabled`) ou tire o
+     acesso da IA em **Conexões › Configurar acesso da IA**. Só então troque as imagens
+     (de novo, todas juntas).
+
 ## Se der errado
 
 - Teste de baseline reprovando por causa de um bloco do fork: confira se ele aparece
