@@ -50,6 +50,7 @@ vi.mock("@/lib/auth/server", () => ({
   orgAtivaSemPortao: vi.fn(),
 }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
+vi.mock("@/lib/channels/meta/sem-autorizacao", () => ({ ultimaRecusaPorAutorizacao: vi.fn(async () => null) }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/grupos/sincronizar-filtro", () => ({ sincronizarRecebimentoDeGrupos: vi.fn(async () => "sincronizado") }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
