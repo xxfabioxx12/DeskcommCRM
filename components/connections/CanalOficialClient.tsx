@@ -16,6 +16,7 @@ import {
 import { copyToClipboard } from "@/lib/clipboard";
 import { useT } from "@/hooks/i18n/useT";
 import { ChannelAiAccess } from "./ChannelAiAccess";
+import { RespostaAutomatica } from "./RespostaAutomatica";
 import { ParaIntegrar } from "./ParaIntegrar";
 
 /** Campo somente-leitura com botão de copiar — o que o operador cola na Meta. */
@@ -120,6 +121,7 @@ export function CanalOficialClient() {
         </Card>
       ) : null}
       {estado?.channel_session_id && <ChannelAiAccess channelId={estado.channel_session_id} />}
+      {estado?.channel_session_id && <RespostaAutomatica channelId={estado.channel_session_id} />}
 
       {estado?.webhook ? (
         <Card className="flex flex-col gap-3 p-4">

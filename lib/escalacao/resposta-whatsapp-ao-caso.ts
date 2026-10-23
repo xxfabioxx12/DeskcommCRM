@@ -201,7 +201,7 @@ async function enviarConfirmacao(
     ]);
     const telefone = config.destino;
     if (!telefone) return;
-    const transporte = await criarTransporteDoAviso(admin as never);
+    const transporte = await criarTransporteDoAviso(admin as never, { automatico: true });
     const agora = new Date();
     const canal = {
       id: entrada.channelSessionId,

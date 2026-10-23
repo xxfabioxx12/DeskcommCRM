@@ -16772,6 +16772,24 @@ export const DICIONARIO: Traducoes = {
   "Pausada na primeira falha: a Meta recusou o envio por falta de autorização neste número ou porque a chave de acesso venceu. Confira na Meta antes de retomar.": {
     es: "Pausada en la primera falla: Meta rechazó el envío por falta de autorización en este número o porque la clave de acceso venció. Revisa en Meta antes de reanudar.",
   },
+  // Caminho 1 do número oficial — resposta automática.
+  "Responder automaticamente por este número": { es: "Responder automáticamente por este número" },
+  "Ligado: a IA, as regras, os follow-ups e os avisos podem mandar mensagens por este número.": {
+    es: "Encendido: la IA, las reglas, los seguimientos y los avisos pueden enviar mensajes por este número.",
+  },
+  "Desligado: a IA, as regras, os follow-ups e os avisos não mandam nada sozinhos por este número. Só sai o que alguém digita no Inbox.": {
+    es: "Apagado: la IA, las reglas, los seguimientos y los avisos no envían nada solos por este número. Solo sale lo que alguien escribe en el Inbox.",
+  },
+  "Campanhas continuam saindo quando você manda começar.": { es: "Las campañas siguen saliendo cuando las inicias." },
+  "Resposta automática ligada.": { es: "Respuesta automática encendida." },
+  "Resposta automática desligada.": { es: "Respuesta automática apagada." },
+  "Não foi possível carregar a resposta automática.": { es: "No se pudo cargar la respuesta automática." },
+  "Não foi possível salvar a resposta automática.": { es: "No se pudo guardar la respuesta automática." },
+  "Canal inválido.": { es: "Canal no válido." },
+  "Informe ligado como verdadeiro ou falso.": { es: "Indica encendido como verdadero o falso." },
+  "Resposta automática desligada neste número: só sai o que alguém digita no Inbox.": {
+    es: "Respuesta automática apagada en este número: solo sale lo que alguien escribe en el Inbox.",
+  },
 };
 
 /**

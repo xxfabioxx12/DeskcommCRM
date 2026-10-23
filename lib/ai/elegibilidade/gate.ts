@@ -68,6 +68,12 @@ export interface EstadoDeElegibilidade {
    * Veto que vale SEMPRE (mesmo com o gate aberto): desativado nunca atende.
    */
   canalDesativado: boolean;
+  /**
+   * "Responder automaticamente por este número" (fork 9005). `false` veta o que
+   * sairia SOZINHO. Opcional: quem monta sem ler o interruptor não muda nada — a
+   * saída (`sendMessageHandler`) barra de qualquer forma.
+   */
+  respondeSozinho?: boolean;
   /** `channel_sessions.metadata.ai_gate` já normalizado. */
   modo: AiGateMode;
   /** `contacts.force_human` — a trava irrevogável pelo agente (regra dura 2). */
@@ -98,6 +104,7 @@ export interface EstadoDeElegibilidade {
 export type MotivoDeElegibilidade =
   | "org_nao_operante"
   | "canal_desativado"
+  | "resposta_automatica_desligada"
   | "gate_aberto"
   | "force_human"
   | "ai_opt_out"
@@ -133,6 +140,18 @@ function silenciadoAgora(until: Date | number | null, agora: Date): boolean {
  * autorização positiva.
  */
 export function decidirElegibilidade(e: EstadoDeElegibilidade): DecisaoDeElegibilidade {
+  const d = decidirSemOInterruptor(e);
+  // O interruptor (fork 9005) vem POR ÚLTIMO de propósito (ruling F2): o motivo
+  // `resposta_automatica_desligada` quer dizer "só ele barra". O assistido usa
+  // isso para seguir rascunhando — o rascunho não sai sozinho, quem manda é a
+  // pessoa que aprova —, e os demais vetos (dono humano, force_human…) seguem
+  // calando o rascunho como antes.
+  return d.permite && e.respondeSozinho === false
+    ? { permite: false, motivo: "resposta_automatica_desligada", bloqueioPorAllowlist: false }
+    : d;
+}
+
+function decidirSemOInterruptor(e: EstadoDeElegibilidade): DecisaoDeElegibilidade {
   if (!ehOperante(e.orgStatus)) {
     return { permite: false, motivo: "org_nao_operante", bloqueioPorAllowlist: false };
   }
@@ -219,6 +238,7 @@ export function montarEstadoDeElegibilidade(raw: {
   orgStatus: string | null | undefined;
   /** `channel_sessions.metadata.disabled` (cru); só `true` desliga. */
   canalDesativado?: unknown;
+  respondeSozinho?: boolean;
   aiGateMode?: unknown;
   aiTestPhoneNumbers?: unknown;
   contactPhoneNumber?: string | null;
@@ -242,6 +262,7 @@ export function montarEstadoDeElegibilidade(raw: {
   return {
     orgStatus: raw.orgStatus ?? null,
     canalDesativado: raw.canalDesativado === true,
+    respondeSozinho: raw.respondeSozinho !== false,
     modo,
     forceHuman: raw.forceHuman === true,
     aiOptOut: raw.aiOptOut === true,

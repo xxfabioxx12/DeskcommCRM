@@ -7,6 +7,12 @@ import {
   prepareApprovedReplySupabase,
 } from "@/lib/ai/replies/delivery";
 import { assertMeetingDeliverySupabase } from "@/lib/agenda/meet-delivery";
+import {
+  FRASE_DA_RESPOSTA_AUTOMATICA_DESLIGADA,
+  RESPOSTA_AUTOMATICA_DESLIGADA,
+  canalRespondeSozinho,
+  ehEnvioDeCampanha,
+} from "@/lib/channels/responde-sozinho";
 import { AgendaDeferredError } from "@/lib/agenda/protecao-followup";
 import { assertAgendaEffectSupabase, guardAgendaEffect } from "@/lib/agenda/efeito";
 import { mesmaFronteira, StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
@@ -915,6 +921,24 @@ export async function sendMessageHandler(
     waLid: c.contacts?.wa_lid,
   });
 
+  // "Responder automaticamente por este número" (fork 9005): desligado, só sai o
+  // que uma PESSOA manda. IA, regra, follow-up, aviso, prospecção, integração por
+  // token e MCP param aqui; campanha não (é ato de quem mandou começar), nem a
+  // resposta APROVADA por uma pessoa (`approvedReply`, já conferida no topo —
+  // ruling F2). Este é o ponto único que separa pessoa de automático, e o
+  // interruptor é relido AQUI, na hora do envio: desligar no meio de um turno
+  // vale para a mensagem seguinte. Consulta própria e tolerante: banco sem a 9005
+  // cai no padrão do provedor, nunca derruba o envio.
+  const automaticoBarrado =
+    ctx.actor.type !== "user" &&
+    !ctx.approvedReply &&
+    !ehEnvioDeCampanha(ctx.actor) &&
+    !(await canalRespondeSozinho(supabase, {
+      organizationId: ctx.organization_id,
+      channelSessionId: c.channel_session_id,
+      provider: c.channel_sessions?.provider ?? null,
+    }));
+
   // Releitura no sink: o operador pode ter fechado o canal enquanto o modelo
   // gerava a resposta. Envio humano não passa por esta restrição da IA.
   const acessoAtual = ctx.actor.type === "user" ? null : await decidirPreGoLiveDoCanalViaSupabase(supabase, {
@@ -922,7 +946,23 @@ export async function sendMessageHandler(
     channelSessionId: c.channel_session_id,
     contactPhoneNumber: c.contacts?.phone_number ?? "",
   }).catch(() => ({ permite: false, motivo: "pre_go_live_indisponivel" }));
-  if (acessoAtual && !acessoAtual.permite) {
+  if (automaticoBarrado) {
+    // `failed` terminal, como o modo de teste: por este número nada sai sozinho
+    // enquanto o interruptor estiver desligado.
+    const { data: updated, error } = await supabase
+      .from("messages")
+      .update({
+        status: "failed",
+        error_code: RESPOSTA_AUTOMATICA_DESLIGADA,
+        error_message: FRASE_DA_RESPOSTA_AUTOMATICA_DESLIGADA,
+      })
+      .eq("organization_id", ctx.organization_id)
+      .eq("id", message.id)
+      .select(MSG_COLS)
+      .single();
+    if (error || !updated) throw new ApiError(500, "internal_error", undefined, ctx.requestId, "Não foi possível registrar o bloqueio do envio.");
+    message = updated as unknown as Message;
+  } else if (acessoAtual && !acessoAtual.permite) {
     const { data: updated, error } = await supabase.from("messages").update({
       status: "failed",
       error_code: acessoAtual.motivo === "pre_go_live_indisponivel" ? "pre_go_live_indisponivel" : "pre_go_live",

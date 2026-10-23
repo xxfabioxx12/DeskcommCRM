@@ -1182,6 +1182,7 @@ export const AUDIT_ACTIONS = [
   "sales_event.retry_run",
   // Fork, Parte 2b: alguém clicou "Tentar de novo" numa venda que falhou.
   "sales_event.retry_requested",
+  "channel.auto_reply_updated",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

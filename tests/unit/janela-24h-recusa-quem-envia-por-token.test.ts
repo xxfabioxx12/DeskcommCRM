@@ -74,6 +74,8 @@ function conversa(opts: { provider?: string; lastInboundAt?: string | null } = {
       waha_session_name: opts.provider === "waha" || !opts.provider ? "default" : null,
       status: "WORKING",
       archived_at: null,
+      // interruptor ligado: este teste não é sobre ele (fork 9005)
+      responde_sozinho: true,
     },
   };
 }

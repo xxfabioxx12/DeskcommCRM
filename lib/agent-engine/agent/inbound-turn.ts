@@ -5663,6 +5663,10 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
       });
       return;
     }
+    // Só o interruptor "Responder automaticamente" (fork 9005) barra: o assistido
+    // segue rascunhando (ruling F2 — o rascunho não sai sozinho); o automático
+    // para logo depois de escolher o agente.
+    let soOInterruptorBarra = false;
     try {
       const elegib = await decidirElegibilidadeDaConversa(pool, {
         organizationId: job.organization_id,
@@ -5670,7 +5674,8 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
         agora: deps.clock?.() ?? new Date(),
         ttlMs: deps.knobs.allowlistTtlMs ?? ALLOWLIST_TTL_MS_PADRAO,
       });
-      if (elegib !== null && !elegib.permite) {
+      soOInterruptorBarra = elegib?.motivo === 'resposta_automatica_desligada';
+      if (elegib !== null && !elegib.permite && !soOInterruptorBarra) {
         deps.log.info('turno pulado — conversa não elegível para IA', {
           job_id: job.id,
           conversation_id: payload.conversation_id,
@@ -5696,6 +5701,14 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
       inbound: true,
     }, { log: deps.log, jev: deps.jev });
     const operationAgent = resolvedAgent.config;
+    if (soOInterruptorBarra && operationAgent?.operationMode !== 'assisted') {
+      deps.log.info('turno pulado — conversa não elegível para IA', {
+        job_id: job.id,
+        conversation_id: payload.conversation_id,
+        motivo: 'resposta_automatica_desligada',
+      });
+      return;
+    }
     if (operationAgent?.operationMode === 'assisted') {
       // As travas do assistido (handoff e elegibilidade) já rodaram acima, antes
       // de escolher o agente.

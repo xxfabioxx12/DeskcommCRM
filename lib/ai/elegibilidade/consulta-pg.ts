@@ -8,6 +8,7 @@
  */
 import type pg from "pg";
 
+import { respondeSozinho } from "@/lib/channels/responde-sozinho";
 import {
   decidirElegibilidade,
   montarEstadoDeElegibilidade,
@@ -16,6 +17,8 @@ import {
 
 interface LinhaDeElegibilidade {
   channel_metadata: Record<string, unknown> | null;
+  channel_provider: string | null;
+  responde_sozinho: boolean | null;
   force_human: boolean;
   ai_opt_out: boolean;
   assignee_kind: string | null;
@@ -36,6 +39,9 @@ export async function decidirElegibilidadeDaConversa(
   const { rows } = await pool.query<LinhaDeElegibilidade>(
     `select
        cs.metadata                  as channel_metadata,
+       cs.provider                  as channel_provider,
+       -- to_jsonb: tolera banco sem a 9005 (a chave só não vem).
+       (to_jsonb(cs) -> 'responde_sozinho') as responde_sozinho,
        ct.force_human               as force_human,
        ct.ai_opt_out                as ai_opt_out,
        cv.assignee_kind             as assignee_kind,
@@ -59,6 +65,7 @@ export async function decidirElegibilidadeDaConversa(
     montarEstadoDeElegibilidade({
       orgStatus: r.org_status,
       canalDesativado: r.channel_metadata?.disabled,
+      respondeSozinho: respondeSozinho(r.channel_provider, r.responde_sozinho),
       aiGate: r.channel_metadata?.ai_gate,
       aiGateMode: r.channel_metadata?.ai_gate_mode,
       aiTestPhoneNumbers: r.channel_metadata?.ai_test_phone_numbers,

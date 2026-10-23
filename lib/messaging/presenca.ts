@@ -30,6 +30,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { respondeSozinho } from "@/lib/channels/responde-sozinho";
 import {
   CHANNEL_SESSION_REF_COLUMNS,
   DEFAULT_CHANNEL_PROVIDER,
@@ -49,7 +50,7 @@ interface ConversaParaPresenca {
     wa_identity: string | null;
     wa_lid: string | null;
   } | null;
-  channel_sessions: (ChannelSessionRef & { status: string }) | null;
+  channel_sessions: (ChannelSessionRef & { status: string; responde_sozinho?: boolean | null }) | null;
 }
 
 export interface SinalizarDigitandoInput {
@@ -71,7 +72,7 @@ export async function sinalizarDigitando(
     .from("conversations")
     .select(
       `is_group, group_chat_id, contacts:contact_id(phone_number, wa_identity, wa_lid), ` +
-        `channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS}, status)`,
+        `channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS}, status, responde_sozinho)`,
     )
     .eq("id", input.conversationId)
     .eq("organization_id", input.organizationId)
@@ -84,6 +85,9 @@ export async function sinalizarDigitando(
   // Sessão fora do ar: o canal recusaria de qualquer forma, e perguntar custa
   // uma ida à rede dentro do caminho de resposta ao cliente.
   if (!sessao || sessao.status !== SESSAO_SAUDAVEL) return;
+  // O "digitando…" é sempre do turno automático — e no oficial ele também marca a
+  // mensagem como LIDA no aparelho do cliente. Interruptor desligado: nada (fork 9005).
+  if (!respondeSozinho(sessao.provider, sessao.responde_sozinho)) return;
 
   const adapter = getAdapter(sessao.provider ?? DEFAULT_CHANNEL_PROVIDER);
   // Testa a presença do método — nunca pergunta QUAL provider é (invariante 1

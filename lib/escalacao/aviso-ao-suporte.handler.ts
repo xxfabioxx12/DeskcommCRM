@@ -48,7 +48,7 @@ export const avisoDeCasoAoSuporteHandler: EventHandler = {
           // O transporte é resolvido em `lib/channels/` — este arquivo nunca
           // conhece provedor. O import é tardio para o topo não arrastar os
           // adapters para dentro do bundle de quem só registra o handler.
-          transporte: await criarTransporteDoAviso(admin),
+          transporte: await criarTransporteDoAviso(admin, { automatico: true }),
           pacing: await criarPacingDoCanal(admin),
           clock: () => new Date(),
           urlPublica: env.NEXT_PUBLIC_APP_URL,
@@ -101,6 +101,13 @@ export const avisoDeCasoAoSuporteHandler: EventHandler = {
  */
 export async function criarTransporteDoAviso(
   admin: ReturnType<typeof createAdminClient>,
+  /**
+   * `automatico`: o envio é do sistema (aviso de caso, de proposta, resposta ao
+   * suporte) e respeita o interruptor "Responder automaticamente por este número"
+   * (fork 9005), relido a cada envio. O botão "testar aviso" é de uma pessoa e
+   * não passa a opção.
+   */
+  opcoes: { automatico?: boolean } = {},
 ): Promise<TransporteDoAviso> {
   const { getAdapter, resolveSessionRef, CHANNEL_SESSION_REF_COLUMNS } = await import(
     "@/lib/channels"
@@ -158,6 +165,13 @@ export async function criarTransporteDoAviso(
     async envia(organizationId, canal, to, body) {
       const ref = await refDoCanal(organizationId, canal.id);
       if (!ref) throw new Error("canal_sem_referencia_de_transporte");
+      if (opcoes.automatico) {
+        const { canalRespondeSozinho, FRASE_DA_RESPOSTA_AUTOMATICA_DESLIGADA, RESPOSTA_AUTOMATICA_DESLIGADA } =
+          await import("@/lib/channels/responde-sozinho");
+        if (!(await canalRespondeSozinho(admin, { organizationId, channelSessionId: canal.id, provider: ref.provider }))) {
+          throw new Error(`${RESPOSTA_AUTOMATICA_DESLIGADA}: ${FRASE_DA_RESPOSTA_AUTOMATICA_DESLIGADA}`);
+        }
+      }
       // TRANSPORTE DIRETO, fora do `sendMessageHandler`: o aviso NÃO nasce como
       // linha em `messages`. Ele não é uma mensagem do atendimento — não tem
       // conversa, não tem contato, não entra na timeline de ninguém — e gravá-lo

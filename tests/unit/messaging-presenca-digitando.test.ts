@@ -27,7 +27,7 @@ interface LinhaDeConversa {
   group_chat_id: string | null;
   contacts: { phone_number: string | null; wa_identity: string | null; wa_lid: string | null } | null;
   channel_sessions:
-    | { provider: string; waha_session_name: string | null; meta_phone_number_id: string | null; zernio_account_id: string | null; status: string }
+    | { provider: string; waha_session_name: string | null; meta_phone_number_id: string | null; zernio_account_id: string | null; status: string; responde_sozinho?: boolean | null }
     | null;
 }
 
@@ -164,6 +164,8 @@ describe("sinalizarDigitando — a mensagem que se está respondendo", () => {
     meta_phone_number_id: "123456",
     zernio_account_id: null,
     status: "WORKING",
+    // interruptor ligado: este teste não é sobre ele (fork 9005)
+    responde_sozinho: true,
   };
 
   it("o canal oficial recebe o external_id da última mensagem do cliente", async () => {

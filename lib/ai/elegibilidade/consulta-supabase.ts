@@ -23,6 +23,8 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { respondeSozinho } from "@/lib/channels/responde-sozinho";
+
 import {
   decidirElegibilidade,
   montarEstadoDeElegibilidade,
@@ -39,7 +41,7 @@ interface ConversaEmbed {
     ai_authorized_at: string | null;
     phone_number: string | null;
   } | null;
-  channel_sessions: { metadata: Record<string, unknown> | null } | null;
+  channel_sessions: { metadata: Record<string, unknown> | null; provider?: string | null; responde_sozinho?: boolean | null } | null;
   organizations: { status: string | null } | null;
 }
 
@@ -54,7 +56,7 @@ export async function decidirElegibilidadeDaConversaViaSupabase(
   const { data, error } = await admin
     .from("conversations")
     .select(
-      "bot_silenced_until, assignee_kind, organizations:organization_id(status), contacts:contact_id(force_human, ai_opt_out, ai_authorized_at, phone_number), channel_sessions:channel_session_id(metadata)",
+      "bot_silenced_until, assignee_kind, organizations:organization_id(status), contacts:contact_id(force_human, ai_opt_out, ai_authorized_at, phone_number), channel_sessions:channel_session_id(metadata, provider, responde_sozinho)",
     )
     .eq("organization_id", input.organizationId)
     .eq("id", input.conversationId)
@@ -70,6 +72,7 @@ export async function decidirElegibilidadeDaConversaViaSupabase(
     montarEstadoDeElegibilidade({
       orgStatus: row.organizations?.status ?? null,
       canalDesativado: row.channel_sessions?.metadata?.["disabled"] ?? null,
+      respondeSozinho: respondeSozinho(row.channel_sessions?.provider ?? null, row.channel_sessions?.responde_sozinho ?? null),
       aiGate: row.channel_sessions?.metadata?.["ai_gate"] ?? null,
       aiGateMode: row.channel_sessions?.metadata?.["ai_gate_mode"] ?? null,
       aiTestPhoneNumbers: row.channel_sessions?.metadata?.["ai_test_phone_numbers"] ?? null,

@@ -130,4 +130,26 @@ describe('o assistido não rascunha em conversa que já tem dono', () => {
     await createInboundTurnHandler(deps)(job as never, p as never, { workerId: 'worker' });
     expect(mocks.draft).toHaveBeenCalledOnce();
   });
+
+  // F2 (fork 9005): o interruptor "Responder automaticamente por este número"
+  // barra só o que sai SOZINHO. O rascunho não sai — quem manda é a pessoa que
+  // aprova —, então o assistido continua rascunhando com ele desligado.
+  it('interruptor desligado → o rascunho do assistido SAI', async () => {
+    mocks.elegibilidade.mockResolvedValue({ permite: false, motivo: 'resposta_automatica_desligada' });
+    const p = pool();
+    await createInboundTurnHandler(deps)(job as never, p as never, { workerId: 'worker' });
+    expect(mocks.draft).toHaveBeenCalledOnce();
+  });
+
+  it('interruptor desligado com agente AUTOMÁTICO → turno pulado, sem rascunho', async () => {
+    mocks.elegibilidade.mockResolvedValue({ permite: false, motivo: 'resposta_automatica_desligada' });
+    const p = pool();
+    const automatico = { ...assistido, operationMode: 'automatic' } as PublishedAgentConfig;
+    mocks.byId.mockResolvedValue(automatico);
+    mocks.bySession.mockResolvedValue(automatico);
+    mocks.conversationAgent.mockResolvedValue(automatico);
+    await createInboundTurnHandler(deps)(job as never, p as never, { workerId: 'worker' });
+    expect(mocks.draft).not.toHaveBeenCalled();
+    expect(mocks.elegibilidade, 'pula antes de runAgentTurn').toHaveBeenCalledOnce();
+  });
 });

@@ -68,7 +68,7 @@ export const avisoDePropostaNoWhatsAppHandler: EventHandler = {
             registraJidDoAviso: (orgId, jid) => doCaso.registraJidDoAviso(orgId, jid),
             marcaDaOrganizacao: (orgId) => doCaso.marcaDaOrganizacao(orgId),
           },
-          transporte: await criarTransporteDoAviso(admin),
+          transporte: await criarTransporteDoAviso(admin, { automatico: true }),
           pacing: await criarPacingDoCanal(admin),
           clock: () => new Date(),
           urlPublica: env.NEXT_PUBLIC_APP_URL,

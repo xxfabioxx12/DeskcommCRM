@@ -233,6 +233,7 @@ export function criarDubleDoHandler(
               zernio_account_id: sessao.zernio_account_id ?? null,
               status: sessao.status ?? null,
               archived_at: sessao.archived_at ?? null,
+              responde_sozinho: sessao.responde_sozinho ?? null,
             },
             error: null,
           }),
