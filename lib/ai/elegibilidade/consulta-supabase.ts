@@ -40,9 +40,11 @@ interface ConversaEmbed {
     ai_opt_out: boolean | null;
     ai_authorized_at: string | null;
     phone_number: string | null;
+    /** `contacts.tags` — a régua de contato interno (#2353). */
+    tags: string[] | null;
   } | null;
   channel_sessions: { metadata: Record<string, unknown> | null; provider?: string | null; responde_sozinho?: boolean | null } | null;
-  organizations: { status: string | null } | null;
+  organizations: { status: string | null; settings?: unknown } | null;
 }
 
 /**
@@ -50,7 +52,7 @@ interface ConversaEmbed {
  * banco — o chamador (caminho secundário) trata como "não responder".
  */
 export async function decidirElegibilidadeDaConversaViaSupabase(
-  admin: SupabaseClient,
+  admin: Pick<SupabaseClient, "from">,
   input: { organizationId: string; conversationId: string; agora: Date; ttlMs: number },
 ): Promise<DecisaoDeElegibilidade | null> {
   // Embed `(*)` e não o nome do interruptor: num banco sem a 9005 o PostgREST recusaria
@@ -58,7 +60,7 @@ export async function decidirElegibilidadeDaConversaViaSupabase(
   const { data, error } = await admin
     .from("conversations")
     .select(
-      "bot_silenced_until, assignee_kind, organizations:organization_id(status), contacts:contact_id(force_human, ai_opt_out, ai_authorized_at, phone_number), channel_sessions:channel_session_id(*)",
+      "bot_silenced_until, assignee_kind, organizations:organization_id(status, settings), contacts:contact_id(force_human, ai_opt_out, ai_authorized_at, phone_number, tags), channel_sessions:channel_session_id(*)",
     )
     .eq("organization_id", input.organizationId)
     .eq("id", input.conversationId)
@@ -80,6 +82,8 @@ export async function decidirElegibilidadeDaConversaViaSupabase(
       aiTestPhoneNumbers: row.channel_sessions?.metadata?.["ai_test_phone_numbers"] ?? null,
       contactPhoneNumber: row.contacts?.phone_number ?? null,
       forceHuman: row.contacts?.force_human ?? false,
+      contactTags: row.contacts?.tags ?? null,
+      orgSettings: row.organizations?.settings,
       aiOptOut: row.contacts?.ai_opt_out ?? false,
       assigneeKind: row.assignee_kind,
       botSilencedUntil: row.bot_silenced_until,

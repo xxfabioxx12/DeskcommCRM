@@ -105,7 +105,7 @@ describe("migration 9003 — entrada das vendas", () => {
     expect(ler(BLOCO)).toContain(esperado);
   });
 
-  it("⭐ a 0670 ainda é a última do oficial que define emit_event e fn_service_event_contact", () => {
+  it("⭐ a 0743 é a última do oficial que define emit_event e fn_service_event_contact, e a 9006 junta as duas", () => {
     // Se o oficial redefinir as duas depois, a 9003 (que entra depois dele no
     // baseline) desfaria a mudança deles. Vermelho aqui = refazer a 9003 a partir
     // da definição nova (docs/fork/ATUALIZAR-DO-OFICIAL.md).
@@ -114,8 +114,14 @@ describe("migration 9003 — entrada das vendas", () => {
       readdirSync(pasta)
         .filter((f) => f.endsWith(".sql") && !/_9\d{3}_/.test(f) && re.test(readFileSync(join(pasta, f), "utf8")))
         .sort();
-    expect(quemDefine(/function public\.emit_event\(/i).at(-1)).toBe(DA_0670);
-    expect(quemDefine(/function public\.fn_service_event_contact\(/i).at(-1)).toBe(DA_0670);
+    // Na 1.89 a 0743 redefiniu as duas; a 9006 (fork) vem depois e mantém o
+    // tipo dela ('lead.date_field_due') e o nosso ('sale.received').
+    const DA_0743 = "20261023150000_0743_gatilho_de_data_do_funil_alcanca_a_origem.sql";
+    expect(quemDefine(/function public\.emit_event\(/i).at(-1)).toBe(DA_0743);
+    expect(quemDefine(/function public\.fn_service_event_contact\(/i).at(-1)).toBe(DA_0743);
+    const bloco9006 = ler(join("supabase", "fork", "9006.sql"));
+    expect(bloco9006.match(/'sale\.received'/g)).toHaveLength(2);
+    expect(bloco9006).toContain("'lead.date_field_due'");
   });
 
   it("⭐ as funções novas: security definer, search_path fixo, sem EXECUTE para anon/authenticated", () => {

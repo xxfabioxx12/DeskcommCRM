@@ -122,6 +122,7 @@ export const O_QUE_FICA = {
   conversation_drafts: "o texto escrito PARA ele por outro sistema",
   contact_field_proposals: "o dado dele que a IA ouviu na conversa e propôs gravar, e o que se decidiu",
   sales_events: "as compras dele que chegaram das plataformas de venda: produto, pedido, evento e quando (sem o corpo cru da plataforma)",
+  lead_attachments: "os documentos anexados aos negócios dele: nome, tipo, tamanho e data (o arquivo não vai no relatório)",
   lead_notes: "a memória que a IA guarda sobre ele (LGPD art. 20)",
   ai_agent_runs:
     "o que a IA fez na conversa com ele e quando: o nome de cada ação, sem o que ela digitou (#1965, revisto no doc 110, 1A)",

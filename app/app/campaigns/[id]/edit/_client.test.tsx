@@ -60,6 +60,8 @@ vi.mock("@/hooks/campanhas/useCampanhas", () => ({
   useCampanha: () => ({ data: carga.campanha ?? CAMPANHA, isLoading: false }),
   useEditarCampanha: () => salvar,
   usePreviaDaAudiencia: () => previa,
+  // Número por QR: o formulário mostra o campo de texto, que é o caso deste teste.
+  useModelosDaCampanha: () => ({ data: { modo: "text", modelos: [] }, isLoading: false }),
 }));
 const canais = vi.hoisted(() => ({ data: [] as Array<Record<string, unknown>> }));
 vi.mock("@/hooks/channels/useChannelSessions", () => ({

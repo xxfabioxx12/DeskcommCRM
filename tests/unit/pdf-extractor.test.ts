@@ -227,35 +227,38 @@ describe("extractPdfText — estratégia `processo-a-parte`", () => {
   it.each([
     ["pela CLI do tsx", ["node_modules/tsx/dist/cli.mjs", "--eval"]],
     ["por node --import tsx", ["--import", "tsx", "--eval"]],
-  ])("sob o tsx DE VERDADE (%s), o pai extrai sem carregar o pdfjs no próprio heap", (_forma, lancador) => {
-    // Este é o único caso que exercita o caminho que o worker de produção
-    // percorre: o `tsx` real, não um `execArgv` de mentira. Sob ele, a extração
-    // em processo custava 117 MB de heap (medido na imagem 1.27.1); com o filho,
-    // o que fica no pai é o custo de um `spawn`. O limite de 60 MB tem margem
-    // dos dois lados.
-    const script = `
-      const fs = require("node:fs");
-      import("@/lib/ai/rag/extractors/pdf").then(async (m) => {
-        const texto = await m.extractPdfText(fs.readFileSync("tests/fixtures/sample-multipagina.pdf"));
-        process.stdout.write(JSON.stringify({
-          estrategia: m.estrategiaPadrao(),
-          texto,
-          heapMb: Math.round(process.memoryUsage().heapUsed / 1048576),
-        }));
-      }).catch((e) => { console.error(String(e && e.stack || e)); process.exit(1); });
-    `;
-    const saida = execFileSync(process.execPath, [...lancador, script], {
-      cwd: raiz,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-      timeout: 60_000,
-      env: { ...process.env, NODE_NO_WARNINGS: "1" },
-    });
-    const r = JSON.parse(saida) as { estrategia: string; texto: string; heapMb: number };
-    expect(r.estrategia).toBe("processo-a-parte");
-    expect(r.texto).toBe(
-      "Pagina um linha um\nPagina um linha dois\n\nPagina dois linha um\nPagina dois linha dois",
-    );
-    expect(r.heapMb, `heap do pai sob tsx: ${r.heapMb} MB`).toBeLessThan(60);
-  });
+  ])(
+    "sob o tsx DE VERDADE (%s), o pai extrai sem carregar o pdfjs no próprio heap",
+    (_forma, lancador) => {
+      // Este é o único caso que exercita o caminho que o worker de produção
+      // percorre: o `tsx` real, não um `execArgv` de mentira. Sob ele, a extração
+      // em processo custava 117 MB de heap (medido na imagem 1.27.1); com o filho,
+      // o que fica no pai é o custo de um `spawn`. O limite de 60 MB tem margem
+      // dos dois lados.
+      const script = `
+        const fs = require("node:fs");
+        import("@/lib/ai/rag/extractors/pdf").then(async (m) => {
+          const texto = await m.extractPdfText(fs.readFileSync("tests/fixtures/sample-multipagina.pdf"));
+          process.stdout.write(JSON.stringify({
+            estrategia: m.estrategiaPadrao(),
+            texto,
+            heapMb: Math.round(process.memoryUsage().heapUsed / 1048576),
+          }));
+        }).catch((e) => { console.error(String(e && e.stack || e)); process.exit(1); });
+      `;
+      const saida = execFileSync(process.execPath, [...lancador, script], {
+        cwd: raiz,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: 60_000,
+        env: { ...process.env, NODE_NO_WARNINGS: "1" },
+      });
+      const r = JSON.parse(saida) as { estrategia: string; texto: string; heapMb: number };
+      expect(r.estrategia).toBe("processo-a-parte");
+      expect(r.texto).toBe(
+        "Pagina um linha um\nPagina um linha dois\n\nPagina dois linha um\nPagina dois linha dois",
+      );
+      expect(r.heapMb, `heap do pai sob tsx: ${r.heapMb} MB`).toBeLessThan(60);
+    },
+  );
 });

@@ -72,7 +72,20 @@ const TEXTO = "Olá, Luciano! Somos da RODAÊ bikes elétricas. Teria interesse?
  * Dublê do único pedaço do banco que o desfecho depende: `messages` e a linha de
  * `bot_silenced_until` da conversa (é ela que mostra "Automático pausado").
  */
-function banco(opcoes: { carimbarDepoisDaLeitura?: number } = {}) {
+/**
+ * O que o carimbo grava na NOSSA linha. `sent` é o `marcarEnviada`; `delivered`
+ * (ack 2) e `read` (ack 3) são o `handleAck` chegando logo depois do carimbo —
+ * ele acha a linha pela coluna `external_id`, que passa a existir no instante
+ * do carimbo. A marca 2 (o id igual) tem de valer nos três.
+ */
+type Carimbo = { status: "sent" | "delivered" | "read"; ack: number };
+const CARIMBO_DO_ENVIO: Carimbo = { status: "sent", ack: 0 };
+const CARIMBOS_COM_ACK: Carimbo[] = [
+  { status: "delivered", ack: 2 },
+  { status: "read", ack: 3 },
+];
+
+function banco(opcoes: { carimbarDepoisDaLeitura?: number; carimbo?: Carimbo } = {}) {
   /** O envio do CRM: gravado ANTES de falar com o canal, sem id (`status='queued'`). */
   const envio: Linha = {
     id: "envio-ia",
@@ -96,6 +109,7 @@ function banco(opcoes: { carimbarDepoisDaLeitura?: number } = {}) {
   let envioConfirmou = false;
   const leituras: Leitura[] = [];
   const carimbarDepoisDaLeitura = opcoes.carimbarDepoisDaLeitura ?? null;
+  const carimbo = opcoes.carimbo ?? CARIMBO_DO_ENVIO;
 
   /**
    * O envio confirma: `limparEco` (apaga a linha que o webhook acabou de gravar,
@@ -107,7 +121,7 @@ function banco(opcoes: { carimbarDepoisDaLeitura?: number } = {}) {
     for (let i = messages.length - 1; i >= 0; i--) {
       if (messages[i]?.sent_via === "external_device") messages.splice(i, 1);
     }
-    Object.assign(envio, { external_id: BARE, status: "sent", ack: 0 });
+    Object.assign(envio, { external_id: BARE, status: carimbo.status, ack: carimbo.ack });
   };
 
   const casa = (m: Linha, filtros: Filtro[]) =>
@@ -316,6 +330,23 @@ describe("eco carimbado no meio da ingestão (#3165)", () => {
       expect(b.messages.map((m) => m.id), "a mensagem ficou duas vezes na conversa").toEqual(["envio-ia"]);
       expect(b.messages[0]!.external_id).toBe(BARE);
     });
+  }
+
+  for (const carimbo of CARIMBOS_COM_ACK) {
+    for (const k of POSICOES) {
+      it(`⭐ carimbo + ack \`${carimbo.status}\` depois da ${k}ª leitura: o id igual basta, o status não restringe`, async () => {
+        const b = banco({ carimbarDepoisDaLeitura: k, carimbo });
+
+        await despachar(b, eco(TEXTO), `req-${carimbo.status}-k${k}`);
+
+        expect(b.envio.status, "o carimbo não gravou o status pedido — o caso não mede o ack").toBe(carimbo.status);
+        expect(
+          b.conversa.bot_silenced_until,
+          `ack \`${carimbo.status}\` na ${k}ª leitura: a linha carimbada saiu do recorte de status e a IA pausou (#3165)`,
+        ).toBeNull();
+        expect(b.messages.map((m) => m.id), "a mensagem ficou duas vezes na conversa").toEqual(["envio-ia"]);
+      });
+    }
   }
 });
 
