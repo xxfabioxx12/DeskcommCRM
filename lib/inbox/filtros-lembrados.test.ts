@@ -5,7 +5,7 @@ function armazenamento(inicial: Record<string, string> = {}) {
   const dados = { ...inicial };
   return {
     dados,
-    getItem: (k: string) => (k in dados ? dados[k] : null),
+    getItem: (k: string): string | null => dados[k] ?? null,
     setItem: (k: string, v: string) => {
       dados[k] = v;
     },
