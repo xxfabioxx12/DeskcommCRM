@@ -63637,13 +63637,11 @@ begin
 
   -- Modelo sem nome ou sem idioma não sai: a plataforma identifica a definição
   -- pelos DOIS (o mesmo nome em `es` e `es_AR` são modelos diferentes).
+  -- (fork) campaigns_modelo_exige_nome_e_idioma NÃO é criada: a campanha com
+  -- template que vale é a do fork (9001), que grava template_name/_language e
+  -- não provider_template_*; as campanhas 'template' que já existem recusariam
+  -- este CHECK e o ADD falharia. A 9007 também a retira de quem já a tem.
   alter table public.campaigns drop constraint if exists campaigns_modelo_exige_nome_e_idioma;
-  alter table public.campaigns
-    add constraint campaigns_modelo_exige_nome_e_idioma check (
-      message_mode <> 'template'
-      or (coalesce(btrim(provider_template_name), '') <> ''
-          and coalesce(btrim(provider_template_language), '') <> '')
-    );
 end
 $campanha_modelo$;
 
