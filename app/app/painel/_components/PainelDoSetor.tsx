@@ -7,6 +7,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { channelLabel, useChannelSessions } from "@/hooks/channels/useChannelSessions";
 import { apiClient } from "@/lib/api/client";
+import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { gravarFiltrosLembrados, lerFiltrosLembrados } from "@/lib/inbox/filtros-lembrados";
 import { haQuantoTempo, montarColunas, type ConversaDoPainel } from "@/lib/inbox/painel-do-setor";
 import { Robot } from "@/lib/ui/icons";
@@ -26,7 +27,7 @@ function armazenamento(): Storage | null {
 }
 
 function nomeDoCliente(c: Conversa): string {
-  return c.contacts?.display_name || c.contacts?.name || c.contacts?.phone_number || "Cliente";
+  return rotuloDoContato(c.contacts);
 }
 
 function Coluna({

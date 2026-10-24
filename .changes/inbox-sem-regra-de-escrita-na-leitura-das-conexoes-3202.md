@@ -1,5 +1,5 @@
 ---
-impacto: correcao
+impacto: nada_mudou
 secao: corrigido
 titulo: A lista de conversas da Inbox deixa de travar quando a organização tem muitas conversas
 ---
