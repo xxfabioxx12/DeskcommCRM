@@ -60,7 +60,14 @@ export interface CaseListItem extends ChamadoDaLista {
 export interface CaseListData {
   cases: CaseListItem[];
   open_count: number;
+  /** Fork NODZ: abertos esperando a equipe (`awaiting_human`). */
+  waiting_count?: number;
+  /** Fork NODZ: abertos já respondidos, esperando o cliente (`awaiting_lead`). */
+  answered_count?: number;
 }
+
+/** Fork NODZ — as três abas da tela de Casos. `open` continua para o contador do menu. */
+export type CaseListFilter = "open" | "resolved" | "waiting" | "answered";
 
 export interface CaseEvent {
   id: string;
@@ -90,7 +97,7 @@ export interface CaseDetailData {
 }
 
 /** Lista de casos humanos (spec 15 §9). Polling 60s — casos nascem no worker. */
-export function useCases(status: "open" | "resolved" = "open") {
+export function useCases(status: CaseListFilter = "open") {
   return useQuery({
     queryKey: ["ai-cases", status],
     refetchInterval: 60_000,
@@ -114,6 +121,24 @@ export function useReplyCase() {
     mutationFn: ({ id, action, body }: { id: string; action: CaseHumanAction; body: string }) =>
       apiClient
         .post<{ data: { status: CaseStatus; delivery?: "service_stale" } }>(`/api/v1/ai/cases/${id}/reply`, { action, body })
+        .then((r) => r.data),
+    onSettled: (_data, _err, vars) => {
+      qc.invalidateQueries({ queryKey: ["ai-case", vars.id] });
+      qc.invalidateQueries({ queryKey: ["ai-cases"] });
+    },
+  });
+}
+
+/**
+ * Fork NODZ — "Concluído": tira o caso da fila SEM mandar mensagem ao cliente.
+ * A nota é opcional.
+ */
+export function useConcluirCaso() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, note }: { id: string; note?: string }) =>
+      apiClient
+        .post<{ data: { status: CaseStatus } }>(`/api/v1/ai/cases/${id}/concluir`, note ? { note } : {})
         .then((r) => r.data),
     onSettled: (_data, _err, vars) => {
       qc.invalidateQueries({ queryKey: ["ai-case", vars.id] });

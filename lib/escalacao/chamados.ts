@@ -15,6 +15,19 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const ESTADOS_ABERTOS = ["awaiting_human", "awaiting_lead"] as const;
 export const ESTADOS_FECHADOS = ["resolved", "escalated", "cancelled"] as const;
+/** Fork NODZ: as duas metades de "abertos", uma aba cada na tela de Casos. */
+export const ESTADOS_AGUARDANDO = ["awaiting_human"] as const;
+export const ESTADOS_RESPONDIDOS = ["awaiting_lead"] as const;
+
+/** Qual recorte da fila: o agente usa abertos/fechados; a tela, as três abas. */
+export type EstadoDaLista = "abertos" | "fechados" | "aguardando" | "respondidos";
+
+const ESTADOS_DA_LISTA: Record<EstadoDaLista, readonly string[]> = {
+  abertos: ESTADOS_ABERTOS,
+  fechados: ESTADOS_FECHADOS,
+  aguardando: ESTADOS_AGUARDANDO,
+  respondidos: ESTADOS_RESPONDIDOS,
+};
 
 /**
  * Quais conversas quem está lendo pode ver — parâmetro OBRIGATÓRIO, sem default.
@@ -204,14 +217,16 @@ export interface ResultadoDaLista {
   chamados: ChamadoDaLista[];
   /** Quantos continuam abertos — independe do filtro pedido. */
   abertos: number;
+  /** Dos abertos, quantos esperam a equipe (`awaiting_human`) — independe do filtro. */
+  aguardando: number;
 }
 
 export async function listarChamados(
   supabase: SupabaseClient,
   organizationId: string,
-  opts: { estado: "abertos" | "fechados"; limite?: number; visiveisPara: ConversasVisiveis },
+  opts: { estado: EstadoDaLista; limite?: number; visiveisPara: ConversasVisiveis },
 ): Promise<ResultadoDaLista> {
-  const estados = opts.estado === "abertos" ? ESTADOS_ABERTOS : ESTADOS_FECHADOS;
+  const estados = ESTADOS_DA_LISTA[opts.estado];
   const conversas = recorte(opts.visiveisPara);
 
   const filtrada = supabase
@@ -239,9 +254,19 @@ export async function listarChamados(
     ? contagem
     : contagem.in("conversation_id", conversas));
 
+  const contagemAguardando = supabase
+    .from("agent_cases")
+    .select("id", { count: "exact", head: true })
+    .eq("organization_id", organizationId)
+    .in("status", ESTADOS_AGUARDANDO as unknown as string[]);
+  const { count: aguardando } = await (conversas === null
+    ? contagemAguardando
+    : contagemAguardando.in("conversation_id", conversas));
+
   return {
     chamados: ((data ?? []) as unknown as LinhaComContato[]).map(achatarContato),
     abertos: count ?? 0,
+    aguardando: aguardando ?? 0,
   };
 }
 

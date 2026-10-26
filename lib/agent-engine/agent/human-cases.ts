@@ -464,6 +464,49 @@ export async function registrarNotaDoAgente(
   return transitioned(rowCount);
 }
 
+/** O que fica escrito na linha do tempo quando a pessoa conclui sem nota. */
+export const NOTA_PADRAO_CONCLUIDO_SEM_MENSAGEM =
+  "Marcado como concluído. Nenhuma mensagem foi enviada ao cliente.";
+
+/**
+ * Fork NODZ — awaiting_human|awaiting_lead -> resolved pela mão da PESSOA,
+ * SEM falar com o cliente.
+ *
+ * É o "já vi, já foi respondido": a equipe leu o atendimento, o assunto está
+ * resolvido (muitas vezes respondido direto no Inbox) e o caso só precisa sair
+ * da fila. Diferente de `resolveCaseFromHuman`, NÃO há `case_reply_turn`: quem
+ * chama não enfileira nada, então a IA não manda mensagem nenhuma.
+ *
+ * Aceita os DOIS estados abertos: um caso em "Respondidas" (esperando o
+ * cliente) também precisa poder ser fechado quando o cliente sumiu ou resolveu
+ * por outro caminho. O gatilho `trg_agent_case_closed` emite `ai.case_closed`
+ * na transição, e é ele que cancela follow-ups e avisos pendentes do caso.
+ */
+export async function concluirCasoSemMensagem(
+  db: Queryable,
+  tenantId: string,
+  caseId: string,
+  actorUserId: string,
+  nota: string | null,
+): Promise<boolean> {
+  const { rowCount } = await db.query(
+    `with updated as (
+       update agent_cases
+          set status = 'resolved', closed_at = now(), updated_at = now()
+        where organization_id = $1 and id = $2 and status = any($5::text[])
+        returning id
+     )
+     insert into agent_case_events (organization_id, case_id, kind, actor_kind, actor_user_id, human_action, body, metadata)
+     select $1::uuid, id, 'human_replied', 'human', $3::uuid, 'resolved', $4::text,
+            jsonb_build_object('source', 'concluido_sem_mensagem') from updated
+     union all
+     select $1::uuid, id, 'resolved', 'human', $3::uuid, null::text, null::text,
+            jsonb_build_object('source', 'concluido_sem_mensagem') from updated`,
+    [tenantId, caseId, actorUserId, nota?.trim() || NOTA_PADRAO_CONCLUIDO_SEM_MENSAGEM, OPEN_STATUSES],
+  );
+  return transitioned(rowCount);
+}
+
 /** Como um chamado pode terminar pela mão do agente. */
 export type DesfechoDoChamado = 'resolvido' | 'sem_necessidade';
 

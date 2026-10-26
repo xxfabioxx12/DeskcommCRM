@@ -28,8 +28,17 @@ import { traduzir } from "@/lib/i18n/dicionario";
 export const dynamic = "force-dynamic";
 
 const querySchema = z.object({
-  status: z.enum(["open", "resolved"]).default("open"),
+  // Fork NODZ: `waiting` (esperando a equipe) e `answered` (respondido,
+  // esperando o cliente) são as duas metades de `open` — uma aba cada.
+  status: z.enum(["open", "resolved", "waiting", "answered"]).default("open"),
 });
+
+const ESTADO_DO_STATUS = {
+  open: "abertos",
+  resolved: "fechados",
+  waiting: "aguardando",
+  answered: "respondidos",
+} as const;
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
@@ -54,11 +63,14 @@ export async function GET(req: NextRequest): Promise<Response> {
     // tudo porque é `fn_can_view_conversation` que decide — eles são org-wide
     // por desenho, e não há regra de papel repetida aqui para desatualizar.
     const visiveisPara = await conversasVisiveisDosCasos(await createClient(), org.orgId);
-    const { chamados, abertos } = await listarChamados(createAdminClient(), org.orgId, {
-      estado: parsed.data.status === "open" ? "abertos" : "fechados",
+    const { chamados, abertos, aguardando } = await listarChamados(createAdminClient(), org.orgId, {
+      estado: ESTADO_DO_STATUS[parsed.data.status],
       visiveisPara,
     });
-    return ok({ cases: chamados, open_count: abertos }, { requestId });
+    return ok(
+      { cases: chamados, open_count: abertos, waiting_count: aguardando, answered_count: abertos - aguardando },
+      { requestId },
+    );
   } catch (erro) {
     /**
      * O `catch` era NU, e a fila de casos ficava sem causa em lugar nenhum.

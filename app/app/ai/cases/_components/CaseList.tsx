@@ -9,16 +9,30 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useCases, type CaseListItem } from "@/hooks/ai/useCases";
+import { useCases, type CaseListFilter, type CaseListItem } from "@/hooks/ai/useCases";
 import { STATUS_BADGE_VARIANT, STATUS_LABEL, tipoDeCasoLabel } from "@/lib/ai/case-copy";
 import { CaretLeft, Robot } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import { useT } from "@/hooks/i18n/useT";
 import { CaseDetail } from "./CaseDetail";
 
+/**
+ * Fork NODZ — três abas e nada mais:
+ *   · "Em contato": a pessoa escreveu e o caso espera a equipe (`awaiting_human`);
+ *   · "Respondidos": já houve resposta e o caso espera o cliente (`awaiting_lead`);
+ *   · "Fechados": concluídos, cancelados ou repassados.
+ */
+type Aba = Exclude<CaseListFilter, "open">;
+
+const ABAS: { valor: Aba; rotulo: string; dica: string }[] = [
+  { valor: "waiting", rotulo: "Em contato", dica: "Pessoas que estão entrando em contato e esperam a equipe" },
+  { valor: "answered", rotulo: "Respondidos", dica: "Pessoas que já foram respondidas e agora esperam o cliente" },
+  { valor: "resolved", rotulo: "Fechados", dica: "Casos fechados" },
+];
+
 export function CaseList({ heading }: { heading?: ReactNode } = {}) {
   const t = useT();
-  const [tab, setTab] = useState<"open" | "resolved">("open");
+  const [tab, setTab] = useState<Aba>("waiting");
   // Deep link: o aviso "um atendimento espera decisão" na Central manda para cá
   // com o id do caso. Sem isto ele abriria a LISTA, e quem clicou teria que
   // caçar de qual caso o aviso falava — um aviso que não leva ao seu assunto é
@@ -54,10 +68,18 @@ export function CaseList({ heading }: { heading?: ReactNode } = {}) {
       <div className="flex min-h-0 flex-1 gap-4 md:gap-6">
         <div ref={listRef} data-testid="case-list" className={cn("min-h-0 w-full flex-col gap-4 md:max-w-xs md:shrink-0", selectedId === null ? "flex" : "hidden md:flex")}>
 
-          <Tabs value={tab} onValueChange={(v) => setTab(v as "open" | "resolved")}>
-            <TabsList>
-              <TabsTrigger value="open">{t("Abertos")}{data ? ` (${data.open_count})` : ""}</TabsTrigger>
-              <TabsTrigger value="resolved">{t("Concluídos")}</TabsTrigger>
+          <Tabs value={tab} onValueChange={(v) => setTab(v as Aba)}>
+            <TabsList className="w-full">
+              {ABAS.map((aba) => {
+                const n =
+                  aba.valor === "waiting" ? data?.waiting_count : aba.valor === "answered" ? data?.answered_count : undefined;
+                return (
+                  <TabsTrigger key={aba.valor} value={aba.valor} title={t(aba.dica)} className="flex-1 text-xs">
+                    {t(aba.rotulo)}
+                    {n !== undefined ? ` (${n})` : ""}
+                  </TabsTrigger>
+                );
+              })}
             </TabsList>
           </Tabs>
 
@@ -70,12 +92,18 @@ export function CaseList({ heading }: { heading?: ReactNode } = {}) {
             <div className="flex flex-1 flex-col items-center justify-center gap-2 py-16 text-center">
               <Robot size={28} className="text-muted-foreground" aria-hidden />
               <p className="text-sm font-medium">
-                {tab === "open" ? t("Nenhum caso aberto") : t("Nenhum caso concluído")}
+                {tab === "waiting"
+                  ? t("Ninguém esperando")
+                  : tab === "answered"
+                    ? t("Nenhum caso respondido em aberto")
+                    : t("Nenhum caso fechado")}
               </p>
               <p className="text-xs text-muted-foreground">
-                {tab === "open"
+                {tab === "waiting"
                   ? t("Quando a IA precisar de você, aparece aqui.")
-                  : t("Casos concluídos, cancelados ou repassados ficam aqui.")}
+                  : tab === "answered"
+                    ? t("Casos já respondidos que esperam o cliente ficam aqui.")
+                    : t("Casos concluídos, cancelados ou repassados ficam aqui.")}
               </p>
             </div>
           ) : (
@@ -99,7 +127,16 @@ export function CaseList({ heading }: { heading?: ReactNode } = {}) {
               {t("Voltar aos casos")}
             </Button>
           ) : null}
-          <CaseDetail caseId={selectedId} />
+          <CaseDetail
+            caseId={selectedId}
+            onConcluido={(id) => {
+              // Concluiu: vai direto para o próximo da mesma aba, sem voltar à lista.
+              const lista = data?.cases ?? [];
+              const i = lista.findIndex((c) => c.id === id);
+              const proximo = lista.filter((c) => c.id !== id)[Math.max(0, i)] ?? null;
+              setSelectedId(proximo?.id ?? null);
+            }}
+          />
         </div>
       </div>
     </div>

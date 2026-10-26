@@ -70,7 +70,7 @@ describe("CaseList", () => {
 
     render(wrap(<CaseList />));
 
-    expect(screen.getByText("Nenhum caso aberto")).toBeInTheDocument();
+    expect(screen.getByText("Ninguém esperando")).toBeInTheDocument();
     expect(screen.getByText(/quando a ia precisar de você/i)).toBeInTheDocument();
   });
 });

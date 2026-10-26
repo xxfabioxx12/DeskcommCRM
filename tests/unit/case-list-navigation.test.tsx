@@ -17,7 +17,7 @@ beforeEach(() => { state.selectedInUrl = null; });
 describe('navegação de Casos entre lista e detalhe', () => {
   it('não rouba foco ao carregar a lista', () => {
     render(<CaseList />);
-    expect(screen.getByRole('tab', { name: /Abertos/ })).not.toHaveFocus();
+    expect(screen.getByRole('tab', { name: /Em contato/ })).not.toHaveFocus();
     expect(screen.getByTestId('selected-case')).toHaveTextContent('Sem seleção');
   });
   it('abre o caso e volta à lista, devolvendo foco ao botão de origem', () => {
@@ -33,15 +33,15 @@ describe('navegação de Casos entre lista e detalhe', () => {
     expect(screen.getByTestId('selected-case')).toHaveTextContent('linked-case');
     fireEvent.click(screen.getByRole('button', { name: 'Voltar aos casos' }));
     expect(screen.getByTestId('selected-case')).toHaveTextContent('Sem seleção');
-    expect(screen.getByRole('tab', { name: /Abertos/ })).toHaveFocus();
+    expect(screen.getByRole('tab', { name: /Em contato/ })).toHaveFocus();
   });
-  it('voltar preserva o filtro de concluídos', () => {
+  it('voltar preserva o filtro de fechados', () => {
     render(<CaseList />);
-    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Concluídos' }), { button: 0, ctrlKey: false });
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Fechados' }), { button: 0, ctrlKey: false });
     const trigger = screen.getByTestId('case-item'); fireEvent.click(trigger);
     expect(screen.getByTestId('selected-case')).toHaveTextContent('closed-case');
     fireEvent.click(screen.getByRole('button', { name: 'Voltar aos casos' }));
-    expect(screen.getByRole('tab', { name: 'Concluídos' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Fechados' })).toHaveAttribute('aria-selected', 'true');
     expect(trigger).toHaveFocus();
   });
 });

@@ -39,6 +39,31 @@ import { TEXTOS_AGENDA_SERVICOS } from "./agenda-servicos";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  // Fork NODZ — tela de Casos com três abas e "Concluído" sem mensagem.
+  "(mensagem apagada)": { es: "(mensaje eliminado)" },
+  "Caso fechado. Nenhuma mensagem foi enviada ao cliente.": { es: "Caso cerrado. No se envió ningún mensaje al cliente." },
+  "Casos já respondidos que esperam o cliente ficam aqui.": { es: "Aquí quedan los casos ya respondidos que esperan al cliente." },
+  "Ele sai da fila e vai para Fechados. Nenhuma mensagem é enviada ao cliente.": { es: "Sale de la cola y pasa a Cerrados. No se envía ningún mensaje al cliente." },
+  "Fechando...": { es: "Cerrando..." },
+  "Fechar este caso?": { es: "¿Cerrar este caso?" },
+  "Já vi, já foi respondido: fecha o caso sem mandar mensagem ao cliente.": { es: "Ya lo vi, ya fue respondido: cierra el caso sin enviar mensaje al cliente." },
+  "Mais opções": { es: "Más opciones" },
+  "Mostrando as 100 mensagens mais recentes. O histórico completo fica no Inbox.": { es: "Mostrando los 100 mensajes más recientes. El historial completo está en el Inbox." },
+  "Nenhum caso fechado": { es: "Ningún caso cerrado" },
+  "Nenhum caso respondido em aberto": { es: "Ningún caso respondido pendiente" },
+  "Ninguém esperando": { es: "Nadie esperando" },
+  "Nota interna (opcional)": { es: "Nota interna (opcional)" },
+  "Não deu para carregar as mensagens. Abra a conversa no Inbox.": { es: "No se pudieron cargar los mensajes. Abre la conversación en el Inbox." },
+  "Não deu para fechar o caso. Ele pode já ter sido fechado por outra pessoa.": { es: "No se pudo cerrar el caso. Puede que otra persona ya lo haya cerrado." },
+  "O atendimento e o botão de concluir aparecem aqui.": { es: "La atención y el botón para concluir aparecen aquí." },
+  "Em contato": { es: "En contacto" },
+  "Respondidos": { es: "Respondidos" },
+  "Fechados": { es: "Cerrados" },
+  "Pessoas que estão entrando em contato e esperam a equipe": { es: "Personas que están contactando y esperan al equipo" },
+  "Pessoas que já foram respondidas e agora esperam o cliente": { es: "Personas que ya fueron respondidas y ahora se espera al cliente" },
+  "Casos fechados": { es: "Casos cerrados" },
+  "Conclusão do caso indisponível (config).": { es: "Conclusión del caso no disponible (config)." },
+  "Este caso já foi fechado.": { es: "Este caso ya fue cerrado." },
   // Encaminhar mensagem (#2835) — botão na bolha do chat e o diálogo de destino.
   "Encaminhar": { es: "Reenviar" },
   "Encaminhar mensagem": { es: "Reenviar mensaje" },
