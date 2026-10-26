@@ -131,6 +131,7 @@ vi.mock("@/hooks/inbox/useClaimConversation", () => ({
 }));
 vi.mock("@/hooks/inbox/useCloseConversation", () => ({
   useCloseConversation: () => ({ mutate: vi.fn(), isPending: false }),
+  useConcluirConversa: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 // As irmãs do Inbox não são o alvo e trazem fetch próprio: ficam de fora da conta.
 vi.mock("@/components/inbox/ConversationList", () => ({ ConversationList: () => null }));

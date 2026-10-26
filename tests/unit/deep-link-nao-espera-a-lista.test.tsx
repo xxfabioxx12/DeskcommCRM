@@ -108,6 +108,7 @@ vi.mock("@/hooks/inbox/useClaimConversation", () => ({
 }));
 vi.mock("@/hooks/inbox/useCloseConversation", () => ({
   useCloseConversation: () => ({ mutate: vi.fn(), isPending: false }),
+  useConcluirConversa: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 /** O painel do contato vira sonda: ele diz de QUAL conversa recebeu objeto. */

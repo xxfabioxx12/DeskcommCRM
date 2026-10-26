@@ -58,6 +58,7 @@ vi.mock("@/hooks/inbox/useReleaseConversation", () => ({
 }));
 vi.mock("@/hooks/inbox/useCloseConversation", () => ({
   useCloseConversation: () => ({ mutate: vi.fn(), isPending: false }),
+  useConcluirConversa: () => ({ mutate: vi.fn(), isPending: false }),
   useReopenConversation: () => ({ mutate: vi.fn(), isPending: false }),
   useArchiveConversation: () => ({ mutate: vi.fn(), isPending: false }),
 }));

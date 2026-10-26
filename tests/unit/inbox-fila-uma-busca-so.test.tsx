@@ -110,6 +110,7 @@ vi.mock("@/hooks/inbox/useClaimConversation", () => ({
 }));
 vi.mock("@/hooks/inbox/useCloseConversation", () => ({
   useCloseConversation: () => ({ mutate: vi.fn(), isPending: false }),
+  useConcluirConversa: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 vi.mock("@/components/inbox/CRMSidePanel", () => ({ CRMSidePanel: () => null }));
 vi.mock("@/components/inbox/InboxFilters", () => ({ InboxFilters: () => null }));

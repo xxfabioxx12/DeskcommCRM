@@ -72,3 +72,25 @@ export function useReopenConversation() {
     },
   });
 }
+
+/**
+ * Fork NODZ — "Concluir": fecha a conversa e todos os casos abertos dela, sem
+ * mandar mensagem ao cliente. Em conversa já encerrada, só conclui os casos.
+ */
+export function useConcluirConversa() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (args: CloseArgs) =>
+      apiClient.post<{ data: { conversation_closed: boolean; cases_resolved: number } }>(
+        `/api/v1/conversations/${args.conversation_id}/concluir`,
+        args.expected_revision ? { expected_revision: args.expected_revision } : {},
+      ).then((r) => r.data),
+    onError: showApiError,
+    onSettled: (_data, _error, args) => {
+      qc.invalidateQueries({ queryKey: ["conversations"] });
+      qc.invalidateQueries({ queryKey: ["conversation", args.conversation_id] });
+      qc.invalidateQueries({ queryKey: ["ai-cases"] });
+      qc.invalidateQueries({ queryKey: ["ai-case"] });
+    },
+  });
+}
