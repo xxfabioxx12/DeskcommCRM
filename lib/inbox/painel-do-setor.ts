@@ -83,3 +83,22 @@ export function haQuantoTempo(iso: string, agora = new Date()): string {
   const h = Math.round(min / 60);
   return h < 48 ? `${h} h` : `${Math.round(h / 24)} d`;
 }
+
+/**
+ * Os SETORES saem do nome do número: "Comercial · 2023" e "Comercial · Oficial
+ * 5911" são o setor Comercial, "Suporte · 2233" o Suporte. É o nome que a
+ * equipe já dá em Conexões, então número novo entra no setor sem configuração.
+ * Número sem " · " no nome não pertence a setor nenhum.
+ */
+export function setoresDosNumeros(
+  numeros: ReadonlyArray<{ id: string; display_name: string | null }>,
+): { nome: string; ids: string[] }[] {
+  const porNome = new Map<string, string[]>();
+  for (const n of numeros) {
+    const corte = n.display_name?.indexOf(" · ") ?? -1;
+    if (!n.display_name || corte <= 0) continue;
+    const nome = n.display_name.slice(0, corte).trim();
+    porNome.set(nome, [...(porNome.get(nome) ?? []), n.id]);
+  }
+  return [...porNome].map(([nome, ids]) => ({ nome, ids }));
+}

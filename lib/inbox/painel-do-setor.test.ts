@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { haQuantoTempo, montarColunas, type ConversaDoPainel } from "./painel-do-setor";
+import { haQuantoTempo, montarColunas, setoresDosNumeros, type ConversaDoPainel } from "./painel-do-setor";
 
 const agora = new Date("2026-10-23T21:00:00Z");
 function conv(id: string, p: Partial<ConversaDoPainel>): ConversaDoPainel {
@@ -63,5 +63,22 @@ describe("painel do setor", () => {
     expect(haQuantoTempo("2026-10-23T20:35:00Z", agora)).toBe("25 min");
     expect(haQuantoTempo("2026-10-23T18:00:00Z", agora)).toBe("3 h");
     expect(haQuantoTempo("2026-10-20T21:00:00Z", agora)).toBe("3 d");
+  });
+});
+
+describe("setores dos números", () => {
+  it("junta os números pelo nome antes do ' · ' e ignora número sem setor", () => {
+    expect(
+      setoresDosNumeros([
+        { id: "a", display_name: "Comercial · 2023" },
+        { id: "b", display_name: "Suporte · 2233" },
+        { id: "c", display_name: "Comercial · Oficial 5911" },
+        { id: "d", display_name: "Número avulso" },
+        { id: "e", display_name: null },
+      ]),
+    ).toEqual([
+      { nome: "Comercial", ids: ["a", "c"] },
+      { nome: "Suporte", ids: ["b"] },
+    ]);
   });
 });

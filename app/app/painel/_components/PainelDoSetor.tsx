@@ -9,7 +9,7 @@ import { channelLabel, useChannelSessions } from "@/hooks/channels/useChannelSes
 import { apiClient } from "@/lib/api/client";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { gravarFiltrosLembrados, lerFiltrosLembrados } from "@/lib/inbox/filtros-lembrados";
-import { haQuantoTempo, montarColunas, type ConversaDoPainel } from "@/lib/inbox/painel-do-setor";
+import { haQuantoTempo, montarColunas, setoresDosNumeros, type ConversaDoPainel } from "@/lib/inbox/painel-do-setor";
 import { Robot } from "@/lib/ui/icons";
 
 interface Conversa extends ConversaDoPainel {
@@ -25,6 +25,9 @@ function armazenamento(): Storage | null {
     return null;
   }
 }
+
+// O setor escolhido fica lembrado só no painel: o Inbox filtra por UM número.
+const chaveDoSetor = (orgId: string) => `painel-do-setor:setor:${orgId}`;
 
 function nomeDoCliente(c: Conversa): string {
   return rotuloDoContato(c.contacts);
@@ -85,31 +88,57 @@ export function PainelDoSetor() {
   const { data: numeros } = useChannelSessions();
   const [numero, setNumero] = useState<string>("");
 
+  const setores = useMemo(() => setoresDosNumeros(numeros ?? []), [numeros]);
+
   // O mesmo número lembrado do Inbox: escolher o suporte lá ou aqui vale nos dois.
+  // Setor (vários números) tem lembrança própria e vem antes.
   useEffect(() => {
     if (!orgId) return;
-    setNumero(lerFiltrosLembrados(armazenamento(), orgId).channel_session_id ?? "");
+    let setor: string | null = null;
+    try {
+      setor = armazenamento()?.getItem(chaveDoSetor(orgId)) ?? null;
+    } catch {
+      setor = null;
+    }
+    setNumero(setor ?? lerFiltrosLembrados(armazenamento(), orgId).channel_session_id ?? "");
   }, [orgId]);
-  const escolher = (id: string) => {
-    setNumero(id);
+  const escolher = (valor: string) => {
+    setNumero(valor);
     if (!orgId) return;
+    try {
+      if (valor.startsWith("setor:")) armazenamento()?.setItem(chaveDoSetor(orgId), valor);
+      else armazenamento()?.removeItem(chaveDoSetor(orgId));
+    } catch {
+      // sem armazenamento a escolha vale só nesta tela
+    }
+    if (valor.startsWith("setor:")) return;
     const atuais = lerFiltrosLembrados(armazenamento(), orgId);
-    gravarFiltrosLembrados(armazenamento(), orgId, { ...atuais, channel_session_id: id || undefined });
+    gravarFiltrosLembrados(armazenamento(), orgId, { ...atuais, channel_session_id: valor || undefined });
   };
 
-  const filtroNumero = numero ? `&channel_session_id=${numero}` : "";
+  // Setor = uma busca por número, juntas; "" = todos os números numa busca só.
+  const ids = numero.startsWith("setor:")
+    ? (setores.find((s) => `setor:${s.nome}` === numero)?.ids ?? [])
+    : [numero];
+  const buscar = (filtro: string) =>
+    Promise.all(
+      ids.map((id) =>
+        apiClient.get<{ data: Conversa[] }>(
+          `/api/v1/conversations?${filtro}&limit=100${id ? `&channel_session_id=${id}` : ""}`,
+        ),
+      ),
+    ).then((respostas) => respostas.flatMap((r) => r.data ?? []));
   const abertas = useQuery({
-    queryKey: ["painel-do-setor", "abertas", numero],
-    queryFn: () =>
-      apiClient.get<{ data: Conversa[] }>(`/api/v1/conversations?status=open,claimed,ai_handling&limit=100${filtroNumero}`),
+    queryKey: ["painel-do-setor", "abertas", numero, ids],
+    queryFn: () => buscar("status=open,claimed,ai_handling"),
     refetchInterval: 15_000,
-    enabled: !!orgId,
+    enabled: !!orgId && ids.length > 0,
   });
   const encerradas = useQuery({
-    queryKey: ["painel-do-setor", "encerradas", numero],
-    queryFn: () => apiClient.get<{ data: Conversa[] }>(`/api/v1/conversations?status=closed&limit=100${filtroNumero}`),
+    queryKey: ["painel-do-setor", "encerradas", numero, ids],
+    queryFn: () => buscar("status=closed"),
     refetchInterval: 60_000,
-    enabled: !!orgId,
+    enabled: !!orgId && ids.length > 0,
   });
   const casos = useQuery({
     queryKey: ["painel-do-setor", "casos"],
@@ -119,7 +148,7 @@ export function PainelDoSetor() {
   });
 
   const colunas = useMemo(
-    () => montarColunas([...(abertas.data?.data ?? []), ...(encerradas.data?.data ?? [])]),
+    () => montarColunas([...(abertas.data ?? []), ...(encerradas.data ?? [])]),
     [abertas.data, encerradas.data],
   );
   const casosAbertos = casos.data?.data?.open_count ?? 0;
@@ -135,6 +164,11 @@ export function PainelDoSetor() {
           className="h-9 rounded-md border border-border bg-background px-3 text-sm"
         >
           <option value="">{t("Todos os números")}</option>
+          {setores.map((s) => (
+            <option key={`setor:${s.nome}`} value={`setor:${s.nome}`}>
+              {t("Setor {nome} ({quantos} números)").replace("{nome}", s.nome).replace("{quantos}", String(s.ids.length))}
+            </option>
+          ))}
           {(numeros ?? []).map((n) => (
             <option key={n.id} value={n.id}>
               {channelLabel(n, t)}

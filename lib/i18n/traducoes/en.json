@@ -964,6 +964,7 @@
   "Buscar por nome, telefone ou última mensagem…": "Search by name, phone, or last message…",
   "Buscar mensagens…": "Search messages…",
   "Todos os números": "All numbers",
+  "Setor {nome} ({quantos} números)": "{nome} team ({quantos} numbers)",
   "Todas as tags": "All tags",
   "Todas (E)": "All (AND)",
   "Qualquer uma (OU)": "Any (OR)",
