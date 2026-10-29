@@ -15,10 +15,10 @@ function armazenamento(inicial: Record<string, string> = {}) {
 describe("filtros lembrados do Inbox", () => {
   it("grava e lê número e não lidos por organização, sem misturar", () => {
     const s = armazenamento();
-    gravarFiltrosLembrados(s, "org-a", { channel_session_id: "num-suporte", onlyUnread: true });
-    gravarFiltrosLembrados(s, "org-b", { channel_session_id: "num-comercial" });
-    expect(lerFiltrosLembrados(s, "org-a")).toEqual({ channel_session_id: "num-suporte", onlyUnread: true });
-    expect(lerFiltrosLembrados(s, "org-b")).toEqual({ channel_session_id: "num-comercial" });
+    gravarFiltrosLembrados(s, "org-a", { channel_session_id: "num-a", onlyUnread: true });
+    gravarFiltrosLembrados(s, "org-b", { channel_session_id: "num-b" });
+    expect(lerFiltrosLembrados(s, "org-a")).toEqual({ channel_session_id: "num-a", onlyUnread: true });
+    expect(lerFiltrosLembrados(s, "org-b")).toEqual({ channel_session_id: "num-b" });
     expect(lerFiltrosLembrados(s, "org-c")).toEqual({});
   });
 

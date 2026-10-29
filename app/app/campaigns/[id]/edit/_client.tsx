@@ -402,6 +402,7 @@ export function EditarCampanha({ id }: { id: string }) {
                 </li>
               ))}
             </ul>
+            <p className="text-sm text-muted-foreground">{t('Para não depender do dado, ponha um texto de reserva: {{primeiro_nome|"aluno"}}.')}</p>
           </>
         }
       />

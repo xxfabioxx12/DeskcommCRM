@@ -157,6 +157,12 @@ describe("a sétima cópia não nasce", () => {
    * último caso), para não sobrar autorização em nome de código que sumiu.
    */
   const LEITURAS_LEGITIMAS: ReadonlyArray<{ arquivo: string; trecho: string; motivo: string }> = [
+    // ── fork NODZ: painel por setor ─────────────────────────────────────────
+    {
+      arquivo: "lib/inbox/painel-do-setor.ts",
+      trecho: "if (!n.display_name || corte <= 0) continue;",
+      motivo: "nome do NÚMERO (channel_sessions) que dá o setor, não de contato",
+    },
     // ── prospecção (PR #963): nenhuma destas é nome de CONTATO ──────────────
     {
       arquivo: "app/app/prospecting/_client.tsx",

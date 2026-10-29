@@ -1,7 +1,7 @@
 /**
  * OS FILTROS QUE O INBOX LEMBRA — número e "Não lidos", por organização.
  *
- * Quem atende um setor só (o suporte num número, o comercial em outro) abria o
+ * Quem atende um setor só (cada setor com o seu número) abria o
  * Inbox e tinha de escolher o número e ligar "Não lidos" a cada recarga: os
  * dois eram estado local da sessão. Aqui eles passam a ficar no `localStorage`,
  * como as larguras das colunas — preferência de quem olha a tela, não dado do
