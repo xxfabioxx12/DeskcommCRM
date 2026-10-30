@@ -49,6 +49,7 @@ import { audit } from "@/lib/audit";
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { casoForaDoSetor } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -104,6 +105,11 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
     });
   }
   const { action, body } = parsed.data;
+
+  // Cópia NODZ: caso de outro setor responde como se não existisse.
+  if (await casoForaDoSetor(createAdminClient(), org.orgId, user.id, caseId)) {
+    return fail("not_found", t("Caso não encontrado."), 404, { requestId });
+  }
 
   let pool;
   try {

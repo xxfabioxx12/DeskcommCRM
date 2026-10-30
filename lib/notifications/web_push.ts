@@ -105,7 +105,7 @@ async function enviarAsInscricoes(
   return { sent, gone };
 }
 
-export type DestinoDoPush = { soUsuario?: string; papelMinimo?: Role };
+export type DestinoDoPush = { soUsuario?: string; papelMinimo?: Role; excetoUsuarios?: readonly string[] };
 
 /** Push às inscrições da organização — ou só às de `soUsuario`, e só a quem alcança `papelMinimo`. */
 export async function enviarPushDaOrg(
@@ -126,7 +126,8 @@ export async function enviarPushDaOrg(
     logger.warn("push_subscriptions_list_failed", { detail: error.message });
     return NADA;
   }
-  return enviarAsInscricoes(admin, organizationId, (data ?? []) as Inscricao[], payload, quem.papelMinimo);
+  const inscricoes = ((data ?? []) as Inscricao[]).filter((i) => !quem.excetoUsuarios?.includes(i.user_id));
+  return enviarAsInscricoes(admin, organizationId, inscricoes, payload, quem.papelMinimo);
 }
 
 export async function enviarPushAoUsuario(

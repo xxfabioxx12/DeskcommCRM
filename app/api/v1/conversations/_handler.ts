@@ -235,6 +235,8 @@ export async function listConversationsHandler(
     query = query.not("status", "in", `(${CONVERSATION_TERMINAL_STATUSES.join(",")})`);
   }
   if (q.channel_session_id) query = query.eq("channel_session_id", q.channel_session_id);
+  if (q.channel_session_ids) query = query.in("channel_session_id", q.channel_session_ids.split(","));
+  if (ctx.filtroDoSetor) query = query.or(ctx.filtroDoSetor);
   // Canal desativado nunca entra na inbox (quarentena): exclui as conversas
   // dele aqui e nos badges, mantendo o acesso direto por id para auditoria e
   // suporte. Reativou, reaparecem sem reimportar nada.

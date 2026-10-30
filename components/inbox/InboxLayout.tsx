@@ -333,7 +333,7 @@ export function InboxLayout({
     tab,
     ...aux,
     // Uma troca de organização não leva o número anterior nem à consulta.
-    ...(orgDosFiltros !== orgId ? { channel_session_id: undefined, onlyUnread: false } : {}),
+    ...(orgDosFiltros !== orgId ? { channel_session_id: undefined, channel_session_ids: undefined, onlyUnread: false } : {}),
   };
   const setFilterValue = useCallback(
     (next: InboxFiltersValue) => {
@@ -453,6 +453,7 @@ export function InboxLayout({
         ? filterValue.search
         : undefined,
       channel_session_id: filterValue.channel_session_id,
+      channel_session_ids: filterValue.channel_session_ids,
       tag: filterValue.tag,
       tagMode: filterValue.tagMode,
       unread: filterValue.onlyUnread || undefined,
@@ -464,6 +465,7 @@ export function InboxLayout({
       filterValue.assigned_to,
       filterValue.search,
       filterValue.channel_session_id,
+      filterValue.channel_session_ids,
       filterValue.tag,
       filterValue.tagMode,
       filterValue.onlyUnread,

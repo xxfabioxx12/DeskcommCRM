@@ -94,6 +94,8 @@ export interface HandlerCtx {
   sourceJobId?: string;
   organization_id: string;
   actor: Actor;
+  /** Cópia NODZ: o recorte do setor do atendente (`lib/inbox/recorte-do-setor.ts`). Só a rota REST preenche. */
+  filtroDoSetor?: string | null;
   /**
    * Autoria "em nome de" (#1613): a PESSOA por cuja decisão o token envia.
    *

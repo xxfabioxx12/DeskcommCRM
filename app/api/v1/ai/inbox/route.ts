@@ -17,6 +17,7 @@ import { createClient } from "@/lib/supabase/server";
 import { avisoVisivelPara, PAPEL_MINIMO_DA_CENTRAL, resolverDestinosDosAvisos } from "@/lib/ai/inbox-destino";
 import { anexarLinkDePagamento } from "@/lib/cobranca/central";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { avisosForaDoSetor } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +50,9 @@ export async function GET(req: NextRequest): Promise<Response> {
   const { status, limit } = parsed.data;
 
   const admin = createAdminClient();
+  // Cópia NODZ: aviso de conversa de outro setor não aparece na lista nem no sino.
+  const foraDoSetor = await avisosForaDoSetor(admin, org.orgId, authz.user.id, status === "all" ? undefined : status);
+  const foraDoSetorAbertos = status === "open" ? foraDoSetor : await avisosForaDoSetor(admin, org.orgId, authz.user.id, "open");
   const buscar = (severity?: (typeof GRAVIDADES)[number]) => {
     let query = admin
       .from("agent_inbox_items")
@@ -59,6 +63,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       .limit(limit);
     if (status !== "all") query = query.eq("status", status);
     if (severity) query = query.eq("severity", severity);
+    if (foraDoSetor.length > 0) query = query.not("id", "in", `(${foraDoSetor.join(",")})`);
     return query;
   };
   // Ordenar em memória os N mais recentes esconderia um crítico mais antigo
@@ -73,12 +78,14 @@ export async function GET(req: NextRequest): Promise<Response> {
   }
   const data = resultados.flatMap((r) => r.data ?? []).slice(0, limit);
 
-  const { count: openCount } = await admin
+  let consultaDoSino = admin
     .from("agent_inbox_items")
     .select("id", { count: "exact", head: true })
     .eq("organization_id", org.orgId)
     .or(visivel)
     .eq("status", "open");
+  if (foraDoSetorAbertos.length > 0) consultaDoSino = consultaDoSino.not("id", "in", `(${foraDoSetorAbertos.join(",")})`);
+  const { count: openCount } = await consultaDoSino;
 
   const comDestino = await resolverDestinosDosAvisos(await createClient(), org.orgId, org.role, data);
   const items = await anexarLinkDePagamento(admin, org.orgId, org.role, comDestino);

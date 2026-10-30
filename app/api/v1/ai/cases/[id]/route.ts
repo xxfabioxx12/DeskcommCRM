@@ -20,6 +20,7 @@ import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { filtroDoSetorPara } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -43,6 +44,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams): Promise<R
     // lista usa, em vez de uma segunda decisão escrita aqui.
     const visiveisPara = await conversasVisiveisDosCasos(await createClient(), org.orgId, {
       caseId: id,
+      filtroDoSetor: await filtroDoSetorPara(org.orgId, authz.user.id),
     });
     chamado = await lerChamado(createAdminClient(), org.orgId, id, { visiveisPara });
   } catch (erro) {

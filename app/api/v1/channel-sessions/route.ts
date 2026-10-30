@@ -23,6 +23,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getWahaClient } from "@/lib/waha/client";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { traduzirLimiteDoPlano } from "@/lib/cobranca/limites";
+import { bloqueadosDaTela } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -63,7 +64,11 @@ export async function GET(): Promise<Response> {
   );
   if (error) return fail("internal_error", error.message, 500, { requestId });
 
-  return ok((data ?? []).map(semConfiguracaoInterna), {
+  // Cópia NODZ: o atendente só enxerga os números do setor dele.
+  const bloqueados = await bloqueadosDaTela(activeOrg.orgId, user.id);
+  const doSetor = ((data ?? []) as Array<{ id: string }>).filter((c) => !bloqueados.includes(c.id));
+
+  return ok((doSetor as NonNullable<typeof data>).map(semConfiguracaoInterna), {
     requestId,
     ...(schemaOutdated ? { meta: { schema_outdated: true } } : {}),
   });

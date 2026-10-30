@@ -18,6 +18,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { assumirConversaComEfeitos } from "@/lib/inbox/assumir-conversa";
+import { bloqueadosDaTela } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -124,6 +125,15 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   try {
     const admin = createAdminClient();
+    // Cópia NODZ: atendente não abre conversa por número de outro setor.
+    if (
+      authz.via === "session" &&
+      authz.actor.type === "user" &&
+      input.channel_session_id &&
+      (await bloqueadosDaTela(authz.organizationId, authz.actor.id)).includes(input.channel_session_id)
+    ) {
+      return fail("forbidden", t("Este número é de outro setor."), 403, { requestId });
+    }
     const result = await openSharedContactConversation(admin, authz.organizationId, input);
     // #3479: a conversa que o clique abriu nasce de quem clicou. Sem isto, em
     // "Só os seus" o Atendente abre uma conversa que ele não enxerga (dona:

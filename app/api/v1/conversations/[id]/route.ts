@@ -17,6 +17,7 @@ import { createClient } from "@/lib/supabase/server";
 import { comNomeDoAtendente } from "@/lib/users/com-nome-do-atendente";
 
 import { getConversationHandler, patchConversationHandler } from "../_handler";
+import { bloqueadosDaTela, conversaBloqueada } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -91,6 +92,15 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     );
     // Mesma razão da listagem: o nome entra na borda HTTP, não no handler que o
     // MCP compartilha. Aqui é UM lookup, não N.
+    // Cópia NODZ: conversa de outro setor responde como se não existisse.
+    if (
+      conversaBloqueada(await bloqueadosDaTela(activeOrg.orgId, user.id), user.id, {
+        channel_session_id: (conv as { channel_session_id?: string | null }).channel_session_id ?? null,
+        assigned_to_user_id: (conv as { assigned_to_user_id?: string | null }).assigned_to_user_id ?? null,
+      })
+    ) {
+      return fail("not_found", "Conversa não encontrada.", 404, { requestId });
+    }
     const [comNome] = await comNomeDoAtendente([conv]);
     return ok(comNome ?? conv, { requestId });
   } catch (err) {

@@ -85,6 +85,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { filtroDoSetorPara } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -191,7 +192,10 @@ async function contexto(ctx: Ctx, requestId: string): Promise<{ response: Respon
   const db = await createClient();
   let visiveis: string[];
   try {
-    visiveis = await conversasVisiveisDosCasos(db, authz.org.orgId, { caseId });
+    visiveis = await conversasVisiveisDosCasos(db, authz.org.orgId, {
+      caseId,
+      filtroDoSetor: await filtroDoSetorPara(authz.org.orgId, authz.user.id),
+    });
   } catch (erro) {
     // Falha de leitura do recorte é falha FECHADA na ação: sem saber o que a
     // pessoa pode ver, a resposta não é "mostre tudo".

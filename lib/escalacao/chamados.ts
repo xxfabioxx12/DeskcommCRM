@@ -92,7 +92,7 @@ function recorte(visiveisPara: ConversasVisiveis): string[] | null {
 export async function conversasVisiveisDosCasos(
   sessao: SupabaseClient,
   organizationId: string,
-  opts: { caseId?: string } = {},
+  opts: { caseId?: string; filtroDoSetor?: string | null; canais?: readonly string[] } = {},
 ): Promise<string[]> {
   const base = sessao
     .from("agent_cases")
@@ -110,11 +110,15 @@ export async function conversasVisiveisDosCasos(
   ];
   if (candidatas.length === 0) return [];
 
-  const { data: visiveis, error: erroVisiveis } = await sessao
+  // Cópia NODZ: o recorte do setor entra aqui, e a lista, o detalhe e o chat herdam.
+  let consultaVisiveis = sessao
     .from("conversations")
     .select("id")
     .eq("organization_id", organizationId)
     .in("id", candidatas);
+  if (opts.filtroDoSetor) consultaVisiveis = consultaVisiveis.or(opts.filtroDoSetor);
+  if (opts.canais && opts.canais.length > 0) consultaVisiveis = consultaVisiveis.in("channel_session_id", [...opts.canais]);
+  const { data: visiveis, error: erroVisiveis } = await consultaVisiveis;
   if (erroVisiveis) throw new Error(erroVisiveis.message);
 
   return ((visiveis ?? []) as Array<{ id: string }>).map((c) => c.id);

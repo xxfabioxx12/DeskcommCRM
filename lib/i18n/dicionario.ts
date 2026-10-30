@@ -1683,6 +1683,9 @@ export const DICIONARIO: Traducoes = {
   },
   "Buscar mensagens…": { es: "Buscar mensajes…" },
   "Todos os números": { es: "Todos los números" },
+  "Setor": { es: "Sector" },
+  "Todos os setores": { es: "Todos los sectores" },
+  "Este número é de outro setor.": { es: "Este número es de otro sector." },
   "Setor {nome} ({quantos} números)": { es: "Sector {nome} ({quantos} números)" },
   "Todas as tags": { es: "Todas las etiquetas" },
   // #1274 — filtro por VÁRIAS etiquetas (E/OU). As duas entradas novas do menu

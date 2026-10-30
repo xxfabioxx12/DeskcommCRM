@@ -37,6 +37,7 @@ import { normalizarIdioma, type Idioma } from "@/lib/i18n/idiomas";
 import { truncar, type PushPayload } from "./push_payload";
 import { somDoAviso } from "./sons-da-org";
 import type { DestinoDoPush } from "./web_push";
+import { usuariosForaDoAviso } from "@/lib/inbox/recorte-do-setor";
 
 /** Sem destino próprio, o push abre a Central — onde o aviso está. */
 const CENTRAL = "/app/ai/inbox";
@@ -92,7 +93,11 @@ export async function pushDoAvisoDaCentral(
   if (!payload) return null;
   const para: DestinoDoPush = item.para_user_id
     ? { papelMinimo: PAPEL_MINIMO_DA_CENTRAL, soUsuario: item.para_user_id }
-    : { papelMinimo: PAPEL_MINIMO_DA_CENTRAL };
+    : {
+        papelMinimo: PAPEL_MINIMO_DA_CENTRAL,
+        // Cópia NODZ: aviso de um número não toca para o atendente de outro setor.
+        excetoUsuarios: await usuariosForaDoAviso(admin, orgId, item),
+      };
   return { payload, para };
 }
 

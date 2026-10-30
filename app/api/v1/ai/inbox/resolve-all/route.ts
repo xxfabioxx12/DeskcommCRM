@@ -36,6 +36,7 @@ import { avisoVisivelPara, PAPEL_MINIMO_DA_CENTRAL } from "@/lib/ai/inbox-destin
 import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { avisosForaDoSetor } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -59,14 +60,17 @@ export async function POST(): Promise<Response> {
   // ativa resolvida do cookie, nunca do corpo. Sem ele o update alcançaria os
   // avisos de todos os tenants da instalação.
   const admin = createAdminClient();
-  const { data, error } = await admin
+  // Cópia NODZ: aviso de outro setor também não é dela para resolver.
+  const foraDoSetor = await avisosForaDoSetor(admin, org.orgId, authUser.id, "open");
+  let lote = admin
     .from("agent_inbox_items")
     .update({ status: "resolved" })
     .eq("organization_id", org.orgId)
     // Só o que ESTA pessoa vê: o aviso pessoal do colega (0689) não é dela para resolver.
     .or(avisoVisivelPara(authUser.id))
-    .eq("status", "open")
-    .select("id");
+    .eq("status", "open");
+  if (foraDoSetor.length > 0) lote = lote.not("id", "in", `(${foraDoSetor.join(",")})`);
+  const { data, error } = await lote.select("id");
   if (error) {
     return fail("internal_error", t("Falha ao resolver os avisos."), 500, { requestId });
   }
