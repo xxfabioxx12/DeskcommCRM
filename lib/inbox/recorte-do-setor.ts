@@ -2,10 +2,14 @@
  * Cópia NODZ: o atendente vê só os números do setor dele.
  *
  * "Responsáveis por número" (Configurações › Distribuição de atendimento) passa
- * a valer também para ver: número com política e sem o atendente na lista fica
- * fora da Inbox, dos Casos e dos avisos dele. A exceção é a conversa de que ele
- * é dono, para nenhum atendimento em andamento sumir. Número sem política fica
- * liberado, e gerente e admin continuam vendo tudo.
+ * a valer também para ver: o atendente responsável por algum número vê só esse
+ * número, na Inbox, nos Casos e nos avisos. A exceção é a conversa de que ele é
+ * dono, para nenhum atendimento em andamento sumir. Atendente sem número nenhum
+ * segue vendo tudo, e gerente e admin também.
+ *
+ * Reconectar um número cria outra linha em `channel_sessions`, sem responsáveis.
+ * Por isso a comparação é pelo TELEFONE: o número reconectado continua do mesmo
+ * setor, e número novo nunca vaza para quem cuida de outro setor.
  *
  * shortcut: recorte nas rotas, não na RLS; quem chama a API do Supabase direto
  * não passa por aqui. Fechar nas policies se isso virar requisito de segurança.
@@ -15,13 +19,19 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
+type Sessao = { id: string; phone_number: string | null };
+
+const telefone = (n: string | null) => (n ?? "").replace(/\D/g, "").slice(-8);
+
 export function calcularBloqueados(
   papel: string | null | undefined,
-  politicas: ReadonlyArray<{ id: string; channel_session_id: string }>,
-  politicasDoUsuario: ReadonlySet<string>,
+  sessoes: readonly Sessao[],
+  sessoesDoUsuario: ReadonlySet<string>,
 ): string[] {
-  if (papel !== "agent") return [];
-  return politicas.filter((p) => !politicasDoUsuario.has(p.id)).map((p) => p.channel_session_id);
+  if (papel !== "agent" || sessoesDoUsuario.size === 0) return [];
+  const meus = new Set(sessoes.filter((s) => sessoesDoUsuario.has(s.id)).map((s) => telefone(s.phone_number)));
+  // Sessão sem telefone (ainda pareando) não é de setor nenhum: só a dele passa.
+  return sessoes.filter((s) => !sessoesDoUsuario.has(s.id) && !meus.has(telefone(s.phone_number))).map((s) => s.id);
 }
 
 /** O `or=` do PostgREST: número liberado, sem número, ou conversa do próprio usuário. */
@@ -58,21 +68,30 @@ export async function numerosBloqueadosPara(
   const papel = (vinculo as { role: string } | null)?.role;
   if (papel !== "agent") return [];
 
-  const { data: politicas, error: erroPoliticas } = await admin
-    .from("channel_routing_policies")
-    .select("id, channel_session_id")
-    .eq("organization_id", organizationId);
-  if (erroPoliticas) throw new Error(erroPoliticas.message);
   const { data: minhas, error: erroMinhas } = await admin
     .from("channel_routing_responsibles")
     .select("policy_id")
     .eq("organization_id", organizationId)
     .eq("user_id", userId);
   if (erroMinhas) throw new Error(erroMinhas.message);
+  const idsDasPoliticas = ((minhas ?? []) as Array<{ policy_id: string }>).map((m) => m.policy_id);
+  if (idsDasPoliticas.length === 0) return [];
+  const { data: politicas, error: erroPoliticas } = await admin
+    .from("channel_routing_policies")
+    .select("channel_session_id")
+    .eq("organization_id", organizationId)
+    .in("id", idsDasPoliticas);
+  if (erroPoliticas) throw new Error(erroPoliticas.message);
+  // Com as arquivadas: as conversas antigas continuam ligadas a elas.
+  const { data: sessoes, error: erroSessoes } = await admin
+    .from("channel_sessions")
+    .select("id, phone_number")
+    .eq("organization_id", organizationId);
+  if (erroSessoes) throw new Error(erroSessoes.message);
   return calcularBloqueados(
     papel,
-    (politicas ?? []) as Array<{ id: string; channel_session_id: string }>,
-    new Set(((minhas ?? []) as Array<{ policy_id: string }>).map((m) => m.policy_id)),
+    (sessoes ?? []) as Sessao[],
+    new Set(((politicas ?? []) as Array<{ channel_session_id: string }>).map((p) => p.channel_session_id)),
   );
 }
 
@@ -205,25 +224,16 @@ export async function usuariosForaDoAviso(
   if (aviso.ref_kind !== "conversation" && aviso.ref_kind !== "agent_case") return [];
   const conversa = (await conversasDosAvisos(admin, organizationId, [aviso])).get(aviso.id);
   if (!conversa?.channel_session_id) return [];
-  const { data: politica } = await admin
-    .from("channel_routing_policies")
-    .select("id")
-    .eq("organization_id", organizationId)
-    .eq("channel_session_id", conversa.channel_session_id)
-    .maybeSingle();
-  if (!politica) return [];
-  const { data: responsaveis } = await admin
-    .from("channel_routing_responsibles")
-    .select("user_id")
-    .eq("organization_id", organizationId)
-    .eq("policy_id", (politica as { id: string }).id);
-  const cuidam = new Set(((responsaveis ?? []) as Array<{ user_id: string }>).map((r) => r.user_id));
-  if (conversa.assigned_to_user_id) cuidam.add(conversa.assigned_to_user_id);
   const { data: atendentes } = await admin
     .from("user_organizations")
     .select("user_id")
     .eq("organization_id", organizationId)
     .eq("role", "agent")
     .is("revoked_at", null);
-  return ((atendentes ?? []) as Array<{ user_id: string }>).map((a) => a.user_id).filter((id) => !cuidam.has(id));
+  const fora: string[] = [];
+  for (const { user_id: id } of (atendentes ?? []) as Array<{ user_id: string }>) {
+    const bloqueados = await numerosBloqueadosPara(admin, organizationId, id);
+    if (conversaBloqueada(bloqueados, id, conversa)) fora.push(id);
+  }
+  return fora;
 }

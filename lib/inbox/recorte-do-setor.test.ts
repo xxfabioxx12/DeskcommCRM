@@ -2,24 +2,27 @@ import { describe, expect, it } from "vitest";
 
 import { calcularBloqueados, conversaBloqueada, predicadoDoSetor } from "./recorte-do-setor";
 
-const politicas = [
-  { id: "p-suporte", channel_session_id: "suporte" },
-  { id: "p-comercial", channel_session_id: "comercial" },
+const sessoes = [
+  { id: "suporte", phone_number: "555181042233" },
+  { id: "suporte-antigo", phone_number: "+55 51 8104-2233" },
+  { id: "comercial", phone_number: "554891092023" },
+  { id: "comercial-reconectado", phone_number: "554891092023" },
+  { id: "novo", phone_number: "554899996287" },
 ];
 
 describe("recorte do setor", () => {
-  it("o atendente perde os números de que não é responsável", () => {
-    expect(calcularBloqueados("agent", politicas, new Set(["p-suporte"]))).toEqual(["comercial"]);
-    expect(calcularBloqueados("agent", politicas, new Set(["p-comercial"]))).toEqual(["suporte"]);
+  it("o atendente vê só o número dele, mesmo reconectado, e perde todos os outros", () => {
+    expect(calcularBloqueados("agent", sessoes, new Set(["suporte"]))).toEqual([
+      "comercial",
+      "comercial-reconectado",
+      "novo",
+    ]);
   });
 
-  it("gerente e admin não perdem nada", () => {
-    expect(calcularBloqueados("admin", politicas, new Set())).toEqual([]);
-    expect(calcularBloqueados("manager", politicas, new Set())).toEqual([]);
-  });
-
-  it("número sem política fica liberado", () => {
-    expect(calcularBloqueados("agent", [], new Set())).toEqual([]);
+  it("gerente, admin e atendente sem número nenhum não perdem nada", () => {
+    expect(calcularBloqueados("admin", sessoes, new Set(["suporte"]))).toEqual([]);
+    expect(calcularBloqueados("manager", sessoes, new Set())).toEqual([]);
+    expect(calcularBloqueados("agent", sessoes, new Set())).toEqual([]);
   });
 
   it("sem bloqueio não há filtro; com bloqueio mantém sem número e as conversas dele", () => {
