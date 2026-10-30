@@ -522,17 +522,12 @@ const FRASES_AMBIGUAS_DE_OPT_OUT: readonly RegExp[] = [
   // cliente a perguntar sobre o produto, e `is_blocked` o deixaria sem
   // resposta. Sem o objeto de comunicação, o humano decide.
   /\bcancelar?\s+(?:a\s+)?(?:minha\s+)?subscric(?:ao|oes)\b/u,
-  // "cancelar a assinatura" (pt-BR, #2886) — a MESMA decisão da subscrição de
-  // Portugal acima, e pela mesma razão: a palavra serve às duas coisas. "quero
-  // cancelar a assinatura da revista" é cliente a falar do PLANO dele, e o
-  // bloqueio o deixaria sem resposta — a academia, a revista ou o SaaS perde o
-  // cliente que só queria saber como pausar. Medido com as funções da main:
-  //   "posso cancelar a assinatura e voltar depois?"  bloqueia=true
-  //   "quero cancelar a assinatura da revista"        bloqueia=true
-  //   "cancelar la suscripcion" (espanhol, abaixo)    bloqueia=true
-  // Aqui escala para um humano, que decide o bloqueio de verdade — o custo
-  // aceito (campanhas seguem até alguém decidir) está na #2886.
-  /\bcancelar?\s+(?:a\s+)?(?:minha\s+)?assinatura\b/u,
+  // "cancelar a assinatura" (pt-BR) NÃO está aqui, de propósito (fork NODZ,
+  // 30/10/2026). O oficial (#2886) escala sem bloquear; nas nossas organizações
+  // isso calava a IA antes do modelo e o cliente lia "não mando mais nada
+  // automático" em vez de ir para o comercial. É o PLANO: quem responde é o
+  // agente. Com objeto de comunicação ("das mensagens") segue bloqueando, em
+  // `FRASES_DE_OPT_OUT`. Ao juntar versão nova do oficial, manter assim.
   // ── espanhol ──────────────────────────────────────────────────────────────
   //
   // Esta lista tinha ZERO entradas em espanhol. Não por decisão: o ambíguo é
