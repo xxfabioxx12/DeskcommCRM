@@ -461,12 +461,14 @@ const PT_PT_ESCALA_SEM_BLOQUEAR = [
  * Quem quer sair DAS MENSAGENS continua coberto pelas formas com objeto, que
  * bloqueiam na hora; o `it` de baixo é a guarda disso.
  */
-const ASSINATURA_ESCALA_SEM_BLOQUEAR = [
+const ASSINATURA_VAI_PARA_O_AGENTE = [
   "cancelar a assinatura",
   "quero cancelar a assinatura",
   "posso cancelar a assinatura e voltar depois?",
   "quero cancelar a assinatura da revista",
   "gostaria de cancelar minha assinatura por enquanto",
+  "Gostaria de cancelar a minha assinatura do produto",
+  "queria saber se tem como reembolsar a compra,ou cancelar assinatura pelo menos",
 ];
 
 const SUSCRIPCION_ESCALA_SEM_BLOQUEAR = [
@@ -477,10 +479,18 @@ const SUSCRIPCION_ESCALA_SEM_BLOQUEAR = [
 ];
 
 describe("cancelar o PLANO escala sem bloquear — a palavra de duas caras (#2886)", () => {
-  for (const texto of [...ASSINATURA_ESCALA_SEM_BLOQUEAR, ...SUSCRIPCION_ESCALA_SEM_BLOQUEAR]) {
+  for (const texto of SUSCRIPCION_ESCALA_SEM_BLOQUEAR) {
     it(`escala sem bloquear: ${texto}`, () => {
       expect(ehPedidoDeOptOut(texto)).toBe(false);
       expect(ehOptOutProvavel(texto)).toBe(true);
+    });
+  }
+
+  // Fork NODZ (30/10/2026): em português o pedido chega ao agente, que manda ao comercial.
+  for (const texto of ASSINATURA_VAI_PARA_O_AGENTE) {
+    it(`não bloqueia nem cala o agente: ${texto}`, () => {
+      expect(ehPedidoDeOptOut(texto)).toBe(false);
+      expect(ehOptOutProvavel(texto)).toBe(false);
     });
   }
 
@@ -775,14 +785,14 @@ describe("com objeto de comunicação, `assinatura` BLOQUEIA (#2971)", () => {
     });
   }
 
-  it("o objeto que pode ser o PLANO não bloqueia — só escala", () => {
+  it("o objeto que pode ser o PLANO não bloqueia — vai para o agente", () => {
     for (const texto of [
       "cancelar a assinatura do plano de mensagens",
       "cancelar a assinatura de mensagens",
       "cancelar a assinatura do whatsapp",
     ]) {
       expect(ehPedidoDeOptOut(texto), texto).toBe(false);
-      expect(ehOptOutProvavel(texto), texto).toBe(true);
+      expect(ehOptOutProvavel(texto), texto).toBe(false);
     }
   });
 });
