@@ -41,6 +41,7 @@ import { registrarTrocaDeComando } from "@/lib/inbox/atividade-de-comando";
 import { createClient } from "@/lib/supabase/server";
 import type { Conversation } from "@/lib/types/messaging";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { exigirConversaDoSetor } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -61,6 +62,16 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
 
   const authz = await requireRole("agent", { requestId, resource: "conversations" });
   if (!authz.ok) return authz.response;
+  // Cópia NODZ: conversa de outro setor responde como se não existisse.
+  const foraDoSetor = await exigirConversaDoSetor({
+    organizationId: authz.org.orgId,
+    userId: authz.user.id,
+    conversationId: id,
+    requestId,
+    papel: authz.org.role,
+    idioma: authz.user.idioma,
+  });
+  if (foraDoSetor) return foraDoSetor;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user, org } = authz;
 

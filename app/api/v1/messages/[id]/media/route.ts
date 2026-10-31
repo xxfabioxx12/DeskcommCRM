@@ -36,6 +36,7 @@ import {
 } from "@/lib/channels";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { exigirConversaDoSetor } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -166,7 +167,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // Filtro explícito de organization_id por doutrina (defense-in-depth).
   const { data: msg, error } = await supabase
     .from("messages")
-    .select("id, media_url, media_mime, media_size_bytes, media_storage_path, metadata, channel_session_id")
+    .select("id, conversation_id, media_url, media_mime, media_size_bytes, media_storage_path, metadata, channel_session_id")
     .eq("id", messageId)
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
@@ -176,6 +177,16 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (!msg) {
     return fail("not_found", t("Mensagem sem mídia."), 404, { requestId });
   }
+  // Cópia NODZ: mídia de conversa de outro setor responde como se não existisse.
+  const foraDoSetor = await exigirConversaDoSetor({
+    organizationId: activeOrg.orgId,
+    userId: authUser!.id,
+    conversationId: msg.conversation_id,
+    requestId,
+    papel: activeOrg.role,
+    idioma: authUser?.idioma,
+  });
+  if (foraDoSetor) return foraDoSetor;
 
   // O nome original guardado pela ingestão (#2613), lido SÓ quando o pedido é
   // download — o preview abre como sempre. `null` significa "não há nome a

@@ -14,6 +14,7 @@ import { listMessagesQuerySchema } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
 
 import { listMessagesHandler } from "@/app/api/v1/messages/_handler";
+import { exigirConversaDoSetor } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +43,16 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (!activeOrg) {
     return fail("no_active_org", t("No active organization."), 403, { requestId });
   }
+  // Cópia NODZ: conversa de outro setor responde como se não existisse.
+  const foraDoSetor = await exigirConversaDoSetor({
+    organizationId: activeOrg.orgId,
+    userId: user.id,
+    conversationId: conversationId,
+    requestId,
+    papel: activeOrg.role,
+    idioma: authUser?.idioma,
+  });
+  if (foraDoSetor) return foraDoSetor;
 
   const url = new URL(req.url);
   const qsParsed = listMessagesQuerySchema.safeParse({

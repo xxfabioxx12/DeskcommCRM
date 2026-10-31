@@ -117,32 +117,37 @@ export function PainelDoSetor() {
   };
 
   // Setor = uma busca por número, juntas; "" = todos os números numa busca só.
-  const ids = numero.startsWith("setor:")
-    ? (setores.find((s) => `setor:${s.nome}` === numero)?.ids ?? [])
-    : [numero];
+  const setorEscolhido = numero.startsWith("setor:") ? numero.slice(6) : null;
   const buscar = (filtro: string) =>
-    Promise.all(
-      ids.map((id) =>
-        apiClient.get<{ data: Conversa[] }>(
-          `/api/v1/conversations?${filtro}&limit=100${id ? `&channel_session_id=${id}` : ""}`,
-        ),
-      ),
-    ).then((respostas) => respostas.flatMap((r) => r.data ?? []));
+    apiClient
+      .get<{ data: Conversa[] }>(
+        `/api/v1/conversations?${filtro}&limit=100${
+          setorEscolhido
+            ? `&setor=${encodeURIComponent(setorEscolhido)}`
+            : numero
+              ? `&channel_session_id=${numero}`
+              : ""
+        }`,
+      )
+      .then((r) => r.data ?? []);
   const abertas = useQuery({
-    queryKey: ["painel-do-setor", "abertas", numero, ids],
+    queryKey: ["painel-do-setor", "abertas", numero],
     queryFn: () => buscar("status=open,claimed,ai_handling"),
     refetchInterval: 15_000,
-    enabled: !!orgId && ids.length > 0,
+    enabled: !!orgId,
   });
   const encerradas = useQuery({
-    queryKey: ["painel-do-setor", "encerradas", numero, ids],
+    queryKey: ["painel-do-setor", "encerradas", numero],
     queryFn: () => buscar("status=closed"),
     refetchInterval: 60_000,
-    enabled: !!orgId && ids.length > 0,
+    enabled: !!orgId,
   });
   const casos = useQuery({
-    queryKey: ["painel-do-setor", "casos"],
-    queryFn: () => apiClient.get<{ data: { open_count?: number } }>("/api/v1/ai/cases?status=open"),
+    queryKey: ["painel-do-setor", "casos", numero],
+    queryFn: () =>
+      apiClient.get<{ data: { open_count?: number } }>(
+        `/api/v1/ai/cases?status=open${numero.startsWith("setor:") ? `&setor=${encodeURIComponent(numero.slice(6))}` : ""}`,
+      ),
     refetchInterval: 30_000,
     enabled: !!orgId,
   });
@@ -157,6 +162,12 @@ export function PainelDoSetor() {
     <div className="flex h-full flex-col gap-4 p-6">
       <header className="flex flex-wrap items-center gap-3">
         <h1 className="mr-auto text-2xl font-semibold tracking-tight">{t("Painel do setor")}</h1>
+        {/* Cópia NODZ: é a porta do atendente para reconectar o número do setor dele. */}
+        {numeros?.some((n) => n.status !== "WORKING") && (
+          <Link href="/app/connections" className="text-sm font-medium text-red-600 underline">
+            {t("Reconectar número")}
+          </Link>
+        )}
         <select
           aria-label={t("Número do setor")}
           value={numero}

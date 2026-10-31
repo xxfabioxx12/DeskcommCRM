@@ -23,6 +23,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Conversation } from "@/lib/types/messaging";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { destinoForaDoNumero, exigirConversaDoSetor } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +45,16 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const user = authz.user;
   const orgId = authz.org.orgId; // fonte confiável (cookie validado), nunca o body
+  // Cópia NODZ: conversa de outro setor responde como se não existisse.
+  const foraDoSetor = await exigirConversaDoSetor({
+    organizationId: orgId,
+    userId: user.id,
+    conversationId: id,
+    requestId,
+    papel: authz.org.role,
+    idioma: user.idioma,
+  });
+  if (foraDoSetor) return foraDoSetor;
 
   let input;
   try {
@@ -77,6 +88,17 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       return fail("unprocessable_entity", t("Destino não é um atendente desta organização."), 422, {
         requestId,
       });
+    }
+  }
+
+  // Cópia NODZ: atendente só passa para quem responde pelo número; entre setores, só o admin.
+  if (authz.org.role === "agent") {
+    try {
+      if (await destinoForaDoNumero(createAdminClient(), orgId, id, input.to_user_id)) {
+        return fail("forbidden", t("Este atendente não responde por este número."), 403, { requestId });
+      }
+    } catch {
+      return fail("internal_error", t("Não foi possível conferir o setor desta conversa."), 503, { requestId });
     }
   }
 

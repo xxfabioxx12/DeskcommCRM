@@ -23,6 +23,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { exigirConversaDoSetor } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +47,16 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   const authz = await requireRole("agent", { requestId, resource: "conversations" });
   if (!authz.ok) return authz.response;
+  // Cópia NODZ: conversa de outro setor responde como se não existisse.
+  const foraDoSetor = await exigirConversaDoSetor({
+    organizationId: authz.org.orgId,
+    userId: authz.user.id,
+    conversationId: id,
+    requestId,
+    papel: authz.org.role,
+    idioma: authz.user.idioma,
+  });
+  if (foraDoSetor) return foraDoSetor;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const user = authz.user;
 

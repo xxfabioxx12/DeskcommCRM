@@ -55,6 +55,7 @@ import {
 } from "@/lib/schemas";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { exigirConversaDoSetor } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -92,6 +93,16 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     return fail("no_active_org", t("No active organization."), 403, { requestId });
   }
   if (!z.uuid().safeParse(id).success) return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
+  // Cópia NODZ: conversa de outro setor responde como se não existisse.
+  const foraDoSetorNaLeitura = await exigirConversaDoSetor({
+    organizationId: orgId,
+    userId: user.id,
+    conversationId: id,
+    requestId,
+    papel: ativa.org?.role,
+    idioma: user.idioma,
+  });
+  if (foraDoSetorNaLeitura) return foraDoSetorNaLeitura;
 
   if (!isServiceRoleConfigured()) {
     return fail("internal_error", t("Serviço indisponível no momento."), 503, { requestId });
@@ -133,6 +144,16 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   const authz = await requireRole("agent", { requestId, resource: "conversations" });
   if (!authz.ok) return authz.response;
+  // Cópia NODZ: conversa de outro setor responde como se não existisse.
+  const foraDoSetor = await exigirConversaDoSetor({
+    organizationId: authz.org.orgId,
+    userId: authz.user.id,
+    conversationId: id,
+    requestId,
+    papel: authz.org.role,
+    idioma: authz.user.idioma,
+  });
+  if (foraDoSetor) return foraDoSetor;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const user = authz.user;
   const orgId = authz.org.orgId;

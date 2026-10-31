@@ -36,7 +36,7 @@ import { avisoVisivelPara, PAPEL_MINIMO_DA_CENTRAL } from "@/lib/ai/inbox-destin
 import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { avisosForaDoSetor } from "@/lib/inbox/recorte-do-setor";
+import { avisosDoSetor, emLotes, type AvisoComRef } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -60,17 +60,53 @@ export async function POST(): Promise<Response> {
   // ativa resolvida do cookie, nunca do corpo. Sem ele o update alcançaria os
   // avisos de todos os tenants da instalação.
   const admin = createAdminClient();
-  // Cópia NODZ: aviso de outro setor também não é dela para resolver.
-  const foraDoSetor = await avisosForaDoSetor(admin, org.orgId, authUser.id, "open");
-  let lote = admin
+  // Cópia NODZ: aviso de outro setor também não é dela para resolver. Falha ao ler
+  // o setor recusa, em vez de resolver os avisos do outro setor.
+  let doSetor: AvisoComRef[] | null;
+  try {
+    doSetor = await avisosDoSetor(admin, org.orgId, authUser.id, {
+      visivel: avisoVisivelPara(authUser.id),
+      colunas: "id, ref_kind, ref_id, para_user_id",
+      status: "open",
+      falhaFechada: true,
+    });
+  } catch {
+    return fail("internal_error", t("Não foi possível conferir o setor desta conversa."), 503, { requestId });
+  }
+  if (doSetor) {
+    let resolvidos = 0;
+    for (const lote of emLotes(doSetor.map((a) => a.id))) {
+      const { data: feitos, error: erroDoLote } = await admin
+        .from("agent_inbox_items")
+        .update({ status: "resolved" })
+        .eq("organization_id", org.orgId)
+        .eq("status", "open")
+        .in("id", lote)
+        .select("id");
+      if (erroDoLote) return fail("internal_error", t("Falha ao resolver os avisos."), 500, { requestId });
+      resolvidos += feitos?.length ?? 0;
+    }
+    if (resolvidos > 0) {
+      await audit({
+        action: "ai.inbox_item_status_changed",
+        actorUserId: authUser.id,
+        organizationId: org.orgId,
+        resourceType: "agent_inbox_items",
+        resourceId: null,
+        requestId,
+        metadata: { status: "resolved", bulk: true, count: resolvidos },
+      });
+    }
+    return ok({ resolved_count: resolvidos }, { requestId });
+  }
+  const { data, error } = await admin
     .from("agent_inbox_items")
     .update({ status: "resolved" })
     .eq("organization_id", org.orgId)
     // Só o que ESTA pessoa vê: o aviso pessoal do colega (0689) não é dela para resolver.
     .or(avisoVisivelPara(authUser.id))
-    .eq("status", "open");
-  if (foraDoSetor.length > 0) lote = lote.not("id", "in", `(${foraDoSetor.join(",")})`);
-  const { data, error } = await lote.select("id");
+    .eq("status", "open")
+    .select("id");
   if (error) {
     return fail("internal_error", t("Falha ao resolver os avisos."), 500, { requestId });
   }

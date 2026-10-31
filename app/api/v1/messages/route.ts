@@ -27,6 +27,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import type { Message } from "@/lib/types/messaging";
 
 import { sendMessageHandler } from "./_handler";
+import { exigirConversaDoSetor } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -73,6 +74,18 @@ export async function POST(req: NextRequest): Promise<Response> {
       });
     }
     throw err;
+  }
+
+  // Cópia NODZ: a pessoa na sessão só envia nas conversas do setor dela; token, IA e worker seguem.
+  if (authz.via === "session" && actor.type === "user") {
+    const foraDoSetor = await exigirConversaDoSetor({
+      organizationId,
+      userId: actor.id,
+      conversationId: (input as SendMessageInput).conversation_id,
+      requestId,
+      idioma,
+    });
+    if (foraDoSetor) return foraDoSetor;
   }
 
   const t = (texto: string) => traduzir(texto, idioma ?? "pt-BR");

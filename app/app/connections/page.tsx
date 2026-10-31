@@ -6,6 +6,7 @@ import { ROLE_RANK } from "@/lib/auth/types";
 import { ConexoesShell } from "@/components/connections/ConexoesShell";
 import { canalGraphParceiroLigado, GRAPH_PARTNER_LABEL } from "@/lib/channels/graph-parceiro/credentials";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { atendenteTemSetor } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Conexões" };
@@ -14,7 +15,9 @@ export default async function ConnectionsPage() {
   const user = await requireAuth();
   const activeOrg = await resolveActiveOrg(user);
   if (!activeOrg) redirect("/app");
-  if (!(user.is_platform_admin && !user.support) && ROLE_RANK[activeOrg.role] < ROLE_RANK.admin) {
+  // Cópia NODZ: o atendente com setor entra só para religar os números dele.
+  const ehAdmin = (user.is_platform_admin && !user.support) || ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin;
+  if (!ehAdmin && !(activeOrg.role === "agent" && (await atendenteTemSetor(activeOrg.orgId, user.id)))) {
     redirect("/403");
   }
   const idioma = user.idioma;
@@ -37,6 +40,7 @@ export default async function ConnectionsPage() {
         </p>
       </header>
       <ConexoesShell
+        soReligar={!ehAdmin}
         wahaConfigured={wahaConfigured}
         wacallsConfigured={wacallsConfigured}
         graphParceiro={canalGraphParceiroLigado() ? { label: GRAPH_PARTNER_LABEL } : null}

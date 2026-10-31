@@ -82,6 +82,7 @@ import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { filtroDoSetorPara } from "@/lib/inbox/recorte-do-setor";
 import { STATUS_ENCERRADOS } from "@/lib/inbox/comando-da-conversa";
 import { fusoValido } from "@/lib/reports/atividades";
 import { createClient } from "@/lib/supabase/server";
@@ -243,17 +244,21 @@ export async function GET(req: NextRequest): Promise<Response> {
   const naJanela =
     `and(service_started_at.gte.${janela.de},service_started_at.lt.${janela.ate}),` +
     `and(service_started_at.is.null,created_at.gte.${janela.de},created_at.lt.${janela.ate})`;
+  // Cópia NODZ: o relatório do atendente soma só o setor dele.
+  const filtroDoSetor = await filtroDoSetorPara(activeOrg.orgId, authz.user.id);
   const conversas: ConversaBruta[] = [];
   let totalNoBanco: number | null = null;
   let paginaCheia = false;
 
   for (let pagina = 0; pagina < PAGINAS_MAXIMAS; pagina++) {
     const inicio = pagina * TAMANHO_DA_PAGINA;
-    const { data, error, count } = await supabase
+    let consulta = supabase
       .from("conversations")
       .select(COLUNAS, { count: "exact" })
       .eq("organization_id", activeOrg.orgId)
-      .or(naJanela)
+      .or(naJanela);
+    if (filtroDoSetor) consulta = consulta.or(filtroDoSetor);
+    const { data, error, count } = await consulta
       .order("service_started_at", { ascending: false })
       .order("created_at", { ascending: false })
       .order("id", { ascending: false })

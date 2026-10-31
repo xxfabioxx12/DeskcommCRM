@@ -33,6 +33,7 @@ import { extFromMime, MAX_MEDIA_BYTES } from "@/lib/messaging/media/types";
 import { validateOutboundMedia } from "@/lib/messaging/media/upload-validation";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { exigirConversaDoSetor } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -62,6 +63,17 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // resolveAuthDual. Anexo de nota é escrita real no bucket.
   const teto = await tetoDeEscritaDoToken(authz, "conversation_notes", requestId);
   if (teto) return teto;
+  // Cópia NODZ: só a pessoa na sessão; token, IA e worker seguem.
+  if (authz.via === "session" && authz.actor.type === "user") {
+    const foraDoSetor = await exigirConversaDoSetor({
+      organizationId: authz.organizationId,
+      userId: authz.actor.id,
+      conversationId: conversationId,
+      requestId,
+      idioma: authz.idioma,
+    });
+    if (foraDoSetor) return foraDoSetor;
+  }
   const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
   const activeOrg = { orgId: authz.organizationId };
   // Mesmo motivo da rota irmã: no ramo do token não há cookie de sessão, então o

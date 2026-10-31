@@ -23,7 +23,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getWahaClient } from "@/lib/waha/client";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { traduzirLimiteDoPlano } from "@/lib/cobranca/limites";
-import { bloqueadosDaTela } from "@/lib/inbox/recorte-do-setor";
+import { bloqueadosDaTela, numerosDasConversasDe } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -64,9 +64,13 @@ export async function GET(): Promise<Response> {
   );
   if (error) return fail("internal_error", error.message, 500, { requestId });
 
-  // Cópia NODZ: o atendente só enxerga os números do setor dele.
+  // Cópia NODZ: o atendente só enxerga os números do setor dele. O número de conversa
+  // de que ele é dono vem marcado: dá rótulo e aviso de queda, mas não entra no menu.
   const bloqueados = await bloqueadosDaTela(activeOrg.orgId, user.id);
-  const doSetor = ((data ?? []) as Array<{ id: string }>).filter((c) => !bloqueados.includes(c.id));
+  const donoDe = await numerosDasConversasDe(activeOrg.orgId, user.id, bloqueados);
+  const doSetor = ((data ?? []) as Array<{ id: string }>)
+    .filter((c) => !bloqueados.includes(c.id) || donoDe.has(c.id))
+    .map((c) => (bloqueados.includes(c.id) ? { ...c, fora_do_setor: true } : c));
 
   return ok((doSetor as NonNullable<typeof data>).map(semConfiguracaoInterna), {
     requestId,

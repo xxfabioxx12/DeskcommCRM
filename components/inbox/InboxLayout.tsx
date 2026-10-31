@@ -316,6 +316,7 @@ export function InboxLayout({
     setAux((atual) => ({
       ...atual,
       channel_session_id: lembrados.channel_session_id,
+      setor: lembrados.setor,
       onlyUnread: lembrados.onlyUnread ?? false,
     }));
     // O contexto acompanha o estado restaurado no PRÓXIMO render. Uma ref
@@ -326,14 +327,15 @@ export function InboxLayout({
     if (!orgId || orgDosFiltros !== orgId) return;
     gravarFiltrosLembrados(armazenamentoDoNavegador(), orgId, {
       channel_session_id: aux.channel_session_id,
+      setor: aux.setor,
       onlyUnread: aux.onlyUnread,
     });
-  }, [orgId, orgDosFiltros, aux.channel_session_id, aux.onlyUnread]);
+  }, [orgId, orgDosFiltros, aux.channel_session_id, aux.setor, aux.onlyUnread]);
   const filterValue: InboxFiltersValue = {
     tab,
     ...aux,
     // Uma troca de organização não leva o número anterior nem à consulta.
-    ...(orgDosFiltros !== orgId ? { channel_session_id: undefined, channel_session_ids: undefined, onlyUnread: false } : {}),
+    ...(orgDosFiltros !== orgId ? { channel_session_id: undefined, setor: undefined, onlyUnread: false } : {}),
   };
   const setFilterValue = useCallback(
     (next: InboxFiltersValue) => {
@@ -453,7 +455,7 @@ export function InboxLayout({
         ? filterValue.search
         : undefined,
       channel_session_id: filterValue.channel_session_id,
-      channel_session_ids: filterValue.channel_session_ids,
+      setor: filterValue.setor,
       tag: filterValue.tag,
       tagMode: filterValue.tagMode,
       unread: filterValue.onlyUnread || undefined,
@@ -465,7 +467,7 @@ export function InboxLayout({
       filterValue.assigned_to,
       filterValue.search,
       filterValue.channel_session_id,
-      filterValue.channel_session_ids,
+      filterValue.setor,
       filterValue.tag,
       filterValue.tagMode,
       filterValue.onlyUnread,

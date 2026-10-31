@@ -327,7 +327,7 @@ export async function listContactsHandler(
         })
       : null;
 
-  const { contacts, error: convErr } = await withConversas(supabase, ctx.organization_id, page);
+  const { contacts, error: convErr } = await withConversas(supabase, ctx.organization_id, page, ctx.filtroDoSetor);
   if (convErr) {
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, convErr);
   }
@@ -343,16 +343,19 @@ async function withConversas(
   supabase: SB,
   organizationId: string,
   contacts: Contact[],
+  filtroDoSetor?: string | null,
 ): Promise<{ contacts: Contact[]; error: string | null }> {
   const contactIds = contacts.map((c) => c.id);
   if (contactIds.length === 0) return { contacts, error: null };
 
-  const { data, error } = await supabase
+  let consulta = supabase
     .from("conversations")
     .select("id, contact_id, last_message_preview, last_message_at, unread_count_for_assignee")
     .eq("organization_id", organizationId)
-    .in("contact_id", contactIds)
-    .order("last_message_at", { ascending: false, nullsFirst: false });
+    .in("contact_id", contactIds);
+  // Cópia NODZ: a prévia e o link são da conversa do setor da pessoa.
+  if (filtroDoSetor) consulta = consulta.or(filtroDoSetor);
+  const { data, error } = await consulta.order("last_message_at", { ascending: false, nullsFirst: false });
   if (error) return { contacts, error: error.message };
 
   const porContato = new Map<string, NonNullable<Contact["conversa"]>>();

@@ -11,6 +11,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { validateRequest } from "@/lib/schemas";
 import { consumirRascunho } from "@/lib/inbox/rascunho-sugerido";
+import { exigirConversaDoSetor } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +51,17 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   const { id } = await ctx.params;
   if (!z.string().uuid().safeParse(id).success) {
     return fail("validation_error", t("Conversa inválida."), 422, { requestId });
+  }
+  // Cópia NODZ: só a pessoa na sessão; token, IA e worker seguem.
+  if (authz.via === "session" && authz.actor.type === "user") {
+    const foraDoSetor = await exigirConversaDoSetor({
+      organizationId: authz.organizationId,
+      userId: authz.actor.id,
+      conversationId: id,
+      requestId,
+      idioma: authz.idioma,
+    });
+    if (foraDoSetor) return foraDoSetor;
   }
 
   let input;

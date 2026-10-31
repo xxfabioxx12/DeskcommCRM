@@ -27,6 +27,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import { listContactsHandler, createContactHandler } from "./_handler";
+import { filtroDoSetorPara } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -147,6 +148,8 @@ export async function GET(req: NextRequest): Promise<Response> {
         actor,
         requestId,
         idioma,
+        // Cópia NODZ: a prévia do atendente é só do setor dele; token e IA seguem.
+        filtroDoSetor: actor.type === "user" ? await filtroDoSetorPara(organizationId, actor.id) : null,
       },
       qsParsed.data,
     );

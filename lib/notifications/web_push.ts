@@ -154,6 +154,8 @@ export async function enviarPushAQuemVeAConversa(
   payload: PushPayload,
   soUsuarios?: ReadonlyArray<string>,
   admin: Admin = createAdminClient(),
+  /** Cópia NODZ: os atendentes de outro setor. */
+  exceto?: ReadonlyArray<string>,
 ): Promise<{ sent: number; gone: number }> {
   if (!vapidPronto() || soUsuarios?.length === 0) return NADA;
   const { data, error } = await admin.rpc("fn_push_inscricoes_que_veem_a_conversa", {
@@ -166,6 +168,6 @@ export async function enviarPushAQuemVeAConversa(
   }
   // O admin client não é tipado pelo schema: a forma vem de `lib/database.types.ts`.
   const visiveis: Inscricao[] = data ?? [];
-  const linhas = visiveis.filter((l) => !soUsuarios || soUsuarios.includes(l.user_id));
+  const linhas = visiveis.filter((l) => (!soUsuarios || soUsuarios.includes(l.user_id)) && !exceto?.includes(l.user_id));
   return enviarAsInscricoes(admin, organizationId, linhas, payload);
 }

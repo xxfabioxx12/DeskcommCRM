@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { vi } from "vitest";
 import { resolve } from "node:path";
 
 /**
@@ -202,3 +203,21 @@ if (typeof criarObjectURL === "function") {
     URL.revokeObjectURL = () => {};
   }
 }
+
+// Cópia NODZ: as travas de setor leem sessão e banco reais; as rotas testadas com
+// mock não têm nenhum dos dois. Sem setor, como org sem política. A regra é provada
+// em `lib/inbox/recorte-do-setor.test.ts`, que desliga este mock.
+vi.mock("@/lib/inbox/recorte-do-setor", async (original) => ({
+  ...(await original<typeof import("@/lib/inbox/recorte-do-setor")>()),
+  exigirConversaDoSetor: async () => null,
+  casoForaDoSetor: async () => false,
+  avisoForaDoSetor: async () => false,
+  avisosDoSetor: async () => null,
+  bloqueadosDaTela: async () => [],
+  bloqueadosDoAtendente: async () => [],
+  filtroDoSetorPara: async () => null,
+  filtroDoSetorEstrito: async () => null,
+  idsDoSetorEscolhido: async () => null,
+  destinoForaDoNumero: async () => false,
+  usuariosForaDaConversa: async () => [],
+}));

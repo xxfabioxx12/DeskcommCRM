@@ -15,6 +15,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { isAttendantEligible, OPEN_LOAD_STATUSES } from "./eligibility";
 import type { RoutingCandidate } from "./decide";
 import { availabilityScheduleSchema } from "@/lib/schemas/routing";
+import { responsaveisDoNumero } from "@/lib/inbox/recorte-do-setor";
 
 export type RoutingScope =
   | { kind: "conversation_channel"; channelSessionId: string }
@@ -46,6 +47,14 @@ export async function loadEligibleAttendants(
       allowed = new Set((responsibles ?? []).map((r: { user_id: string }) => r.user_id));
       // Policy existente vazia é restrição explícita, não ausência de configuração.
       if (allowed.size === 0) return [];
+    } else {
+      // Cópia NODZ: sessão sem política própria (reconectada há menos de um minuto)
+      // segue a regra do telefone, a mesma das telas. Sem nada, fica como antes.
+      const herdados = await responsaveisDoNumero(supabase, organizationId, scope.channelSessionId);
+      if (herdados) {
+        allowed = new Set(herdados);
+        if (allowed.size === 0) return [];
+      }
     }
   }
   const { data: members, error: memberError } = await supabase.from("user_organizations")

@@ -24,7 +24,7 @@ import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
-import { filtroDoSetorPara } from "@/lib/inbox/recorte-do-setor";
+import { filtroDoSetorPara, idsDoSetorEscolhido } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -63,7 +63,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     // aplicada) ANTES da leitura privilegiada. Manager e admin seguem vendo
     // tudo porque é `fn_can_view_conversation` que decide — eles são org-wide
     // por desenho, e não há regra de papel repetida aqui para desatualizar.
-    const canais = new URL(req.url).searchParams.get("canais")?.split(",").filter((c) => /^[0-9a-f-]{36}$/i.test(c));
+    const canais = await idsDoSetorEscolhido(org.orgId, new URL(req.url).searchParams.get("setor"));
     const visiveisPara = await conversasVisiveisDosCasos(await createClient(), org.orgId, {
       filtroDoSetor: await filtroDoSetorPara(org.orgId, authz.user.id),
       canais,

@@ -5,7 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { NOTIFY_KINDS } from "./kinds";
 import { corpoDoAvisoDeMensagem, montarPayloadDeInbound, truncar } from "./push_payload";
 import { enviarPushAoUsuario, enviarPushAQuemVeAConversa, enviarPushDaOrg } from "./web_push";
-import { carregarDestinatariosDaMensagem, type DestinatariosDaMensagem } from "./destinatarios-da-mensagem";
+import { carregarDestinatariosDaMensagem, tirarQuemEDeOutroSetor, type DestinatariosDaMensagem } from "./destinatarios-da-mensagem";
 import { logger } from "@/lib/logger";
 import { vapidPronto } from "./vapid";
 import { pushDoAvisoDaCentral } from "./push-dos-avisos";
@@ -98,7 +98,10 @@ async function handleInbound(row: EventRow): Promise<HandlerResult> {
   // Quem DEVE ser avisado (`destino`) nunca alarga quem PODE ver: nome e prévia
   // só saem para quem a RLS de `conversations` deixaria abrir a conversa.
   const soUsuarios = destino.tipo === "restrito" ? destino.userIds : undefined;
-  const { sent } = await enviarPushAQuemVeAConversa(row.organization_id, conversationId, payload, soUsuarios);
+  const exceto = destino.tipo === "todos" ? destino.exceto : undefined;
+  const { sent } = exceto?.length
+    ? await enviarPushAQuemVeAConversa(row.organization_id, conversationId, payload, soUsuarios, undefined, exceto)
+    : await enviarPushAQuemVeAConversa(row.organization_id, conversationId, payload, soUsuarios);
   const detail = soUsuarios ? `sent:${sent};restrito:${soUsuarios.length}` : `sent:${sent}`;
   return { consumer_key: WEB_PUSH_INBOUND_KEY, status: "ok", detail };
 }
@@ -125,7 +128,8 @@ async function destinatariosDoInbound(
       conversationId,
       contactId,
     );
-    return destino ?? { tipo: "todos" };
+    // Cópia NODZ: esta etapa nunca lança; falha na leitura do setor mantém o aviso.
+    return tirarQuemEDeOutroSetor(createAdminClient(), organizationId, conversationId, destino ?? { tipo: "todos" });
   } catch (err) {
     logger.warn("push_inbound_destinatarios_falhou", {
       organization_id: organizationId,
@@ -165,7 +169,12 @@ async function handleGroupInbound(row: EventRow): Promise<HandlerResult> {
     tag: `${NOTIFY_KINDS.message_inbound.tagPrefix}:${conversationId}`,
     href: `/app/inbox?id=${conversationId}`,
   };
-  const { sent } = await enviarPushAQuemVeAConversa(row.organization_id, conversationId, payload);
+  // Cópia NODZ: grupo de um número também não toca para outro setor. Falha aqui não cala o aviso.
+  const destino = await tirarQuemEDeOutroSetor(createAdminClient(), row.organization_id, conversationId, { tipo: "todos" });
+  const exceto = destino.tipo === "todos" ? destino.exceto : undefined;
+  const { sent } = exceto?.length
+    ? await enviarPushAQuemVeAConversa(row.organization_id, conversationId, payload, undefined, undefined, exceto)
+    : await enviarPushAQuemVeAConversa(row.organization_id, conversationId, payload);
   return { consumer_key: WEB_PUSH_INBOUND_KEY, status: "ok", detail: `sent:${sent}` };
 }
 

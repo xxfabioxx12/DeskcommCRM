@@ -15,6 +15,7 @@ import type { NextRequest } from "next/server";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { autorizaCron } from "@/lib/auth/cron-auth";
+import { alinharNumeros } from "@/lib/inbox/alinhar-numeros";
 import { logger } from "@/lib/logger";
 import { runRoutingWorker } from "@/lib/routing/worker";
 
@@ -26,6 +27,15 @@ async function handle(req: NextRequest): Promise<Response> {
   if (!autorizaCron(req)) {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
+
+  // Cópia NODZ: número reconectado ganha nome e responsáveis antes de distribuir.
+  // Falha aqui nunca derruba a distribuição. A auditoria é por número, lá dentro.
+  await alinharNumeros().catch((err: unknown) => {
+    logger.error("[routing-worker.cron] alinharNumeros falhou", {
+      error: err instanceof Error ? err.message : String(err),
+      requestId,
+    });
+  });
 
   let summary;
   try {

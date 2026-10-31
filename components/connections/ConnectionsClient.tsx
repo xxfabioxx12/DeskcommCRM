@@ -204,7 +204,14 @@ export function frasesDoLoteDePausa(
   return { sucesso: `${cabeca} ${mudou}.`, erro: null };
 }
 
-export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean }) {
+export function ConnectionsClient({
+  wahaConfigured,
+  soReligar = false,
+}: {
+  wahaConfigured: boolean;
+  /** Cópia NODZ: atendente com setor reconecta e lê o QR; o resto segue com o admin. */
+  soReligar?: boolean;
+}) {
   const tagDoIdioma = useTagDeIdioma();
   const t = useT();
   const qc = useQueryClient();
@@ -217,7 +224,7 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
   const [busyId, setBusyId] = useState<string | null>(null);
   const createKey = useRef<string | null>(null);
   const [connectionDetail, setConnectionDetail] = useState<string | null>(null);
-  const routing = useQuery({ queryKey: ["channel-routing-settings"], queryFn: () => apiClient.get<{ data: ChannelRoutingSettings }>("/api/v1/settings/routing/channels") });
+  const routing = useQuery({ queryKey: ["channel-routing-settings"], queryFn: () => apiClient.get<{ data: ChannelRoutingSettings }>("/api/v1/settings/routing/channels"), enabled: !soReligar });
   const [creating, setCreating] = useState(false);
   const [checking, setChecking] = useState(false);
   const [qr, setQr] = useState<{ sessionId: string; title: string } | null>(null);
@@ -419,7 +426,7 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
               WhatsApp: pausar é gravar `metadata.disabled`, nada de transporte.
               O total no rótulo é o mesmo que o toast confirma depois — o
               operador vê a conta antes e depois do clique. */}
-          {paraPausar.length > 0 && (
+          {!soReligar && paraPausar.length > 0 && (
             <Button
               variant="outline"
               size="sm"
@@ -434,7 +441,7 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
               {t("Pausar todas")} ({paraPausar.length})
             </Button>
           )}
-          {paraRetomar.length > 0 && (
+          {!soReligar && paraRetomar.length > 0 && (
             <Button
               variant="outline"
               size="sm"
@@ -453,15 +460,17 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
               automática. Ela fica ao lado dos dois botões de lote de propósito:
               os três são a mesma escrita (`metadata.disabled`), e a diferença é
               quando — agora, ou quando o operador escolher. */}
-          <AgendaDePausa canais={list} />
-          <Button size="sm" disabled={creating || !wahaConfigured} onClick={handleConnectNew}>
-            {creating ? (
-              <CircleNotch size={14} className="animate-spin" aria-hidden />
-            ) : (
-              <Plus size={14} aria-hidden />
-            )}
-            {t("Conectar novo WhatsApp")}
-          </Button>
+          {!soReligar && <AgendaDePausa canais={list} />}
+          {!soReligar && (
+            <Button size="sm" disabled={creating || !wahaConfigured} onClick={handleConnectNew}>
+              {creating ? (
+                <CircleNotch size={14} className="animate-spin" aria-hidden />
+              ) : (
+                <Plus size={14} aria-hidden />
+              )}
+              {t("Conectar novo WhatsApp")}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -596,16 +605,18 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
                     ? `${t("Verificado")} ${new Date(c.last_health_check_at).toLocaleString(tagDoIdioma)}`
                     : t("Ainda não verificado")}
                 </p>
-                <ChannelAiAccess channelId={c.id} />
-                {dependeDoTransporte(c) && <ChannelAcervo channelId={c.id} />}
-                {dependeDoTransporte(c) && <ChannelHistorico channelId={c.id} />}
-                <p className="text-xs text-muted-foreground">{t(!policy ? "Consulte os responsáveis em Atendimento." : policy.mode === "legacy_unconfigured" ? "Usa todos os atendentes elegíveis da organização." : policy.mode === "restricted_empty" ? "Ninguém configurado — as conversas ficarão na fila." : "Somente as pessoas selecionadas recebem este número.")}</p>
+                {!soReligar && <ChannelAiAccess channelId={c.id} />}
+                {!soReligar && dependeDoTransporte(c) && <ChannelAcervo channelId={c.id} />}
+                {!soReligar && dependeDoTransporte(c) && <ChannelHistorico channelId={c.id} />}
+                <p hidden={soReligar} className="text-xs text-muted-foreground">{t(!policy ? "Consulte os responsáveis em Atendimento." : policy.mode === "legacy_unconfigured" ? "Usa todos os atendentes elegíveis da organização." : policy.mode === "restricted_empty" ? "Ninguém configurado — as conversas ficarão na fila." : "Somente as pessoas selecionadas recebem este número.")}</p>
                 <div className="mt-auto flex flex-wrap gap-2">
-                  <RenomearConexao
-                    channelId={c.id}
-                    currentName={c.display_name}
-                    onSaved={() => qc.invalidateQueries({ queryKey: ["channel-sessions"] })}
-                  />
+                  {!soReligar && (
+                    <RenomearConexao
+                      channelId={c.id}
+                      currentName={c.display_name}
+                      onSaved={() => qc.invalidateQueries({ queryKey: ["channel-sessions"] })}
+                    />
+                  )}
                   {/* Some no canal oficial em vez de aparecer desabilitado: não é
                       indisponibilidade passageira (como o Excluir sem o serviço no
                       ar), é uma ação que não existe para esse canal — e o clique
@@ -625,6 +636,8 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
                       {t("Reconectar")}
                     </Button>
                   )}
+                  {!soReligar && (
+                    <>
                   <Button variant="outline" size="sm" onClick={() => setAntiBanId(c.id)}>
                     <ShieldCheck size={14} aria-hidden />
                     {t("Proteção de envio")}
@@ -669,6 +682,8 @@ export function ConnectionsClient({ wahaConfigured }: { wahaConfigured: boolean 
                   >
                     <Trash size={14} aria-hidden />
                   </Button>
+                    </>
+                  )}
                 </div>
               </Card>
             );

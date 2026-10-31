@@ -44,6 +44,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { logger } from "@/lib/logger";
 import {
   carregarDestinatariosDaMensagem,
+  tirarQuemEDeOutroSetor,
   usuarioRecebeAviso,
 } from "@/lib/notifications/destinatarios-da-mensagem";
 import { lerTelaBloqueada } from "@/lib/notifications/tela-bloqueada";
@@ -79,7 +80,9 @@ export async function GET(_req: NextRequest, { params }: RouteParams): Promise<R
   if (!conversa) return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
 
   try {
-    const destino = await carregarDestinatariosDaMensagem(createAdminClient(), org.orgId, id);
+    const lido = await carregarDestinatariosDaMensagem(createAdminClient(), org.orgId, id);
+    // Cópia NODZ: o alerta do navegador segue a mesma regra de setor do push.
+    const destino = lido && (await tirarQuemEDeOutroSetor(createAdminClient(), org.orgId, id, lido));
     // `null` só se a conversa sumiu entre as duas leituras: sem dono conhecido,
     // é fila — avisa, como antes da regra.
     const avisar = destino === null ? true : usuarioRecebeAviso(destino, user.id);

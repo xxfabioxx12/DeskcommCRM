@@ -97,12 +97,12 @@ export interface CaseDetailData {
 }
 
 /** Lista de casos humanos (spec 15 §9). Polling 60s — casos nascem no worker. */
-export function useCases(status: CaseListFilter = "open", canais?: string) {
+export function useCases(status: CaseListFilter = "open", setor?: string) {
   return useQuery({
-    queryKey: ["ai-cases", status, canais ?? ""],
+    queryKey: ["ai-cases", status, setor ?? ""],
     refetchInterval: 60_000,
     queryFn: () =>
-      apiClient.get<{ data: CaseListData }>(`/api/v1/ai/cases?status=${status}${canais ? `&canais=${canais}` : ""}`).then((r) => r.data),
+      apiClient.get<{ data: CaseListData }>(`/api/v1/ai/cases?status=${status}${setor ? `&setor=${encodeURIComponent(setor)}` : ""}`).then((r) => r.data),
   });
 }
 

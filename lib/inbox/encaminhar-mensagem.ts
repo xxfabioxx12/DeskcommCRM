@@ -66,6 +66,7 @@ import {
 import { traduzir } from "@/lib/i18n/dicionario";
 import type { SendMessageInput } from "@/lib/schemas";
 import type { Message } from "@/lib/types/messaging";
+import { exigirConversaDoSetor } from "@/lib/inbox/recorte-do-setor";
 
 type SB = SupabaseClient;
 
@@ -314,6 +315,22 @@ export async function encaminharMensagem(
 ): Promise<Message> {
   const t = (texto: string) => traduzir(texto, ctx.idioma ?? "pt-BR");
   const origem = await lerOrigem(supabase, ctx, params.messageId);
+
+  // Cópia NODZ: na sessão, nem a origem nem o destino podem ser de outro setor.
+  if (params.via === "session" && ctx.actor.type === "user") {
+    for (const conversationId of [origem.conversation_id, params.conversationIdDestino]) {
+      const recusa = await exigirConversaDoSetor({
+        organizationId: ctx.organization_id,
+        userId: ctx.actor.id,
+        conversationId,
+        requestId: ctx.requestId,
+        idioma: ctx.idioma,
+      });
+      if (recusa) {
+        throw new ApiError(recusa.status === 404 ? 404 : 503, recusa.status === 404 ? "not_found" : "internal_error", undefined, ctx.requestId, t("Conversa não encontrada."));
+      }
+    }
+  }
 
   const motivo = motivoParaNaoEncaminhar(origem);
   if (motivo) {

@@ -26,6 +26,7 @@ import { audit } from "@/lib/audit";
 import { ok, fail } from "@/lib/api/wrappers";
 import { loadAuthUser, mfaEmDivida } from "@/lib/auth/server";
 import { orgAtivaDaApi, requireRole } from "@/lib/auth/require-role";
+import { bloqueadosDaTela } from "@/lib/inbox/recorte-do-setor";
 import { CHANNEL_PROVIDER_SOCIAL, CHANNEL_PROVIDER_WAHA } from "@/lib/channels/capabilities";
 import { resolverSaudeDaConexaoRemovida } from "@/lib/channels/health";
 import { sincronizarAvisoDePausa } from "@/lib/channels/central-de-pausa";
@@ -174,6 +175,10 @@ export async function GET(
     .eq("id", id)
     .maybeSingle();
   if (!session) return fail("not_found", "Canal não encontrado.", 404, { requestId });
+  // Cópia NODZ: número de outro setor responde como se não existisse.
+  if ((await bloqueadosDaTela(activeOrg.orgId, user.id)).includes(id)) {
+    return fail("not_found", "Canal não encontrado.", 404, { requestId });
+  }
 
   const impact =
     req.nextUrl.searchParams.get("impact") === "1"

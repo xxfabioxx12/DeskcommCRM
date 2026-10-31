@@ -14,6 +14,7 @@ import { avisoVisivelPara, PAPEL_MINIMO_DA_CENTRAL } from "@/lib/ai/inbox-destin
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { avisoForaDoSetor } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +53,14 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   }
 
   const admin = createAdminClient();
+  // Cópia NODZ: aviso de outro setor é como se não existisse. Falha fechada.
+  try {
+    if (await avisoForaDoSetor(admin, org.orgId, authUser.id, id)) {
+      return fail("not_found", t("Aviso não encontrado nesta organização."), 404, { requestId });
+    }
+  } catch {
+    return fail("internal_error", t("Não foi possível conferir o setor desta conversa."), 503, { requestId });
+  }
   const { data, error } = await admin
     .from("agent_inbox_items")
     .update({ status: parsed.data.status })

@@ -21,7 +21,7 @@ import { comandosDaFila } from "@/lib/inbox/comando-da-conversa";
 import { aplicarMarcadores, modoDeEtiqueta } from "@/lib/inbox/marcador-da-conversa";
 import { createClient } from "@/lib/supabase/server";
 import { idsDeContatosPessoais } from "../_handler";
-import { filtroDoSetorPara } from "@/lib/inbox/recorte-do-setor";
+import { filtroDoSetorPara, idsDoSetorEscolhido } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -127,7 +127,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const idsDesativados = await idsDosCanaisDesativados(supabase, org);
   // Cópia NODZ: o badge conta o mesmo recorte de setor que a lista mostra.
   const filtroDoSetor = await filtroDoSetorPara(org, user.id);
-  const canaisDoSetor = sp.get("channel_session_ids")?.split(",").filter(Boolean) ?? [];
+  const canaisDoSetor = await idsDoSetorEscolhido(org, sp.get("setor"));
   const countExact = (filtrosDaAba: readonly FiltroDeContagem[] = auxiliares) => {
     let q = supabase
       .from("conversations")
@@ -136,7 +136,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     if (idsDesativados.length > 0) q = q.not("channel_session_id", "in", `(${idsDesativados.join(",")})`);
     for (const [coluna, valor] of filtrosDaAba) q = q.eq(coluna, valor);
     if (filtroDoSetor) q = q.or(filtroDoSetor);
-    if (canaisDoSetor.length > 0) q = q.in("channel_session_id", canaisDoSetor);
+    if (canaisDoSetor) q = q.in("channel_session_id", canaisDoSetor);
     // O marcador entra pela régua da LISTA — a mesma função, não uma segunda.
     q = aplicarMarcadores(q, marcadores, modo);
     if (pessoais.length > 0) q = q.not("contact_id", "in", `(${pessoais.join(",")})`);

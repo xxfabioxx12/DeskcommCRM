@@ -30,6 +30,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
 import { reenvioDaMensagem } from "@/lib/messaging/reenvio";
 import type { SendMessageInput } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
+import { exigirConversaDoSetor } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -76,6 +77,16 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     .eq("id", id).eq("organization_id", orgId).maybeSingle();
   if (erroDaLeitura) return fail("internal_error", t("Erro ao buscar mensagem."), 500, { requestId });
   if (!lida) return fail("not_found", t("Mensagem não encontrada."), 404, { requestId });
+  // Cópia NODZ: conversa de outro setor responde como se não existisse.
+  const foraDoSetor = await exigirConversaDoSetor({
+    organizationId: authz.org.orgId,
+    userId: authz.user.id,
+    conversationId: (lida as { conversation_id: string }).conversation_id,
+    requestId,
+    papel: authz.org.role,
+    idioma: authz.user.idioma,
+  });
+  if (foraDoSetor) return foraDoSetor;
 
   const tipo = reenvioDaMensagem(lida, {
     userId: authz.user.id,

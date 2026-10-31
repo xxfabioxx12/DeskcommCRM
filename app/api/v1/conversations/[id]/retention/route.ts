@@ -16,6 +16,7 @@ import { loadAuthUser } from "@/lib/auth/server";
 import { orgAtivaDaApi } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { createClient } from "@/lib/supabase/server";
+import { exigirConversaDoSetor } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +48,16 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (!activeOrg) {
     return fail("no_active_org", t("No active organization."), 403, { requestId });
   }
+  // Cópia NODZ: conversa de outro setor responde como se não existisse.
+  const foraDoSetor = await exigirConversaDoSetor({
+    organizationId: activeOrg.orgId,
+    userId: user.id,
+    conversationId: id,
+    requestId,
+    papel: activeOrg.role,
+    idioma: authUser?.idioma,
+  });
+  if (foraDoSetor) return foraDoSetor;
 
   const { data: conv, error: convErr } = await supabase
     .from("conversations")

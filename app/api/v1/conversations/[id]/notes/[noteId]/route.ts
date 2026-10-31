@@ -12,6 +12,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { roleAtLeast } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { exigirConversaDoSetor } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +30,16 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams): Promis
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user, org } = authz;
   const { id, noteId } = await params;
+  // Cópia NODZ: conversa de outro setor responde como se não existisse.
+  const foraDoSetor = await exigirConversaDoSetor({
+    organizationId: authz.org.orgId,
+    userId: authz.user.id,
+    conversationId: id,
+    requestId,
+    papel: authz.org.role,
+    idioma: authz.user.idioma,
+  });
+  if (foraDoSetor) return foraDoSetor;
 
   const supabase = await createClient();
   // Filtra também por conversation_id do path: a nota tem que pertencer À

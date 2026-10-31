@@ -29,7 +29,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * tem sessão no transporte para parar e subir — `waha_session_name` é NULL nele
  * por CHECK. Reiniciar não é a operação dele; trocar a credencial é.
  *
- * Admin only. organization_id vem da sessão — nunca do path/body.
+ * Admin, ou o atendente responsável pelo telefone (Cópia NODZ). organization_id vem da sessão — nunca do path/body.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
@@ -48,6 +48,7 @@ import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/arch
 import { createClient } from "@/lib/supabase/server";
 import { getWahaClient, wahaFriendlyError } from "@/lib/waha/client";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { ehAdminDaInstalacao, podeReligarNumero } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -72,7 +73,9 @@ export async function POST(
   const parsedBody = reconnectSchema.safeParse(rawBody ?? {});
   const force = parsedBody.success ? (parsedBody.data.force ?? false) : false;
 
-  const authz = await requireRole("admin", {
+  // Cópia NODZ: o atendente religa os números do setor dele. Conectar número novo,
+  // renomear e acesso da IA seguem só com admin.
+  const authz = await requireRole("agent", {
     requestId,
     resource: "channel_sessions",
     allowPlatformAdmin: true,
@@ -81,8 +84,20 @@ export async function POST(
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user, org: activeOrg } = authz;
   if (await mfaEmDivida()) return fail("mfa_required", "Confirme a verificação em duas etapas.", 403, { requestId });
+  const ehAdmin = activeOrg.role === "admin" || ehAdminDaInstalacao(user);
+  if (!ehAdmin) {
+    let pode = false;
+    try {
+      pode = await podeReligarNumero(createAdminClient(), activeOrg.orgId, user.id, id);
+    } catch {
+      return fail("internal_error", t("Não foi possível conferir o setor deste número."), 503, { requestId });
+    }
+    if (!pode) return fail("forbidden_role", t("Este número é de outro setor."), 403, { requestId });
+  }
 
-  const supabase = await createClient();
+  // A RLS de escrita em channel_sessions é só de admin: quem religa pelo setor
+  // lê e grava pelo admin client, sempre com organization_id da sessão.
+  const supabase = ehAdmin ? await createClient() : createAdminClient();
   const buscar = (colunas: string) =>
     supabase
       .from("channel_sessions")

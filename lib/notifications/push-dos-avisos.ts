@@ -38,6 +38,7 @@ import { truncar, type PushPayload } from "./push_payload";
 import { somDoAviso } from "./sons-da-org";
 import type { DestinoDoPush } from "./web_push";
 import { usuariosForaDoAviso } from "@/lib/inbox/recorte-do-setor";
+import { logger } from "@/lib/logger";
 
 /** Sem destino próprio, o push abre a Central — onde o aviso está. */
 const CENTRAL = "/app/ai/inbox";
@@ -93,7 +94,13 @@ export async function pushDoAvisoDaCentral(
   if (!payload) return null;
   // Cópia NODZ: aviso de um número não toca para o atendente de outro setor.
   // Falha aqui não pode calar o aviso: sem a lista, toca para todos, como antes.
-  const foraDoSetor = item.para_user_id ? [] : await usuariosForaDoAviso(admin, orgId, item).catch(() => []);
+  const foraDoSetor = item.para_user_id ? [] : await usuariosForaDoAviso(admin, orgId, item).catch((erro: unknown) => {
+        logger.error("[push-dos-avisos] não consegui ler o setor", {
+          orgId,
+          erro: erro instanceof Error ? erro.message : String(erro),
+        });
+        return [] as string[];
+      });
   const para: DestinoDoPush = item.para_user_id
     ? { papelMinimo: PAPEL_MINIMO_DA_CENTRAL, soUsuario: item.para_user_id }
     : {

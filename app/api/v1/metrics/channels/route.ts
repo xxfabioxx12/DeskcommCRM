@@ -36,6 +36,7 @@ import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { bloqueadosDaTela } from "@/lib/inbox/recorte-do-setor";
 import { montarLinhas, type LinhaCanalBruta } from "@/lib/metrics/canais";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -124,13 +125,15 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (error) return fail("internal_error", error.message, 500, { requestId });
 
   const metrics = (data ?? { channels: [] }) as unknown as MetricsPayload;
+  const bloqueados = await bloqueadosDaTela(activeOrg.orgId, authz.user.id);
 
   return ok(
     {
       window: { from: from.toISOString(), to: to.toISOString() },
       owner_user_id: parsed.data.owner_user_id ?? null,
       // `montarLinhas` preserva `null` na média (null ≠ 0) e ordena por volume.
-      channels: montarLinhas(metrics.channels),
+      // Cópia NODZ: o atendente só vê as linhas do setor dele.
+      channels: montarLinhas(metrics.channels).filter((c) => !bloqueados.includes(c.channel_session_id)),
     },
     { requestId },
   );

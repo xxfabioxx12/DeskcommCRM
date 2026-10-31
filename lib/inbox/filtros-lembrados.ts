@@ -17,6 +17,8 @@
 
 export interface FiltrosLembrados {
   channel_session_id?: string;
+  /** Cópia NODZ: o setor inteiro escolhido no filtro. */
+  setor?: string;
   onlyUnread?: boolean;
 }
 
@@ -40,6 +42,7 @@ export function lerFiltrosLembrados(storage: Armazenamento | null, orgId: string
   if (!f || typeof f !== "object") return {};
   const saida: FiltrosLembrados = {};
   if (typeof f.channel_session_id === "string" && f.channel_session_id) saida.channel_session_id = f.channel_session_id;
+  if (typeof f.setor === "string" && f.setor) saida.setor = f.setor;
   if (f.onlyUnread === true) saida.onlyUnread = true;
   return saida;
 }
@@ -54,6 +57,7 @@ export function gravarFiltrosLembrados(
   const tudo = lerTudo(storage);
   tudo[orgId] = {
     ...(filtros.channel_session_id ? { channel_session_id: filtros.channel_session_id } : {}),
+    ...(filtros.setor ? { setor: filtros.setor } : {}),
     ...(filtros.onlyUnread ? { onlyUnread: true } : {}),
   };
   try {

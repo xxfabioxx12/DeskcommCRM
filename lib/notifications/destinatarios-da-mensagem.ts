@@ -65,13 +65,15 @@ import { agenteAtende, type FatosDoAgente } from "@/lib/ai/agents/no-ar";
 import { decidirElegibilidadeDaConversaViaSupabase } from "@/lib/ai/elegibilidade/consulta-supabase";
 import { ttlDaAutorizacaoMs } from "@/lib/ai/elegibilidade/gate";
 import { comandoDaConversa } from "@/lib/inbox/comando-da-conversa";
+import { responsaveisDoNumero, usuariosForaDaConversa } from "@/lib/inbox/recorte-do-setor";
+import { logger } from "@/lib/logger";
 import { resolverRoteamentoPorNumero } from "@/lib/routing/decide";
 import { estaDePlantao } from "@/lib/routing/eligibility";
 import { carregarRegraDoNumero } from "@/lib/routing/worker";
 import { availabilityScheduleSchema, routingConfigSchema } from "@/lib/schemas/routing";
 
 export type DestinatariosDaMensagem =
-  | { tipo: "todos" }
+  | { tipo: "todos"; exceto?: readonly string[] }
   | { tipo: "restrito"; userIds: string[] }
   | { tipo: "ninguem" };
 
@@ -115,7 +117,8 @@ export function destinatariosDaMensagem(fatos: FatosDaAtribuicao): Destinatarios
 /** Esta pessoa deve ser avisada? */
 export function usuarioRecebeAviso(destinatarios: DestinatariosDaMensagem, userId: string): boolean {
   if (destinatarios.tipo === "ninguem") return false;
-  return destinatarios.tipo === "todos" || destinatarios.userIds.includes(userId);
+  if (destinatarios.tipo === "todos") return !destinatarios.exceto?.includes(userId);
+  return destinatarios.userIds.includes(userId);
 }
 
 // ---------------------------------------------------------------------------
@@ -145,6 +148,40 @@ export interface LeitorDeAtribuicao {
  * Conversa inexistente na organização → `null` (quem chama decide o desfecho).
  * Erro de leitura LANÇA: quem chama escolhe entre avisar todos ou ninguém.
  */
+/**
+ * Cópia NODZ: quem é de outro setor não é avisado, nem dono de negócio do mesmo
+ * contato. Falha na leitura do setor nunca cala aviso: fica o público da regra.
+ */
+export async function tirarQuemEDeOutroSetor(
+  db: LeitorDeAtribuicao,
+  organizationId: string,
+  conversationId: string,
+  destino: DestinatariosDaMensagem,
+): Promise<DestinatariosDaMensagem> {
+  if (destino.tipo === "ninguem") return destino;
+  try {
+    const conversa = await (db
+      .from("conversations")
+      .select("id, channel_session_id, assigned_to_user_id")
+      .eq("id", conversationId)
+      .eq("organization_id", organizationId)
+      .maybeSingle() as Resultado<{ id: string; channel_session_id: string | null; assigned_to_user_id: string | null }>);
+    if (conversa.error) throw new Error(conversa.error.message);
+    if (!conversa.data) return destino;
+    const fora = await usuariosForaDaConversa(db as SupabaseClient, organizationId, conversa.data);
+    if (fora.length === 0) return destino;
+    if (destino.tipo === "todos") return { tipo: "todos", exceto: fora };
+    const ficam = destino.userIds.filter((id) => !fora.includes(id));
+    return ficam.length > 0 ? { tipo: "restrito", userIds: ficam } : destino;
+  } catch (erro) {
+    logger.error("[destinatarios-da-mensagem] não consegui ler o setor", {
+      organizationId,
+      erro: erro instanceof Error ? erro.message : String(erro),
+    });
+    return destino;
+  }
+}
+
 export async function carregarDestinatariosDaMensagem(
   db: LeitorDeAtribuicao,
   organizationId: string,
@@ -462,12 +499,12 @@ async function filaDistribuida(
   return { dePlantao, gestores };
 }
 
-/** Responsáveis do canal (`channel_routing_responsibles`); `null` = canal sem lista própria. */
+/** Responsáveis do canal; sem lista própria, a do telefone (Cópia NODZ). `null` = sem restrição. */
 async function responsaveisDoCanal(
   db: LeitorDeAtribuicao,
   organizationId: string,
   channelSessionId: string | null,
-): Promise<Set<string> | null> {
+): Promise<ReadonlySet<string> | null> {
   if (!channelSessionId) return null;
   const policy = await (db
     .from("channel_routing_policies")
@@ -476,7 +513,7 @@ async function responsaveisDoCanal(
     .eq("channel_session_id", channelSessionId)
     .maybeSingle() as Resultado<{ id: string }>);
   if (policy.error) throw new Error(policy.error.message);
-  if (!policy.data) return null;
+  if (!policy.data) return responsaveisDoNumero(db as SupabaseClient, organizationId, channelSessionId);
   const resp = await (db
     .from("channel_routing_responsibles")
     .select("user_id")

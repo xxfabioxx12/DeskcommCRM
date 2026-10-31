@@ -27,6 +27,8 @@ import { loadAuthUser } from "@/lib/auth/server";
 import { orgAtivaDaApi } from "@/lib/auth/require-role";
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/archived";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { podeReligarNumero } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +46,17 @@ export async function GET(
   if (!ativa.ok) return ativa.response;
   const activeOrg = ativa.org;
   if (!activeOrg) return new NextResponse(null, { status: 403 });
+
+  // Cópia NODZ: o QR religa o número. Atendente e visualizador só veem o do setor deles.
+  if (activeOrg.role !== "admin" && activeOrg.role !== "manager" && !(user.is_platform_admin && !user.support)) {
+    let pode = false;
+    try {
+      pode = await podeReligarNumero(createAdminClient(), activeOrg.orgId, user.id, id);
+    } catch {
+      return new NextResponse(null, { status: 503 });
+    }
+    if (!pode) return new NextResponse(null, { status: 403 });
+  }
 
   const supabase = await createClient();
   const buscar = (colunas: string) =>

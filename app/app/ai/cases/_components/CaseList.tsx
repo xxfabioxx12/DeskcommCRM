@@ -48,8 +48,8 @@ export function CaseList({ heading }: { heading?: ReactNode } = {}) {
   // Cópia NODZ: quem vê mais de um setor (admin) escolhe qual olhar.
   const { data: numeros } = useChannelSessions();
   const setores = setoresDosNumeros(numeros ?? []);
-  const [canais, setCanais] = useState("");
-  const { data, isLoading } = useCases(tab, canais || undefined);
+  const [setor, setSetor] = useState("");
+  const { data, isLoading } = useCases(tab, setor || undefined);
   const listRef = useRef<HTMLDivElement>(null);
   const backRef = useRef<HTMLButtonElement>(null);
   const selectedTrigger = useRef<HTMLButtonElement | null>(null);
@@ -77,13 +77,17 @@ export function CaseList({ heading }: { heading?: ReactNode } = {}) {
           {setores.length > 1 && (
             <select
               aria-label={t("Setor")}
-              value={canais}
-              onChange={(e) => setCanais(e.target.value)}
+              value={setor}
+              // O caso aberto pode ser de outro setor: trocar o setor fecha ele.
+              onChange={(e) => {
+                setSetor(e.target.value);
+                setSelectedId(null);
+              }}
               className="h-9 rounded-md border border-border bg-background px-3 text-sm"
             >
               <option value="">{t("Todos os setores")}</option>
               {setores.map((s) => (
-                <option key={s.nome} value={s.ids.join(",")}>
+                <option key={s.nome} value={s.nome}>
                   {`${t("Setor")} ${s.nome}`}
                 </option>
               ))}

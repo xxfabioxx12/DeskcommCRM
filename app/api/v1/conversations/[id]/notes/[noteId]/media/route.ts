@@ -29,6 +29,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { exigirConversaDoSetor } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +51,16 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { org } = authz;
   const { id: conversationId, noteId } = await ctx.params;
+  // Cópia NODZ: conversa de outro setor responde como se não existisse.
+  const foraDoSetor = await exigirConversaDoSetor({
+    organizationId: authz.org.orgId,
+    userId: authz.user.id,
+    conversationId: conversationId,
+    requestId,
+    papel: authz.org.role,
+    idioma: authz.user.idioma,
+  });
+  if (foraDoSetor) return foraDoSetor;
 
   const supabase = await createClient();
 

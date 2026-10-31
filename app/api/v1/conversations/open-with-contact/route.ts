@@ -18,7 +18,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { assumirConversaComEfeitos } from "@/lib/inbox/assumir-conversa";
-import { bloqueadosDaTela } from "@/lib/inbox/recorte-do-setor";
+import { bloqueadosDoAtendente } from "@/lib/inbox/recorte-do-setor";
+import { transportaMensagem } from "@/lib/channels/capabilities";
 
 export const dynamic = "force-dynamic";
 
@@ -125,16 +126,32 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   try {
     const admin = createAdminClient();
-    // Cópia NODZ: atendente não abre conversa por número de outro setor.
-    if (
-      authz.via === "session" &&
-      authz.actor.type === "user" &&
-      input.channel_session_id &&
-      (await bloqueadosDaTela(authz.organizationId, authz.actor.id)).includes(input.channel_session_id)
-    ) {
-      return fail("forbidden", t("Este número é de outro setor."), 403, { requestId });
+    // Cópia NODZ: atendente não abre conversa por número de outro setor. Sem número
+    // informado, o servidor escolhe um do setor dele, não o primeiro da organização.
+    let entrada = input;
+    if (authz.via === "session" && authz.actor.type === "user") {
+      const bloqueados = await bloqueadosDoAtendente(admin, authz.organizationId, authz.actor.id);
+      if (input.channel_session_id && bloqueados.includes(input.channel_session_id)) {
+        return fail("forbidden", t("Este número é de outro setor."), 403, { requestId });
+      }
+      if (!input.channel_session_id && bloqueados.length > 0) {
+        const { data: conectados, error: erroConectados } = await admin
+          .from("channel_sessions")
+          .select("id, provider")
+          .eq("organization_id", authz.organizationId)
+          .eq("status", "WORKING")
+          .is("archived_at", null)
+          .not("phone_number", "is", null)
+          .order("created_at", { ascending: true });
+        if (erroConectados) throw new Error(erroConectados.message);
+        const doSetor = ((conectados ?? []) as Array<{ id: string; provider: string | null }>).find(
+          (c) => !bloqueados.includes(c.id) && transportaMensagem(c.provider ?? undefined),
+        );
+        if (!doSetor) return fail("forbidden", t("Nenhum número do seu setor está conectado."), 403, { requestId });
+        entrada = { ...input, channel_session_id: doSetor.id };
+      }
     }
-    const result = await openSharedContactConversation(admin, authz.organizationId, input);
+    const result = await openSharedContactConversation(admin, authz.organizationId, entrada);
     // #3479: a conversa que o clique abriu nasce de quem clicou. Sem isto, em
     // "Só os seus" o Atendente abre uma conversa que ele não enxerga (dona:
     // ninguém) — ver o bloco de `assumirConversaSeLivre`.

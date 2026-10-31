@@ -16,6 +16,7 @@ import { validateOutboundMedia } from "@/lib/messaging/media/upload-validation";
 import { transcodificarNotaDeVoz } from "@/lib/messaging/media/voice-transcode";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { exigirConversaDoSetor } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +51,17 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // que o teto existe para conter (cada upload sobe arquivo de até 50 MB).
   const teto = await tetoDeEscritaDoToken(authz, "conversation_media", requestId);
   if (teto) return teto;
+  // Cópia NODZ: só a pessoa na sessão; token, IA e worker seguem.
+  if (authz.via === "session" && authz.actor.type === "user") {
+    const foraDoSetor = await exigirConversaDoSetor({
+      organizationId: authz.organizationId,
+      userId: authz.actor.id,
+      conversationId: conversationId,
+      requestId,
+      idioma: authz.idioma,
+    });
+    if (foraDoSetor) return foraDoSetor;
+  }
   // O ramo do token não carrega idioma de usuário: cai no padrão do produto.
   const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
   const activeOrg = { orgId: authz.organizationId };

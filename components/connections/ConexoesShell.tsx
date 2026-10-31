@@ -42,6 +42,7 @@ export function ConexoesShell({
   wahaConfigured,
   wacallsConfigured,
   graphParceiro = null,
+  soReligar = false,
 }: {
   wahaConfigured: boolean;
   wacallsConfigured: boolean;
@@ -52,6 +53,8 @@ export function ConexoesShell({
    * O rótulo vem do servidor porque a tela não pode nomear provider.
    */
   graphParceiro?: { label: string } | null;
+  /** Cópia NODZ: o atendente com setor só vê os números dele, para reconectar. */
+  soReligar?: boolean;
 }) {
   const t = useT();
   const router = useRouter();
@@ -82,6 +85,8 @@ export function ConexoesShell({
     // usuário para o topo a cada clique faz a tela parecer que recarregou.
     router.replace(qs ? `/app/connections?${qs}` : "/app/connections", { scroll: false });
   };
+
+  if (soReligar) return <ConnectionsClient wahaConfigured={wahaConfigured} soReligar />;
 
   return (
     <Tabs value={aba} onValueChange={(v) => irPara(v, sub)} className="flex flex-col gap-4">

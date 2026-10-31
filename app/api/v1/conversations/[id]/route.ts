@@ -17,7 +17,7 @@ import { createClient } from "@/lib/supabase/server";
 import { comNomeDoAtendente } from "@/lib/users/com-nome-do-atendente";
 
 import { getConversationHandler, patchConversationHandler } from "../_handler";
-import { bloqueadosDaTela, conversaBloqueada } from "@/lib/inbox/recorte-do-setor";
+import { exigirConversaDoSetor } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -75,6 +75,16 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (!activeOrg) {
     return fail("no_active_org", t("No active organization."), 403, { requestId });
   }
+  // Cópia NODZ: conversa de outro setor responde como se não existisse.
+  const foraDoSetor = await exigirConversaDoSetor({
+    organizationId: activeOrg.orgId,
+    userId: user.id,
+    conversationId: id,
+    requestId,
+    papel: activeOrg.role,
+    idioma: authUser?.idioma,
+  });
+  if (foraDoSetor) return foraDoSetor;
   if (idInvalido(id)) {
     return fail("not_found", "Conversa não encontrada.", 404, { requestId });
   }
@@ -92,15 +102,6 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     );
     // Mesma razão da listagem: o nome entra na borda HTTP, não no handler que o
     // MCP compartilha. Aqui é UM lookup, não N.
-    // Cópia NODZ: conversa de outro setor responde como se não existisse.
-    if (
-      conversaBloqueada(await bloqueadosDaTela(activeOrg.orgId, user.id), user.id, {
-        channel_session_id: (conv as { channel_session_id?: string | null }).channel_session_id ?? null,
-        assigned_to_user_id: (conv as { assigned_to_user_id?: string | null }).assigned_to_user_id ?? null,
-      })
-    ) {
-      return fail("not_found", "Conversa não encontrada.", 404, { requestId });
-    }
     const [comNome] = await comNomeDoAtendente([conv]);
     return ok(comNome ?? conv, { requestId });
   } catch (err) {
@@ -122,6 +123,16 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
   // spec 13 §4: escrita é agent+ (viewer é read-only).
   const authz = await requireRole("agent", { requestId, resource: "conversations" });
   if (!authz.ok) return authz.response;
+  // Cópia NODZ: conversa de outro setor responde como se não existisse.
+  const foraDoSetor = await exigirConversaDoSetor({
+    organizationId: authz.org.orgId,
+    userId: authz.user.id,
+    conversationId: id,
+    requestId,
+    papel: authz.org.role,
+    idioma: authz.user.idioma,
+  });
+  if (foraDoSetor) return foraDoSetor;
   const user = authz.user;
   const activeOrg = authz.org;
   if (idInvalido(id)) {

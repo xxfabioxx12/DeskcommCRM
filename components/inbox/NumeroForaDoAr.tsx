@@ -31,7 +31,7 @@ export function NumeroForaDoAr({
   onAbrirConversa,
 }: Props) {
   const t = useT();
-  const { data: sessoes } = useChannelSessions({ refetchInterval: 30_000 });
+  const { data: sessoes } = useChannelSessions({ refetchInterval: 30_000, incluirForaDoSetor: true });
   const [aberto, setAberto] = useState(false);
 
   if (!numeroForaDoArComSaida(sessoes, channelSessionId)) return null;

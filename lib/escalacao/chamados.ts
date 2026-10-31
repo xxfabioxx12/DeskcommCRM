@@ -92,7 +92,7 @@ function recorte(visiveisPara: ConversasVisiveis): string[] | null {
 export async function conversasVisiveisDosCasos(
   sessao: SupabaseClient,
   organizationId: string,
-  opts: { caseId?: string; filtroDoSetor?: string | null; canais?: readonly string[] } = {},
+  opts: { caseId?: string; filtroDoSetor?: string | null; canais?: readonly string[] | null } = {},
 ): Promise<string[]> {
   const base = sessao
     .from("agent_cases")
@@ -117,7 +117,7 @@ export async function conversasVisiveisDosCasos(
     .eq("organization_id", organizationId)
     .in("id", candidatas);
   if (opts.filtroDoSetor) consultaVisiveis = consultaVisiveis.or(opts.filtroDoSetor);
-  if (opts.canais && opts.canais.length > 0) consultaVisiveis = consultaVisiveis.in("channel_session_id", [...opts.canais]);
+  if (opts.canais) consultaVisiveis = consultaVisiveis.in("channel_session_id", [...opts.canais]);
   const { data: visiveis, error: erroVisiveis } = await consultaVisiveis;
   if (erroVisiveis) throw new Error(erroVisiveis.message);
 

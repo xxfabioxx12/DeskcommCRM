@@ -24,6 +24,8 @@ export interface ChannelSession {
   /** `metadata.disabled === true` = canal pausado pelo operador (quarentena). Ausente em respostas antigas em cache. */
   metadata?: Record<string, unknown> | null;
   created_at: string;
+  /** Cópia NODZ: número de outro setor, listado só porque a pessoa é dona de conversa nele. */
+  fora_do_setor?: boolean;
 }
 
 export type ConnectionHealth = "connected" | "connecting" | "down" | "none" | "unknown";
@@ -51,7 +53,12 @@ export function channelLabel(
  * falhou é indistinguível de "nenhum número conectado", que é o convite a parear
  * de novo um número que já está no ar.
  */
-export function useChannelSessions(opts?: { refetchInterval?: number; enabled?: boolean }) {
+export function useChannelSessions(opts?: {
+  refetchInterval?: number;
+  enabled?: boolean;
+  /** Cópia NODZ: só o rótulo e o aviso de queda pedem o número de outro setor; menu nenhum. */
+  incluirForaDoSetor?: boolean;
+}) {
   const query = useQuery({
     queryKey: ["channel-sessions"],
     queryFn: async () => {
@@ -65,8 +72,11 @@ export function useChannelSessions(opts?: { refetchInterval?: number; enabled?: 
     enabled: opts?.enabled ?? true,
   });
 
+  const doSetor = (lista: ChannelSession[] | undefined) =>
+    opts?.incluirForaDoSetor || !Array.isArray(lista) ? lista : lista.filter((c) => !c.fora_do_setor);
+
   return {
-    data: query.data?.data,
+    data: doSetor(query.data?.data),
     isLoading: query.isLoading,
     isError: query.isError,
     /** A migration 0100 não rodou neste banco: canal excluído volta à lista. */
@@ -81,7 +91,7 @@ export function useChannelSessions(opts?: { refetchInterval?: number; enabled?: 
      * atendimento).
      */
     refetch: async (): Promise<ChannelSession[] | undefined> =>
-      (await query.refetch()).data?.data,
+      doSetor((await query.refetch()).data?.data),
   };
 }
 

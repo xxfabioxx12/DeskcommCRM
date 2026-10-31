@@ -70,7 +70,7 @@ export function ConversationList({
   //
   // `?? []` e não `undefined`: enquanto a lista de canais carrega, o certo é
   // NÃO mostrar. Mostrar e sumir depois é pior que aparecer um instante tarde.
-  const canais = useChannelSessions().data ?? [];
+  const canais = useChannelSessions({ incluirForaDoSetor: true }).data ?? [];
   const maisDeUmCanal = canais.length > 1;
 
   // Fila (G5-03): a lista já vem ordenada por tempo de espera (server), então a

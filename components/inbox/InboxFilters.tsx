@@ -82,8 +82,8 @@ export interface InboxFiltersValue {
   search: string;
   onlyUnread: boolean;
   channel_session_id?: string;
-  /** Cópia NODZ: o setor inteiro (ids separados por vírgula). */
-  channel_session_ids?: string;
+  /** Cópia NODZ: o setor inteiro, pelo nome. O servidor resolve os números. */
+  setor?: string;
   /**
    * A etiqueta escolhida, ou VÁRIAS (#1274).
    *
@@ -222,7 +222,7 @@ export function InboxFilters({ value, onChange }: Props) {
     tag: etiquetas,
     tagMode: value.tagMode,
     channel_session_id: value.channel_session_id,
-    channel_session_ids: value.channel_session_ids,
+    setor: value.setor,
   });
 
   // Filtro por ATENDENTE: só para gerente ou acima (a lista de quem atende é da
@@ -458,17 +458,17 @@ export function InboxFilters({ value, onChange }: Props) {
           <div className="flex gap-2">
             {showChannelSwitch && (
               <Select
-                value={value.channel_session_ids ? `setor:${value.channel_session_ids}` : (value.channel_session_id ?? "all")}
+                value={value.setor ? `setor:${value.setor}` : (value.channel_session_id ?? "all")}
                 onValueChange={(v) =>
                   v.startsWith("setor:")
-                    ? onChange({ ...value, channel_session_id: undefined, channel_session_ids: v.slice(6) })
-                    : onChange({ ...value, channel_session_ids: undefined, channel_session_id: v === "all" ? undefined : v })
+                    ? onChange({ ...value, channel_session_id: undefined, setor: v.slice(6) })
+                    : onChange({ ...value, setor: undefined, channel_session_id: v === "all" ? undefined : v })
                 }
               >
                 <SelectTrigger
                   className={cn(
                     "h-8 min-w-0 flex-1 rounded-full border-transparent bg-surface-elevated px-3 text-xs shadow-none",
-                    (value.channel_session_id != null || value.channel_session_ids != null) && "border-accent bg-accent-soft text-accent",
+                    (value.channel_session_id != null || value.setor != null) && "border-accent bg-accent-soft text-accent",
                   )}
                   aria-label={t("Filtrar por número de WhatsApp")}
                 >
@@ -477,7 +477,7 @@ export function InboxFilters({ value, onChange }: Props) {
                 <SelectContent>
                   <SelectItem value="all">{t("Todos os números")}</SelectItem>
                   {setoresDosNumeros(channels ?? []).map((s) => (
-                    <SelectItem key={s.nome} value={`setor:${s.ids.join(",")}`}>
+                    <SelectItem key={s.nome} value={`setor:${s.nome}`}>
                       {`${t("Setor")} ${s.nome}`}
                     </SelectItem>
                   ))}

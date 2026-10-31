@@ -14,7 +14,7 @@ import { createClient } from "@/lib/supabase/server";
 import { comNomeDoAtendente } from "@/lib/users/com-nome-do-atendente";
 
 import { listConversationsHandler } from "./_handler";
-import { filtroDoSetorPara } from "@/lib/inbox/recorte-do-setor";
+import { filtroDoSetorPara, idsDoSetorEscolhido } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -69,7 +69,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     modo: url.searchParams.get("modo") ?? undefined,
     unread: url.searchParams.get("unread") ?? undefined,
     channel_session_id: url.searchParams.get("channel_session_id") ?? undefined,
-    channel_session_ids: url.searchParams.get("channel_session_ids") ?? undefined,
+    setor: url.searchParams.get("setor") ?? undefined,
     // A aba "Grupos" (Task 10) — mesma rotura que `tag`/`comando` já tiveram
     // aqui: schema aceita, hook serializa, handler filtra, e esta linha é o
     // único lugar que pode esquecer sem erro nenhum. `rota-le-todo-filtro-do-schema`
@@ -98,6 +98,7 @@ export async function GET(req: NextRequest): Promise<Response> {
         requestId,
         idioma: authUser?.idioma,
         filtroDoSetor: await filtroDoSetorPara(activeOrg.orgId, user.id),
+        numerosDoSetorEscolhido: await idsDoSetorEscolhido(activeOrg.orgId, qsParsed.data.setor),
       },
       qsParsed.data,
     );

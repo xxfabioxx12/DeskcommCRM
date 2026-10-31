@@ -23,6 +23,7 @@ import { createNoteSchema } from "@/lib/schemas/notes";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { exigirConversaDoSetor } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 // As três colunas de anexo (migration 0483) entram nos DOIS caminhos: sem elas
@@ -42,6 +43,16 @@ export async function GET(_req: NextRequest, { params }: RouteParams): Promise<R
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { org } = authz;
   const { id } = await params;
+  // Cópia NODZ: conversa de outro setor responde como se não existisse.
+  const foraDoSetor = await exigirConversaDoSetor({
+    organizationId: authz.org.orgId,
+    userId: authz.user.id,
+    conversationId: id,
+    requestId,
+    papel: authz.org.role,
+    idioma: authz.user.idioma,
+  });
+  if (foraDoSetor) return foraDoSetor;
 
   const supabase = await createClient();
   const { data: conversation } = await supabase
@@ -72,6 +83,16 @@ export async function POST(req: NextRequest, { params }: RouteParams): Promise<R
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user, org } = authz;
   const { id } = await params;
+  // Cópia NODZ: conversa de outro setor responde como se não existisse.
+  const foraDoSetor = await exigirConversaDoSetor({
+    organizationId: authz.org.orgId,
+    userId: authz.user.id,
+    conversationId: id,
+    requestId,
+    papel: authz.org.role,
+    idioma: authz.user.idioma,
+  });
+  if (foraDoSetor) return foraDoSetor;
 
   const supabase = await createClient();
   const { data: conversation } = await supabase

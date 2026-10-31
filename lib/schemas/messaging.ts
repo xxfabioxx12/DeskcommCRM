@@ -377,11 +377,8 @@ export const listConversationsQuerySchema = z.object({
   exclude_finished: z.boolean().optional(),
   assigned_to: z.union([z.string().uuid(), z.literal("me"), z.literal("unassigned")]).optional(),
   channel_session_id: z.string().uuid().optional(),
-  /** Cópia NODZ: o setor inteiro, com os ids dos números separados por vírgula. */
-  channel_session_ids: z
-    .string()
-    .regex(/^[0-9a-f-]{36}(,[0-9a-f-]{36})*$/i)
-    .optional(),
+  /** Cópia NODZ: o setor inteiro, pelo nome. O servidor resolve os números dele. */
+  setor: z.string().trim().min(1).max(80).optional(),
   /**
    * O MARCADOR, e agora VÁRIOS (#1274).
    *

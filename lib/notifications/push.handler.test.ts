@@ -33,6 +33,7 @@ const carregarDestinatariosMock = vi.fn(
 );
 vi.mock("./destinatarios-da-mensagem", () => ({
   carregarDestinatariosDaMensagem: (...args: unknown[]) => carregarDestinatariosMock(...args),
+  tirarQuemEDeOutroSetor: async (_db: unknown, _org: string, _conv: string, destino: unknown) => destino,
 }));
 vi.mock("@/lib/branding/saida", () => ({
   marcaDaSaida: async () => ({ nome: "Marca" }),

@@ -18,6 +18,7 @@ import {
 import { traduzir } from "@/lib/i18n/dicionario";
 import { previaDaMensagem } from "@/lib/messaging/previa-da-mensagem";
 import { createClient } from "@/lib/supabase/server";
+import { exigirConversaDoSetor } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +46,16 @@ async function alterar(req: NextRequest, ctx: Ctx, acao: "edit" | "revoke"): Pro
     .eq("id", id).eq("organization_id", authz.org.orgId).maybeSingle();
   if (messageError) return fail("internal_error", t("Erro ao buscar mensagem."), 500, { requestId });
   if (!message) return fail("not_found", t("Mensagem não encontrada."), 404, { requestId });
+  // Cópia NODZ: conversa de outro setor responde como se não existisse.
+  const foraDoSetor = await exigirConversaDoSetor({
+    organizationId: authz.org.orgId,
+    userId: authz.user.id,
+    conversationId: message.conversation_id,
+    requestId,
+    papel: authz.org.role,
+    idioma: authz.user.idioma,
+  });
+  if (foraDoSetor) return foraDoSetor;
 
   // O WhatsApp só deixa o autor alterar uma mensagem própria. A UI esconde o
   // gesto dos demais, mas esta guarda no servidor impede chamar a rota à mão.

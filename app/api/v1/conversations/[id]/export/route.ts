@@ -43,6 +43,7 @@ import {
 import { traduzir } from "@/lib/i18n/dicionario";
 import { createClient } from "@/lib/supabase/server";
 import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
+import { exigirConversaDoSetor } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -66,6 +67,16 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
 
   const { id } = await ctx.params;
+  // Cópia NODZ: conversa de outro setor responde como se não existisse.
+  const foraDoSetor = await exigirConversaDoSetor({
+    organizationId: authz.org.orgId,
+    userId: authz.user.id,
+    conversationId: id,
+    requestId,
+    papel: authz.org.role,
+    idioma: authz.user.idioma,
+  });
+  if (foraDoSetor) return foraDoSetor;
   if (!z.uuid().safeParse(id).success) {
     return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
   }
