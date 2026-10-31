@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CaseList } from '@/app/app/ai/cases/_components/CaseList';
 
 const state = vi.hoisted(() => ({ selectedInUrl: null as string | null }));
+vi.mock("@/hooks/channels/useChannelSessions", () => ({ useChannelSessions: () => ({ data: [] }), channelLabel: () => "" }));
 vi.mock('next/navigation', () => ({ useSearchParams: () => new URLSearchParams(state.selectedInUrl ? { caso: state.selectedInUrl } : {}) }));
 vi.mock('@/hooks/ai/useCases', () => ({ useCases: (tab: string) => ({ isLoading: false, data: {
   open_count: 1, cases: [{ id: tab === 'resolved' ? 'closed-case' : 'open-case', title: tab === 'resolved' ? 'Caso concluído de demonstração' : 'Caso aberto de demonstração',

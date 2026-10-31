@@ -66,7 +66,9 @@ export function planejarAlinhamento(fatos: FatosDoSetor): AlinhamentoDoNumero[] 
     if (!faltaNome && !faltaPolitica) continue;
 
     const mesmoTelefone = fatos.sessoes.filter((s) => s.id !== sessao.id && chaveDoTelefone(s.phone_number) === chave);
-    const nomeHerdado = mesmoTelefone.find((s) => !semNome(s.display_name))?.display_name ?? null;
+    // Nome com setor primeiro: linhas antigas têm nomes como "Robson Comercial 2023", que não dizem o setor.
+    const nomes = mesmoTelefone.map((s) => s.display_name).filter((n) => !semNome(n));
+    const nomeHerdado = nomes.find((n) => setorDoNome(n)) ?? nomes[0] ?? null;
     const fonte = mesmoTelefone.find((s) => politicaDe.has(s.id) && !s.archived_at) ?? mesmoTelefone.find((s) => politicaDe.has(s.id));
 
     let nome = faltaNome ? nomeHerdado : null;

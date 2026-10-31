@@ -139,6 +139,17 @@ describe("regra do setor", () => {
 });
 
 describe("alinhador", () => {
+  it("número reconectado herda o nome com setor, não o nome antigo sem setor", () => {
+    const f = fatos({
+      sessoes: [
+        { id: "nova", phone_number: COMERCIAL, display_name: null },
+        { id: "velha", phone_number: COMERCIAL, display_name: "Robson Comercial 2023", archived_at: "2026-10-01" },
+        ...fatos().sessoes,
+      ],
+    });
+    expect(planejarAlinhamento(f)[0]).toMatchObject({ sessaoId: "nova", nome: "Comercial · 2023" });
+  });
+
   it("reconectado herda nome, responsáveis e modo do mesmo telefone", () => {
     const f = fatos({ sessoes: [{ id: "nova", phone_number: COMERCIAL, display_name: null }, ...fatos().sessoes] });
     expect(planejarAlinhamento(f)).toEqual([

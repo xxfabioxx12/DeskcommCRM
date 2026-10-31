@@ -10,6 +10,7 @@ import type * as UseCasesModule from "@/hooks/ai/useCases";
 const useCasesMock = vi.fn();
 const useCaseMock = vi.fn();
 const concluirMutate = vi.fn();
+vi.mock("@/hooks/channels/useChannelSessions", () => ({ useChannelSessions: () => ({ data: [] }), channelLabel: () => "" }));
 vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams() }));
 vi.mock("@/hooks/ai/useCases", async () => {
   const actual = await vi.importActual<typeof UseCasesModule>("@/hooks/ai/useCases");
@@ -59,16 +60,16 @@ describe("Casos — três abas", () => {
     render(wrap(<CaseList />));
     const abas = screen.getAllByRole("tab").map((el) => el.textContent);
     expect(abas).toEqual(["Em contato (2)", "Respondidos (1)", "Fechados"]);
-    expect(useCasesMock).toHaveBeenCalledWith("waiting");
+    expect(useCasesMock).toHaveBeenCalledWith("waiting", undefined);
   });
 
   it("cada aba pede o recorte certo", () => {
     useCasesMock.mockReturnValue({ isLoading: false, data: { cases: [], open_count: 0 } });
     render(wrap(<CaseList />));
     fireEvent.mouseDown(screen.getByRole("tab", { name: /Respondidos/ }), { button: 0, ctrlKey: false });
-    expect(useCasesMock).toHaveBeenLastCalledWith("answered");
+    expect(useCasesMock).toHaveBeenLastCalledWith("answered", undefined);
     fireEvent.mouseDown(screen.getByRole("tab", { name: /Fechados/ }), { button: 0, ctrlKey: false });
-    expect(useCasesMock).toHaveBeenLastCalledWith("resolved");
+    expect(useCasesMock).toHaveBeenLastCalledWith("resolved", undefined);
   });
 });
 
