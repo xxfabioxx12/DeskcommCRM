@@ -218,6 +218,5 @@ vi.mock("@/lib/inbox/recorte-do-setor", async (original) => ({
   filtroDoSetorPara: async () => null,
   filtroDoSetorEstrito: async () => null,
   idsDoSetorEscolhido: async () => null,
-  destinoForaDoNumero: async () => false,
   usuariosForaDaConversa: async () => [],
 }));

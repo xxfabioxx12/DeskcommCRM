@@ -1688,7 +1688,6 @@ export const DICIONARIO: Traducoes = {
   "Este número é de outro setor.": { es: "Este número es de otro sector." },
   "Reconectar número": { es: "Reconectar número" },
   "Nenhum número do seu setor está conectado.": { es: "Ningún número de tu sector está conectado." },
-  "Este atendente não responde por este número.": { es: "Este agente no responde por este número." },
   "Não foi possível conferir o setor desta conversa.": { es: "No se pudo verificar el sector de esta conversación." },
   "Não foi possível conferir o setor deste número.": { es: "No se pudo verificar el sector de este número." },
   "Setor {nome} ({quantos} números)": { es: "Sector {nome} ({quantos} números)" },

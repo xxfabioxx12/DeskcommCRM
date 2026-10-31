@@ -383,29 +383,6 @@ export async function exigirConversaDoSetor(opts: {
   }
 }
 
-/**
- * Transferência da pessoa na sessão: o destino precisa responder pelo número da
- * conversa. Lança em erro. A Nina passa pela ferramenta e não chega aqui.
- */
-export async function destinoForaDoNumero(
-  admin: SupabaseClient,
-  organizationId: string,
-  conversationId: string,
-  destinoId: string,
-): Promise<boolean> {
-  const { data, error } = await admin
-    .from("conversations")
-    .select("channel_session_id")
-    .eq("organization_id", organizationId)
-    .eq("id", conversationId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  const sessao = (data as { channel_session_id: string | null } | null)?.channel_session_id;
-  if (!sessao) return false;
-  const quem = await responsaveisDoNumero(admin, organizationId, sessao);
-  return quem !== null && !quem.has(destinoId);
-}
-
 /** Dono da instalação com escopo de escrita, fora de acompanhamento: passa como admin. */
 export function ehAdminDaInstalacao(user: {
   is_platform_admin?: boolean;
