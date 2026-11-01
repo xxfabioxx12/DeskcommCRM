@@ -85,6 +85,16 @@ describe("regra do setor", () => {
     expect(planejarAlinhamento(f).find((p) => p.sessaoId === "novo")?.nome).toBe("Comercial · 8888");
   });
 
+  it("número novo com política já criada também troca o nome provisório", () => {
+    const base = fatos();
+    const f = fatos({
+      sessoes: [{ id: "novo", phone_number: "5551999998888", display_name: "Comercial · novo" }, ...base.sessoes],
+      politicas: [{ id: "p4", channel_session_id: "novo" }, ...base.politicas],
+      responsaveis: new Map([...base.responsaveis, ["novo", new Set(["robson"])]]),
+    });
+    expect(planejarAlinhamento(f).find((p) => p.sessaoId === "novo")?.nome).toBe("Comercial · 8888");
+  });
+
   it("sessão pareando, sem telefone, não é de setor nenhum", () => {
     const f = fatos({ sessoes: [{ id: "pareando", phone_number: null }, ...fatos().sessoes] });
     expect(responsaveisPorNumero(f).get("pareando")).toBeNull();

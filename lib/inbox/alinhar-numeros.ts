@@ -86,7 +86,7 @@ export function planejarAlinhamento(fatos: FatosDoSetor): AlinhamentoDoNumero[] 
     if (fatos.setorPadrao && !fonte) {
       const nomeAtual = faltaNome ? nome : sessao.display_name;
       // Sem nome mas já com política própria: quem configurou decide o nome.
-      if (faltaNome && !nome && faltaPolitica) nome = `${fatos.setorPadrao} · ${chave.slice(-4)}`;
+      if (faltaNome && !nome && (faltaPolitica || sessao.display_name)) nome = `${fatos.setorPadrao} · ${chave.slice(-4)}`;
       const setor = setorDoNome(nome ?? nomeAtual) ?? fatos.setorPadrao;
       const quem = responsaveisDoSetor(fatos, setor);
       // Setor sem responsável nenhum: fica sem política e a próxima rodada tenta de novo.

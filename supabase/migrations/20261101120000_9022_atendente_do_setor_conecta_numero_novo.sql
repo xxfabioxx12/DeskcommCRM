@@ -1,13 +1,18 @@
--- manifest: fn_reserve_channel_connection aceita atendente responsável por algum número (cópia NODZ).
+-- manifest: fn_reserve_channel_connection aceita o atendente do setor padrão para número novo (cópia NODZ).
 --
--- A rota confere o resto: só quem responde pelo setor padrão, com o nome do setor no número.
+-- Só para número novo do setor padrão, com o nome provisório, e por quem responde por esse setor.
 
 create or replace function public.fn_reserve_channel_connection(p_org uuid,p_key uuid,p_hash text,p_display_name text default null,p_onboarding boolean default false)
 returns jsonb language plpgsql security definer set search_path=public as $$
 declare receipt public.channel_connection_requests; channel public.channel_sessions; token uuid:=gen_random_uuid();
 begin
- if auth.uid() is null or not (public.fn_role_at_least(p_org,'admin') or (public.fn_role_at_least(p_org,'agent')
-   and exists(select 1 from public.channel_routing_responsibles r where r.organization_id=p_org and r.user_id=auth.uid())))
+ if auth.uid() is null or not (public.fn_role_at_least(p_org,'admin') or (public.fn_role_at_least(p_org,'agent') and not coalesce(p_onboarding,false)
+   and exists(select 1 from public.organizations o
+    join public.channel_sessions s on s.organization_id=o.id and s.archived_at is null
+     and s.display_name like (o.settings->>'setor_padrao')||' · %'
+    join public.channel_routing_policies p on p.organization_id=o.id and p.channel_session_id=s.id
+    join public.channel_routing_responsibles r on r.organization_id=o.id and r.policy_id=p.id and r.user_id=auth.uid()
+    where o.id=p_org and p_display_name=(o.settings->>'setor_padrao')||' · novo')))
   or not public.fn_support_write_allowed(p_org)
  then raise exception 'connection_forbidden' using errcode='42501';end if;
  if not public.fn_session_mfa_proven() then raise exception 'connection_mfa_required' using errcode='42501';end if;
