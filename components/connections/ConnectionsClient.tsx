@@ -207,10 +207,12 @@ export function frasesDoLoteDePausa(
 export function ConnectionsClient({
   wahaConfigured,
   soReligar = false,
+  podeConectarNovo = false,
 }: {
   wahaConfigured: boolean;
   /** Cópia NODZ: atendente com setor reconecta e lê o QR; o resto segue com o admin. */
   soReligar?: boolean;
+  podeConectarNovo?: boolean;
 }) {
   const tagDoIdioma = useTagDeIdioma();
   const t = useT();
@@ -461,7 +463,7 @@ export function ConnectionsClient({
               os três são a mesma escrita (`metadata.disabled`), e a diferença é
               quando — agora, ou quando o operador escolher. */}
           {!soReligar && <AgendaDePausa canais={list} />}
-          {!soReligar && (
+          {(!soReligar || podeConectarNovo) && (
             <Button size="sm" disabled={creating || !wahaConfigured} onClick={handleConnectNew}>
               {creating ? (
                 <CircleNotch size={14} className="animate-spin" aria-hidden />

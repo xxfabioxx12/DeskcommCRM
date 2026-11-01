@@ -78,7 +78,8 @@ export function responsaveisPorNumero(fatos: FatosDoSetor): Map<string, Readonly
     const dona = comPolitica.find((s) => !s.archived_at) ?? comPolitica[0];
     let quem: ReadonlySet<string> | null = dona ? fatos.responsaveis.get(dona.id)! : null;
     // Ainda pareando, sem telefone: não se sabe de que número é, então não é de setor nenhum.
-    const pareando = !grupo[0]?.phone_number && !grupo[0]?.archived_at;
+    // A exceção é o número novo aberto pelo atendente, que já nasce com o nome do setor.
+    const pareando = !grupo[0]?.phone_number && !grupo[0]?.archived_at && !setorDoNome(grupo[0]?.display_name);
     if (!dona && fatos.setorPadrao && !pareando) {
       const setor = grupo.map((s) => setorDoNome(s.display_name)).find(Boolean) ?? fatos.setorPadrao;
       quem = responsaveisDoSetor(fatos, setor);
@@ -404,6 +405,23 @@ export async function podeReligarNumero(
 ): Promise<boolean> {
   const quem = await responsaveisDoNumero(admin, organizationId, sessaoId);
   return quem?.has(userId) === true;
+}
+
+/** Fim do nome provisório do número novo; o alinhador troca pelos 4 dígitos ao parear. */
+export const SUFIXO_NUMERO_NOVO = " · novo";
+
+/**
+ * Nome com que o atendente abre um número novo, ou null se ele não pode abrir. Número novo
+ * entra no setor padrão, então só quem responde por esse setor conecta. Lança em erro.
+ */
+export async function nomeDoNumeroNovoDoAtendente(
+  admin: SupabaseClient,
+  organizationId: string,
+  userId: string,
+): Promise<string | null> {
+  const fatos = await carregarFatosDoSetor(admin, organizationId);
+  if (!fatos.setorPadrao || !responsaveisDoSetor(fatos, fatos.setorPadrao)?.has(userId)) return null;
+  return `${fatos.setorPadrao}${SUFIXO_NUMERO_NOVO}`;
 }
 
 /** O caso é de uma conversa fora do setor do atendente? Para as ações por id. Lança em erro. */

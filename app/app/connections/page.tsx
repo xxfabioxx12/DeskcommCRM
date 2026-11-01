@@ -6,7 +6,8 @@ import { ROLE_RANK } from "@/lib/auth/types";
 import { ConexoesShell } from "@/components/connections/ConexoesShell";
 import { canalGraphParceiroLigado, GRAPH_PARTNER_LABEL } from "@/lib/channels/graph-parceiro/credentials";
 import { traduzir } from "@/lib/i18n/dicionario";
-import { atendenteTemSetor } from "@/lib/inbox/recorte-do-setor";
+import { atendenteTemSetor, nomeDoNumeroNovoDoAtendente } from "@/lib/inbox/recorte-do-setor";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Conexões" };
@@ -21,6 +22,8 @@ export default async function ConnectionsPage() {
     redirect("/403");
   }
   const idioma = user.idioma;
+  const podeConectarNovo =
+    ehAdmin || Boolean(await nomeDoNumeroNovoDoAtendente(createAdminClient(), activeOrg.orgId, user.id).catch(() => null));
 
   const key = process.env.WAHA_API_KEY;
   const wahaConfigured = Boolean(
@@ -41,6 +44,7 @@ export default async function ConnectionsPage() {
       </header>
       <ConexoesShell
         soReligar={!ehAdmin}
+        podeConectarNovo={podeConectarNovo}
         wahaConfigured={wahaConfigured}
         wacallsConfigured={wacallsConfigured}
         graphParceiro={canalGraphParceiroLigado() ? { label: GRAPH_PARTNER_LABEL } : null}

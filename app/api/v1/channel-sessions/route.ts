@@ -23,7 +23,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getWahaClient } from "@/lib/waha/client";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { traduzirLimiteDoPlano } from "@/lib/cobranca/limites";
-import { bloqueadosDaTela, numerosDasConversasDe } from "@/lib/inbox/recorte-do-setor";
+import { bloqueadosDaTela, ehAdminDaInstalacao, nomeDoNumeroNovoDoAtendente, numerosDasConversasDe } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -95,7 +95,8 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("admin", {
+  // Cópia NODZ: o atendente do setor padrão também conecta número novo (decisão do Fabio, 01/11).
+  const authz = await requireRole("agent", {
     requestId,
     resource: "channel_sessions",
     allowPlatformAdmin: true,
@@ -103,6 +104,16 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user, org: activeOrg } = authz;
+  const ehAdmin = activeOrg.role === "admin" || ehAdminDaInstalacao(user);
+  let nomeDoNumeroNovo: string | null = null;
+  if (!ehAdmin) {
+    try {
+      nomeDoNumeroNovo = await nomeDoNumeroNovoDoAtendente(createAdminClient(), activeOrg.orgId, user.id);
+    } catch {
+      return fail("internal_error", t("Não foi possível conferir o setor deste número."), 503, { requestId });
+    }
+    if (!nomeDoNumeroNovo) return fail("forbidden_role", t("Sem permissão para conectar número novo."), 403, { requestId });
+  }
   if (await mfaEmDivida()) return fail("mfa_required", t("Confirme a verificação em duas etapas."), 403, { requestId });
 
   const waha = getWahaClient();
@@ -132,7 +143,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   try {
     const result = await connectWahaChannel(await createClient(), createAdminClient(), waha, {
       organizationId: activeOrg.orgId, idempotencyKey: req.headers.get("Idempotency-Key") ?? "",
-      userId: user.id, requestId, displayName: parsed.data.display_name,
+      userId: user.id, requestId, displayName: nomeDoNumeroNovo ?? parsed.data.display_name,
     });
     return ok(result.channel, { requestId, status: result.replay ? 200 : 201 });
   } catch (error) {

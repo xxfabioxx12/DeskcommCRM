@@ -73,6 +73,18 @@ describe("regra do setor", () => {
     expect(calcularBloqueados("agent", f, "henrique")).toContain("novo");
   });
 
+  it("número novo aberto pelo atendente é do setor do nome desde o pareamento", () => {
+    const base = fatos();
+    const f = fatos({ setorPadrao: "Comercial", sessoes: [{ id: "novo", phone_number: null, display_name: "Comercial · novo" }, ...base.sessoes] });
+    expect(responsaveisPorNumero(f).get("novo")).toEqual(new Set(["robson"]));
+  });
+
+  it("ao parear, o número novo troca o nome provisório pelos 4 dígitos", () => {
+    const base = fatos();
+    const f = fatos({ setorPadrao: "Comercial", sessoes: [{ id: "novo", phone_number: "5551999998888", display_name: "Comercial · novo" }, ...base.sessoes] });
+    expect(planejarAlinhamento(f).find((p) => p.sessaoId === "novo")?.nome).toBe("Comercial · 8888");
+  });
+
   it("sessão pareando, sem telefone, não é de setor nenhum", () => {
     const f = fatos({ sessoes: [{ id: "pareando", phone_number: null }, ...fatos().sessoes] });
     expect(responsaveisPorNumero(f).get("pareando")).toBeNull();

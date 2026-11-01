@@ -43,6 +43,7 @@ export function ConexoesShell({
   wacallsConfigured,
   graphParceiro = null,
   soReligar = false,
+  podeConectarNovo = false,
 }: {
   wahaConfigured: boolean;
   wacallsConfigured: boolean;
@@ -55,6 +56,8 @@ export function ConexoesShell({
   graphParceiro?: { label: string } | null;
   /** Cópia NODZ: o atendente com setor só vê os números dele, para reconectar. */
   soReligar?: boolean;
+  /** Cópia NODZ: o atendente do setor padrão também vê "Conectar novo WhatsApp". */
+  podeConectarNovo?: boolean;
 }) {
   const t = useT();
   const router = useRouter();
@@ -86,7 +89,7 @@ export function ConexoesShell({
     router.replace(qs ? `/app/connections?${qs}` : "/app/connections", { scroll: false });
   };
 
-  if (soReligar) return <ConnectionsClient wahaConfigured={wahaConfigured} soReligar />;
+  if (soReligar) return <ConnectionsClient wahaConfigured={wahaConfigured} soReligar podeConectarNovo={podeConectarNovo} />;
 
   return (
     <Tabs value={aba} onValueChange={(v) => irPara(v, sub)} className="flex flex-col gap-4">

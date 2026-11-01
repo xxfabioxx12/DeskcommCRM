@@ -22,6 +22,7 @@ import {
   chaveDoTelefone,
   responsaveisDoSetor,
   setorDoNome,
+  SUFIXO_NUMERO_NOVO,
   type FatosDoSetor,
   type PoliticaDoNumero,
 } from "./recorte-do-setor";
@@ -35,7 +36,7 @@ export type AlinhamentoDoNumero = {
   origem: "telefone" | "setor";
 };
 
-const semNome = (nome: string | null | undefined) => !nome?.trim();
+const semNome = (nome: string | null | undefined) => !nome?.trim() || nome.endsWith(SUFIXO_NUMERO_NOVO);
 
 /** Só vale o modo do setor quando todos os números dele concordam. */
 function regraDoSetor(fatos: FatosDoSetor, setor: string, politicaDe: Map<string, PoliticaDoNumero>) {
@@ -109,8 +110,8 @@ async function aplicar(pool: pg.Pool, organizationId: string, item: AlinhamentoD
       const r = await cliente.query(
         `update public.channel_sessions set display_name = $3
           where organization_id = $1 and id = $2 and archived_at is null
-            and (display_name is null or btrim(display_name) = '')`,
-        [organizationId, item.sessaoId, item.nome],
+            and (display_name is null or btrim(display_name) = '' or display_name like $4)`,
+        [organizationId, item.sessaoId, item.nome, `%${SUFIXO_NUMERO_NOVO}`],
       );
       mudou = (r.rowCount ?? 0) > 0;
     }
