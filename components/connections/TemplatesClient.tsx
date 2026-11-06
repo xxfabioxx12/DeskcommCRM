@@ -188,8 +188,8 @@ export function TemplatesClient() {
 
   return (
     <div className="flex flex-col gap-4" data-testid="templates-root">
-      <div className="flex items-center justify-between gap-4">
-        <p className="text-sm text-muted-foreground">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <p className="min-w-0 break-words text-sm text-muted-foreground">
           {t("Espelho da conta")} <span className="font-mono text-xs">{waba}</span> ·{" "}
           {templates.length} {t("template(s)")}
         </p>
@@ -293,7 +293,9 @@ export function TemplatesClient() {
                 </div>
               ) : null}
 
-              {podeGerenciar && (
+              {/* Só no modelo DESTA conta oficial: o do parceiro também está no
+                  espelho, e editar/apagar aqui miraria a WABA oficial pelo nome. */}
+              {podeGerenciar && tpl.daConexao && (
                 <AcoesDoModeloOficial
                   modelo={{ name: tpl.name, language: tpl.language, components: tpl.components ?? [] }}
                   onEditar={() =>

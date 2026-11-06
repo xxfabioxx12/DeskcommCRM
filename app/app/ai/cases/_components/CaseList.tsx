@@ -125,7 +125,9 @@ export function CaseList({ heading }: { heading?: ReactNode } = {}) {
               </p>
               <p className="text-xs text-muted-foreground">
                 {tab === "waiting"
-                  ? t("Quando a IA precisar de você, aparece aqui.")
+                  ? t(
+                      'Os casos aparecem aqui quando um agente publicado, com "Deixar o agente pedir uma tarefa a alguém e seguir conversando" ligado, pede algo a você. Conversa passada para uma pessoa vai para o Inbox.',
+                    )
                   : tab === "answered"
                     ? t("Casos já respondidos que esperam o cliente ficam aqui.")
                     : t("Casos concluídos, cancelados ou repassados ficam aqui.")}

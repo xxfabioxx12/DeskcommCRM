@@ -85,6 +85,26 @@ function daConexao<T>(consulta: T, escopo: EscopoDaGestao): T {
 }
 
 /**
+ * As linhas do espelho deste modelo NESTA conexão. É a mesma régua que decide se
+ * a conexão pode editar/apagar o modelo: o espelho é da organização inteira, e o
+ * homônimo de outra conexão é de outra conta.
+ */
+export async function linhasDoModeloNaConexao(
+  admin: SupabaseClient,
+  escopo: EscopoDaGestao,
+  alvo: { name: string; language: string },
+): Promise<string[]> {
+  const { data, error } = await daConexao(
+    admin.from("meta_templates").select("id").eq("organization_id", escopo.orgId),
+    escopo,
+  )
+    .eq("name", alvo.name)
+    .eq("language", alvo.language);
+  if (error) throw new Error(`modelo_espelho: ${error.message}`);
+  return ((data ?? []) as { id: string }[]).map((l) => l.id);
+}
+
+/**
  * Onde o modelo é usado, em frases para a tela (pt; a rota traduz os rótulos).
  * Lê só o que VALE hoje: a versão ativa e o rascunho de cada follow-up, e a
  * versão publicada de cada agente.
@@ -180,14 +200,7 @@ export async function executarGestao(
     return { ok: true, acao: "editar" };
   }
 
-  const { data: linhas, error } = await daConexao(
-    admin.from("meta_templates").select("id").eq("organization_id", escopo.orgId),
-    escopo,
-  )
-    .eq("name", corpo.name)
-    .eq("language", corpo.language);
-  if (error) throw new Error(`modelo_espelho: ${error.message}`);
-  const ids = ((linhas ?? []) as { id: string }[]).map((l) => l.id);
+  const ids = await linhasDoModeloNaConexao(admin, escopo, corpo);
 
   if (!corpo.confirmado) {
     const usos = await usosDoModelo(admin, escopo.orgId, { name: corpo.name, language: corpo.language, ids });

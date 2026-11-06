@@ -159,6 +159,16 @@ describe("a sétima cópia não nasce", () => {
   const LEITURAS_LEGITIMAS: ReadonlyArray<{ arquivo: string; trecho: string; motivo: string }> = [
     // ── fork NODZ: painel por setor ─────────────────────────────────────────
     {
+      arquivo: "app/api/v1/channel-sessions/route.ts",
+      trecho: "displayName: nomeDoNumeroNovo ?? parsed.data.display_name,",
+      motivo: "nome do NÚMERO novo (channel_sessions) que o atendente do setor conecta, não de contato",
+    },
+    {
+      arquivo: "lib/inbox/alinhar-numeros.ts",
+      trecho: "(faltaPolitica || sessao.display_name)",
+      motivo: "nome do NÚMERO (channel_sessions) que o alinhador completa, não de contato",
+    },
+    {
       arquivo: "lib/inbox/painel-do-setor.ts",
       trecho: "if (!n.display_name || corte <= 0) continue;",
       motivo: "nome do NÚMERO (channel_sessions) que dá o setor, não de contato",
@@ -183,6 +193,11 @@ describe("a sétima cópia não nasce", () => {
       arquivo: "lib/prospecting/agent-setup.ts",
       trecho: "?.display_name ?? selected.modelId}`,",
       motivo: "o mesmo rótulo de modelo, no caminho em que a escolha já veio da tela",
+    },
+    {
+      arquivo: "app/api/v1/conversations/[id]/transfer/route.ts",
+      trecho: "display_name: linha?.display_name ?? null,",
+      motivo: "a prévia da transferência devolve as colunas do CANAL (channel_sessions) cruas; quem rotula é a tela",
     },
     {
       arquivo: "app/api/v1/channels/official/route.ts",

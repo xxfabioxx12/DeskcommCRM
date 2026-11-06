@@ -14,6 +14,7 @@ const h = vi.hoisted(() => ({
   sync: vi.fn(),
   audit: vi.fn(),
   upserts: [] as Array<Record<string, unknown>>,
+  modeloNaConta: true,
 }));
 
 vi.mock("@/lib/auth/require-role", () => ({
@@ -41,13 +42,20 @@ vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
     from() {
       const b: Record<string, unknown> = {};
-      for (const m of ["select", "eq", "order"]) b[m] = () => b;
+      let colunas = "";
+      for (const m of ["eq", "is", "order"]) b[m] = () => b;
+      b.select = (c: string) => {
+        colunas = c;
+        return b;
+      };
       b.upsert = async (linha: Record<string, unknown>) => {
         h.upserts.push(linha);
         return { error: null };
       };
       Object.defineProperty(b, "then", {
-        value: (ok: (v: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(ok),
+        // `select("id")` é a conferência de que o modelo é DESTA conta oficial (o 404 do homônimo).
+        value: (ok: (v: unknown) => unknown) =>
+          Promise.resolve({ data: colunas === "id" && h.modeloNaConta ? [{ id: "t-1" }] : [], error: null }).then(ok),
       });
       return b;
     },
@@ -77,6 +85,7 @@ const CRIAR = {
 beforeEach(() => {
   vi.clearAllMocks();
   h.upserts = [];
+  h.modeloNaConta = true;
   h.ops = {
     create: vi.fn(async () => ({
       name: "",
@@ -202,6 +211,28 @@ describe("editar e apagar", () => {
       components: [{ type: "BODY", text: "Oi {{1}}, chegou.", example: { body_text: [["Ana"]] } }],
     });
     expect(h.sync).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("recusas trazidas do oficial (#3635)", () => {
+  it("falta de whatsapp_business_management é 403, não 502", async () => {
+    h.ops!.create!.mockRejectedValue(new Error("meta_template_failed: 403 (#200) Permissions error"));
+    const res = await pedir(CRIAR);
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("forbidden");
+  });
+
+  it("modelo que não é da conta oficial (homônimo do parceiro) é 404 e nada é tocado", async () => {
+    h.modeloNaConta = false;
+    const res = await pedir({ acao: "apagar", name: "pedido_chegou", language: "pt_BR", confirmado: true });
+    expect(res.status).toBe(404);
+    expect(h.gestao).not.toHaveBeenCalled();
+  });
+
+  it("conexão sem WABA gravada é 409, não 500", async () => {
+    h.gestao.mockRejectedValueOnce(new Error("meta_sem_waba: a conexão não tem conta (WABA)."));
+    const res = await pedir({ acao: "apagar", name: "pedido_chegou", language: "pt_BR" });
+    expect(res.status).toBe(409);
   });
 });
 

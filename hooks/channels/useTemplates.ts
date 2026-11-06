@@ -36,6 +36,8 @@ export interface TemplateView {
   savedValues: Record<string, string>;
   /** A definição crua (a rota já devolve) — a prévia da campanha monta o texto com ela. */
   components?: unknown[];
+  /** Da conta oficial desta conexão: só estes têm Editar/Apagar (o espelho é da organização). */
+  daConexao: boolean;
 }
 
 export interface TemplatesPayload {

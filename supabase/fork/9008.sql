@@ -1,4 +1,4 @@
--- manifest: fn_reserve_channel_connection aceita o atendente do setor padrão para número novo (cópia NODZ).
+-- ---- atendente do setor padrão conecta número novo (migration 9008, fork) ----
 --
 -- Só para número novo do setor padrão, com o nome provisório, e por quem responde por esse setor.
 
@@ -55,8 +55,8 @@ begin
    and id<>receipt.id and (state='processing' and lease_until>now())) then raise exception 'connection_in_progress' using errcode='55P03';end if;
  update public.channel_connection_requests set state='processing',lease_token=token,lease_until=now()+interval '5 minutes',
   remote_created=false,updated_at=now() where organization_id=p_org and id=receipt.id;
- -- Não ressuscita antes da pós-condição remota. Arquivado permanece invisível
- -- até finish; falha conserva identidade e estado FAILED para reparo.
+ -- 9036: reviver a linha morta e sem número volta a ocupar a vaga do plano.
+ perform public.fn_vaga_ao_reviver_canal(p_org,channel.id);
  update public.channel_sessions set status='STARTING',status_reason='connection_pending',last_status_change_at=now()
   where organization_id=p_org and id=channel.id returning * into channel;
  return jsonb_build_object('replay',false,'channel',to_jsonb(channel),'receipt_id',receipt.id,'lease_token',token);

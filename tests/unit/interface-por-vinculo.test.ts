@@ -21,7 +21,9 @@ describe("interface por vínculo é apresentação", () => {
   });
   it("simplificada tem operação e Conexões somente quando papel permite", () => {
     expect(hrefs(simplified)).toContain("/app/connections");
-    expect(hrefs(simplified, "agent")).not.toContain("/app/connections");
+    // Cópia NODZ: o atendente vê Conexões (a página confere o setor dele).
+    expect(hrefs(simplified, "agent")).toContain("/app/connections");
+    expect(hrefs(simplified, "viewer")).not.toContain("/app/connections");
     expect(hrefs(simplified)).not.toContain("/app/ai/credentials");
     expect(hrefs(simplified)).toEqual(
       expect.arrayContaining([

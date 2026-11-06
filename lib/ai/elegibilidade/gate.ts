@@ -41,8 +41,9 @@ import {
   numeroPodeTestar,
 } from "./pre-go-live";
 import { ehContatoInterno } from "@/lib/contacts/tags-internas";
+import { ehContatoDaEquipe } from "@/lib/contacts/tags-da-equipe";
 import { ehOperante } from "@/lib/organizacao/operante";
-import { tagsInternasDaOrg } from "@/lib/schemas/settings";
+import { tagsDaEquipeDaOrg, tagsInternasDaOrg } from "@/lib/schemas/settings";
 
 /** Valores aceitos em `channel_sessions.metadata.ai_gate`. */
 export const AI_GATE_MODES = ["open", "allowlist"] as const;
@@ -87,6 +88,16 @@ export interface EstadoDeElegibilidade {
    * sem pausar uma por uma. A lista mora em `crmSettingsSchema`.
    */
   contatoInterno: boolean;
+  /**
+   * `contacts.tags` cruza com `organizations.settings.crm.team_contact_tags`
+   * (#3534): contato da EQUIPE que continua sendo atendido. É só um FATO,
+   * não entra em `decidirElegibilidade`: não veta e não autoriza — o contato
+   * segue a régua do canal como qualquer outro (no pré-go-live, quem autoriza
+   * é a lista de teste). Quem o lê é o medidor de clima e o handoff (sem
+   * repasse por `low_sentiment`) e o nascimento do lead. Ver
+   * `lib/contacts/tags-da-equipe.ts`.
+   */
+  contatoDaEquipe: boolean;
   /**
    * `contacts.ai_opt_out` — a marca PERMANENTE "sempre atendimento humano"
    * (migration 0624 / issue 2379). Convive com `force_human` de propósito: a
@@ -136,6 +147,17 @@ export interface DecisaoDeElegibilidade {
    */
   bloqueioPorAllowlist: boolean;
 }
+
+/**
+ * A decisão + o fato que a régua da equipe precisa carregar (#3534).
+ *
+ * `decidirElegibilidade` continua devolvendo só `{permite, motivo, bloqueio}`
+ * — é a regra pura, e mudar o formato dela obrigaria todo consumidor a saber de
+ * equipe. Quem lê do BANCO (os dois transportes) já montou o estado, e devolve
+ * junto `contatoDaEquipe`: o medidor de clima precisa saber que a conversa é
+ * atendida (permite) E que não pode ser passada por `low_sentiment`.
+ */
+export type DecisaoDaConversa = DecisaoDeElegibilidade & { contatoDaEquipe: boolean };
 
 function silenciadoAgora(until: Date | number | null, agora: Date): boolean {
   if (until === null) return false;
@@ -287,6 +309,7 @@ export function montarEstadoDeElegibilidade(raw: {
     modo,
     forceHuman: raw.forceHuman === true,
     contatoInterno: ehContatoInterno(raw.contactTags, tagsInternasDaOrg(raw.orgSettings)),
+    contatoDaEquipe: ehContatoDaEquipe(raw.contactTags, tagsDaEquipeDaOrg(raw.orgSettings)),
     aiOptOut: raw.aiOptOut === true,
     botSilencedUntil: normalizarInstante(raw.botSilencedUntil),
     assigneeKind: raw.assigneeKind,

@@ -31,9 +31,10 @@ import type { Idioma } from "@/lib/i18n/idiomas";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { audit } from "@/lib/audit";
 import { acaoDoModeloOficialSchema, componentsDoFormulario } from "@/lib/channels/criacao-de-modelo";
-import { executarGestao, ROTULO_DO_USO } from "@/lib/channels/gestao-de-modelos";
+import { executarGestao, linhasDoModeloNaConexao, ROTULO_DO_USO } from "@/lib/channels/gestao-de-modelos";
 import { ehErroDaPlataformaNoModelo, explicarErroDaCriacao } from "@/lib/channels/meta/erros-para-operador";
 import { opsDeModelosDaContaOficial } from "@/lib/channels/modelos-do-canal";
+import { erroDePermissaoDeGestao } from "@/lib/channels/templates-graph";
 import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
@@ -79,6 +80,12 @@ export interface TemplateView {
    * `template_values`. O painel da janela fechada pré-preenche com eles.
    */
   savedValues: Record<string, string>;
+  /**
+   * O modelo é DA CONTA OFICIAL desta conexão — o único que esta tela pode
+   * editar ou apagar. O espelho é da organização inteira: o modelo do parceiro
+   * aparece na lista, mas editar/apagar aqui miraria a WABA oficial pelo nome.
+   */
+  daConexao: boolean;
 }
 
 /** Textos com placeholder, achatados (inclui os de dentro de card de carrossel). */
@@ -104,6 +111,7 @@ function textPreviews(components: unknown): Array<{ onde: string; text: string }
 }
 
 type OrgGate =
+  /** `userId` só é usado no audit das ações de escrita (#3635). */
   | { autorizado: true; orgId: string; userId: string; idioma: Idioma }
   | { autorizado: false; resposta: NextResponse };
 
@@ -217,6 +225,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         const r = mesclarValoresSalvos(contrato, (row.saved_values ?? {}) as Record<string, unknown>, {});
         return r.ok ? r.valores : {};
       })(),
+      // A mesma régua de `linhasDoModeloNaConexao`: linha oficial = sem conexão
+      // e com a WABA desta sessão.
+      daConexao: !!sessao?.wabaId && row.channel_session_id === null && row.waba_id === sessao.wabaId,
     };
   });
 
@@ -338,6 +349,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return ok({ acao: "criar", status }, { requestId, status: 201 });
     }
 
+    // A Meta acha o modelo pelo NOME dentro da WABA oficial. Um homônimo de outra
+    // conexão (o parceiro) listado no espelho não pode virar edição — ou
+    // apagamento, que é irreversível — na conta oficial.
+    if ((await linhasDoModeloNaConexao(admin, escopo, corpo)).length === 0) {
+      return fail("not_found", t("Este modelo não é da conta oficial desta conexão."), 404, { requestId });
+    }
+
     const gestao = await executarGestao(
       ops,
       admin,
@@ -380,6 +398,36 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return ok({ acao: gestao.acao }, { requestId });
   } catch (err) {
     const mensagem = err instanceof Error ? err.message : String(err);
+    // Falta de `whatsapp_business_management` é ACIONÁVEL (quem administra o app
+    // da Meta dá o escopo) e não pode sair como "não deu".
+    if (erroDePermissaoDeGestao(err) || /^[a-z_]+_template_failed: 403\b/.test(mensagem)) {
+      return fail(
+        "forbidden",
+        t(
+          "A conta do WhatsApp não permite gerenciar modelos por esta conexão. Falta a permissão whatsapp_business_management no app da Meta.",
+        ),
+        403,
+        { requestId },
+      );
+    }
+    // Conexão sem conta/token é PRECONDIÇÃO da nossa configuração: 409 com o
+    // motivo, e não 500 pedindo para tentar de novo.
+    if (/^meta_(modelo_)?sem_waba/.test(mensagem)) {
+      return fail(
+        "failed_precondition",
+        t("Esta conexão oficial não tem conta do WhatsApp (WABA) gravada. Reconecte o número."),
+        409,
+        { requestId },
+      );
+    }
+    if (/^meta_(not_configured|modelo_sem_credencial)/.test(mensagem)) {
+      return fail(
+        "failed_precondition",
+        t("Esta conexão oficial não tem token para gerenciar modelos. Reconecte o número."),
+        409,
+        { requestId },
+      );
+    }
     if (!ehErroDaPlataformaNoModelo(mensagem)) {
       // Falha NOSSA (banco do espelho, leitura dos usos, configuração, rede): não
       // é recusa da Meta, e o texto cru do banco não vai para a tela.
