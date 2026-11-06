@@ -762,7 +762,8 @@ export const NAV_CATALOG = [
       "Seus números de WhatsApp: por QR ou canal oficial da Meta, com saúde, reconexão e templates.",
     icon: "PlugsConnected",
     group: "canais",
-    minRole: "admin",
+    // Cópia NODZ: o atendente com setor conecta e religa os números dele (a página confere).
+    minRole: "agent",
     sidebar: true,
     healthDot: true,
   },
