@@ -20,6 +20,7 @@ import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
  */
 export function SeletorDeAtendente(props: {
   value: string | undefined;
+  emptyLabel?: string;
   onChange: (atendente: string | undefined) => void;
 }) {
   // Sem o provedor de consultas (telas montadas isoladas) não há de onde ler a
@@ -30,13 +31,16 @@ export function SeletorDeAtendente(props: {
 
 function SeletorComEquipe({
   value,
+  emptyLabel = "Todos os atendentes",
   onChange,
 }: {
   value: string | undefined;
+  emptyLabel?: string;
   onChange: (atendente: string | undefined) => void;
 }) {
   const t = useT();
   const { data } = useAssignableMembers(true);
+  const emptyText = emptyLabel === "Você (pessoa conectada)" ? t("Você (pessoa conectada)") : t("Todos os atendentes");
   // A resposta pode vir vazia ou malformada: o seletor degrada para "só Todos".
   const membros = Array.isArray(data) ? data : [];
   const foraDaLista = value != null && !membros.some((m) => m.user_id === value);
@@ -50,10 +54,10 @@ function SeletorComEquipe({
         )}
         aria-label={t("Filtrar por atendente")}
       >
-        <SelectValue placeholder={t("Todos os atendentes")} />
+        <SelectValue placeholder={emptyText} />
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value="all">{t("Todos os atendentes")}</SelectItem>
+        <SelectItem value="all">{emptyText}</SelectItem>
         {foraDaLista && value != null && (
           <SelectItem value={value}>{t("Atendente removido")}</SelectItem>
         )}

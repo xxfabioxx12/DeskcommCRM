@@ -70,7 +70,7 @@ describe("Inbox › o badge das abas hidrata sem divergir da contagem (#3736)", 
   it("controle: o HTML do servidor sai SEM o badge (não há contagem no servidor)", () => {
     contagens = { fila: 41 };
     const html = renderToString(<InboxFilters value={FILTRO} onChange={() => {}} />);
-    expect(html).toContain("Fila");
+    expect(html).toContain("Aguardando atendente");
     expect(html, "o servidor passou a imprimir a contagem: a divergência volta").not.toContain(
       "tabular-nums",
     );

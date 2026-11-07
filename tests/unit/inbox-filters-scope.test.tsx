@@ -110,76 +110,34 @@ describe("visibleInboxTabs (lógica pura de visões)", () => {
 });
 
 describe("InboxFilters render — 3 visões + escopo", () => {
-  it("centraliza a aba selecionada e indica as abas fora da coluna", () => {
+  it("mantém as visões de trabalho acessíveis sem setas horizontais", () => {
     setOrg("manager", "all");
-    let onResize: ResizeObserverCallback = () => {};
-    const disconnect = vi.fn();
-    vi.stubGlobal("ResizeObserver", class {
-      constructor(callback: ResizeObserverCallback) { onResize = callback; }
-      observe() {}
-      disconnect = disconnect;
-    });
-
-    try {
-      const onChange = vi.fn();
-      const { rerender } = render(<InboxFilters value={VALUE} onChange={onChange} />);
-      const list = screen.getByRole("tablist");
-      let width = 180;
-      Object.defineProperty(list, "clientWidth", { configurable: true, get: () => width });
-      Object.defineProperty(list, "scrollWidth", { configurable: true, value: 520 });
-      vi.spyOn(list, "getBoundingClientRect").mockReturnValue({ left: 0 } as DOMRect);
-      const all = screen.getByRole("tab", { name: /Todas/ });
-      Object.defineProperty(all, "offsetWidth", { configurable: true, value: 40 });
-      vi.spyOn(all, "getBoundingClientRect").mockImplementation(
-        () => ({ left: 210 - list.scrollLeft }) as DOMRect,
-      );
-      rerender(<InboxFilters value={{ ...VALUE, tab: "all" }} onChange={onChange} />);
-      expect(list.scrollLeft).toBe(140);
-      expect(screen.getByRole("button", { name: "Aba anterior" })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Próxima aba" })).toBeInTheDocument();
-      fireEvent.click(screen.getByRole("button", { name: "Próxima aba" }));
-      expect(onChange).toHaveBeenCalledWith({ ...VALUE, tab: "closed" });
-
-      width = 260;
-      act(() => onResize([], {} as ResizeObserver));
-      expect(list.scrollLeft).toBe(100);
-
-      const archived = screen.getByRole("tab", { name: /Arquivadas/ });
-      Object.defineProperty(archived, "offsetWidth", { configurable: true, value: 60 });
-      vi.spyOn(archived, "getBoundingClientRect").mockImplementation(
-        () => ({ left: 430 - list.scrollLeft }) as DOMRect,
-      );
-      rerender(<InboxFilters value={{ ...VALUE, tab: "archived" }} onChange={onChange} />);
-      expect(list.scrollLeft).toBe(260);
-      expect(screen.getByRole("button", { name: "Aba anterior" })).toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: "Próxima aba" })).not.toBeInTheDocument();
-      expect(screen.getByRole("tab", { name: /Arquivadas/ })).toHaveAttribute("data-state", "active");
-    } finally {
-      vi.unstubAllGlobals();
-    }
-    expect(disconnect).toHaveBeenCalled();
+    render(<InboxFilters value={VALUE} onChange={() => {}} />);
+    expect(screen.getByRole("tab", {name: /Visão geral/})).toBeVisible();
+    expect(screen.queryByRole("button", {name: "Próxima aba"})).not.toBeInTheDocument();
+    expect(screen.getByRole("button", {name: "Histórico"})).toHaveAttribute("aria-expanded", "false");
   });
 
   it("agent em modo own*: mostra Minhas e Fila, esconde Todas", () => {
     setOrg("agent", "own_and_unassigned");
     render(<InboxFilters value={VALUE} onChange={() => {}} />);
-    expect(screen.getByRole("tab", { name: /Minhas/ })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /Fila/ })).toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: /Todas/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Meus atendimentos/ })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Aguardando atendente/ })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /Visão geral/ })).not.toBeInTheDocument();
   });
 
   it("manager: mostra Todas", () => {
     setOrg("manager", "own_and_unassigned");
     render(<InboxFilters value={VALUE} onChange={() => {}} />);
-    expect(screen.getByRole("tab", { name: /Todas/ })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Visão geral/ })).toBeInTheDocument();
   });
 
   it("contagens por visão são renderizadas (Fila=3, Minhas=2)", () => {
     setOrg("manager", "all");
     render(<InboxFilters value={VALUE} onChange={() => {}} />);
-    expect(screen.getByRole("tab", { name: /Fila/ })).toHaveTextContent("3");
-    expect(screen.getByRole("tab", { name: /Minhas/ })).toHaveTextContent("2");
-    expect(screen.getByRole("tab", { name: /Todas/ })).toHaveTextContent("5");
+    expect(screen.getByRole("tab", { name: /Aguardando atendente/ })).toHaveTextContent("3");
+    expect(screen.getByRole("tab", { name: /Meus atendimentos/ })).toHaveTextContent("2");
+    expect(screen.getByRole("tab", { name: /Visão geral/ })).toHaveTextContent("5");
   });
 });
 

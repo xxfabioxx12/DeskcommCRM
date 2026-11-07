@@ -1,10 +1,4 @@
-/**
- * Entrar em Minhas limpa o atendente escolhido pelo gerente por QUALQUER caminho.
- *
- * O clique na aba já limpava; as setas de "Aba anterior"/"Próxima aba" não. Por
- * elas, a escolha seguia viva em Minhas com o seletor escondido, e as outras
- * abas continuavam contando só o atendente escolhido sem nada na tela dizer isso.
- */
+/** Voltar para Meus atendimentos limpa o responsável escolhido, inclusive após consultar o histórico. */
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -48,17 +42,18 @@ afterEach(() => {
 const COM_ATENDENTE: InboxFiltersValue = { tab: "unassigned", search: "", onlyUnread: false, assigned_to: ATENDENTE };
 
 describe("filtro por atendente — as setas de aba", () => {
-  it("'Próxima aba' para Minhas limpa o atendente escolhido", () => {
+  it("Entrar em Meus atendimentos limpa o atendente escolhido", () => {
     const onChange = vi.fn();
     render(<InboxFilters value={COM_ATENDENTE} onChange={onChange} />);
-    fireEvent.click(screen.getByRole("button", { name: "Próxima aba" }));
+    fireEvent.mouseDown(screen.getByRole("tab", { name: /Meus atendimentos/ }), { button: 0, ctrlKey: false });
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ tab: "mine", assigned_to: undefined }));
   });
 
-  it("CONTROLE: seta para uma aba que não é Minhas mantém a escolha", () => {
+  it("CONTROLE: abrir Histórico e uma aba que não é Minhas mantém a escolha", () => {
     const onChange = vi.fn();
     render(<InboxFilters value={{ ...COM_ATENDENTE, tab: "all" }} onChange={onChange} />);
-    fireEvent.click(screen.getByRole("button", { name: "Próxima aba" }));
+    fireEvent.click(screen.getByRole("button", { name: "Histórico" }));
+    fireEvent.mouseDown(screen.getByRole("tab", { name: /Concluídas/ }), { button: 0, ctrlKey: false });
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ tab: "closed", assigned_to: ATENDENTE }));
   });
 });

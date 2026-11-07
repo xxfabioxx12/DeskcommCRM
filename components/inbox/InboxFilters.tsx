@@ -1,7 +1,7 @@
 "use client";
 import { useT } from "@/hooks/i18n/useT";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CaretLeft, CaretRight, MagnifyingGlass } from "@/lib/ui/icons";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { CaretDown, MagnifyingGlass } from "@/lib/ui/icons";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
@@ -41,32 +41,24 @@ import { SeletorDeAtendente } from "@/components/inbox/SeletorDeAtendente";
 
 export type InboxTab = "unassigned" | "mine" | "all" | "closed" | "archived" | "ai";
 
-/**
- * A faixa na ORDEM DO TRABALHO (#2498): primeiro o que o robô conduz, depois o
- * que espera gente, depois o histórico. Antes "Automático" fechava a faixa,
- * depois de dois passados — o valor que o operador mais olha era o último.
- *
- * Só a ordem mudou: mesmos `value`, mesmos rótulos, mesmas permissões
- * (`visibleInboxTabs` filtra sem reordenar) e mesmas contagens (`countFor` lê
- * por chave, e a chave não acompanha a posição). `moveTab` anda pelo MESMO
- * array, então as setas continuam vizinha a vizinha.
- */
+/** Navigation labels change; API keys, permissions and counts stay unchanged. */
 const INBOX_TABS: { value: InboxTab; label: string }[] = [
-  // "Automático", não "IA": a palavra deste ator já é contrato em quatro arquivos
-  // e no dicionário, e `handoff-por-orcamento.test.ts` usa literalmente "Voltar
-  // para a IA" como a sabotagem que deve reprovar. O rótulo não mudou quando o
-  // significado mudou (deixou de filtrar `ai_handling` e passou a perguntar a
-  // régua do motor) — e a posição sim: ela era a última fora do padrão.
-  { value: "ai", label: "Automático" },
-  { value: "unassigned", label: "Fila" },
-  { value: "mine", label: "Minhas" },
-  { value: "all", label: "Todas" },
-  { value: "closed", label: "Fechadas" },
-  // "Arquivadas" fica ao lado de "Fechadas" porque as duas são passado — e
-  // separada dela porque são passados diferentes (#923): fechada é atendimento
-  // encerrado, arquivada é o que saiu da fila de trabalho sem ser destruído.
+  { value: "mine", label: "Meus atendimentos" },
+  { value: "unassigned", label: "Aguardando atendente" },
+  { value: "ai", label: "IA atendendo" },
+  { value: "all", label: "Visão geral" },
+  { value: "closed", label: "Concluídas" },
   { value: "archived", label: "Arquivadas" },
 ];
+
+const DESCRICAO_DA_VISAO: Record<InboxTab, string> = {
+  mine: "Conversas atribuídas a você que ainda precisam de atendimento.",
+  unassigned: "A IA saiu do atendimento e nenhuma pessoa assumiu ainda.",
+  ai: "Conversas sob atendimento automático, dentro do seu acesso.",
+  all: "Todas as conversas do seu acesso, com os filtros selecionados.",
+  closed: "Atendimentos concluídos. O histórico das mensagens continua disponível.",
+  archived: "Conversas guardadas fora do atendimento ativo, sem apagar mensagens.",
+};
 
 /**
  * Visões visíveis por papel + escopo (G4-02, acceptance 1). 'Todas' fica oculta
@@ -125,40 +117,7 @@ interface Props {
 export function InboxFilters({ value, onChange }: Props) {
   const t = useT();
   const [searchInput, setSearchInput] = useState(value.search);
-  const tabsListRef = useRef<HTMLDivElement>(null);
-  const [moreTabs, setMoreTabs] = useState({ left: false, right: false });
-  const updateMoreTabs = useCallback(() => {
-    const list = tabsListRef.current;
-    if (!list) return;
-    const maxScroll = Math.max(0, list.scrollWidth - list.clientWidth);
-    const next = { left: list.scrollLeft > 1, right: list.scrollLeft < maxScroll - 1 };
-    setMoreTabs((previous) =>
-      previous.left === next.left && previous.right === next.right ? previous : next,
-    );
-  }, []);
-  useEffect(() => {
-    const list = tabsListRef.current;
-    if (!list) return;
-    const centerSelectedTab = () => {
-      // Deixar a aba só na borda esconde as vizinhas. Centralizar mostra o
-      // contexto dos dois lados, salvo nas extremidades naturais da faixa.
-      const selected = list.querySelector<HTMLElement>('[role="tab"][data-state="active"]');
-      if (selected) {
-        const selectedCenter =
-          selected.getBoundingClientRect().left - list.getBoundingClientRect().left +
-          list.scrollLeft + selected.offsetWidth / 2;
-        const maxScroll = Math.max(0, list.scrollWidth - list.clientWidth);
-        list.scrollLeft = Math.max(0, Math.min(maxScroll, selectedCenter - list.clientWidth / 2));
-      }
-      updateMoreTabs();
-    };
-    centerSelectedTab();
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(centerSelectedTab);
-    observer.observe(list);
-    list.querySelectorAll<HTMLElement>('[role="tab"]').forEach((tab) => observer.observe(tab));
-    return () => observer.disconnect();
-  }, [value.tab, updateMoreTabs]);
+  const [historicoAberto, setHistoricoAberto] = useState(false);
   /**
    * O campo escuta o valor de FORA — e só ele.
    *
@@ -239,15 +198,13 @@ export function InboxFilters({ value, onChange }: Props) {
   // Filtro por ATENDENTE: só para gerente ou acima (a lista de quem atende é da
   // gestão; o atendente comum continua vendo só o escopo dele, que a RLS impõe).
   const podeFiltrarPorAtendente = roleAtLeast(activeOrg?.role, "manager");
-  const mostrarSeletorDeAtendente = podeFiltrarPorAtendente && value.tab !== "mine";
+  const mostrarSeletorDeAtendente = podeFiltrarPorAtendente;
+  const setores = setoresDosNumeros(channels ?? []);
+  const mostrarSetores = podeFiltrarPorAtendente && (setores.length > 1 || value.setor != null);
 
   const tabs = activeOrg
     ? visibleInboxTabs(activeOrg.role, activeOrg.visibility_mode)
     : INBOX_TABS.map((t) => t.value);
-  const moveTab = (direction: -1 | 1) => {
-    const next = tabs[tabs.indexOf(value.tab) + direction];
-    if (next) onChange(comAba(value, next));
-  };
   const countFor: Partial<Record<InboxTab, number>> = {
     // `fila` é o nome novo; `unassigned` é o alias que a rota versionada mantém.
     // O `??` cobre a janela em que a página ainda lê um cache de react-query
@@ -407,6 +364,20 @@ export function InboxFilters({ value, onChange }: Props) {
   return (
     <div className="border-b border-border bg-background">
       <div className="space-y-2 px-3 pt-3 pb-2">
+        {mostrarSetores && (
+          <div className="space-y-1.5">
+            <p className="text-[11px] font-medium text-text-muted">{t("Setor")}</p>
+            <div role="group" aria-label={t("Filtrar por setor")} className="flex flex-wrap gap-1">
+              {[undefined, ...setores.map((s) => s.nome), ...(value.setor && !setores.some((s) => s.nome === value.setor) ? [value.setor] : [])].map((setor) => (
+                <button key={setor ?? "all"} type="button" aria-pressed={value.setor === setor}
+                  onClick={() => onChange({ ...value, setor, channel_session_id: undefined })}
+                  className={cn("min-h-8 rounded-md border px-3 py-1 text-xs font-medium focus-visible:ring-2 focus-visible:ring-ring", value.setor === setor ? "border-accent bg-accent-soft text-accent" : "border-border text-text-muted hover:bg-surface-elevated")}>
+                  {setor ?? t("Todos os setores")}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <div className="relative min-w-0 flex-1">
             <MagnifyingGlass
@@ -466,14 +437,14 @@ export function InboxFilters({ value, onChange }: Props) {
         </div>
 
         {(showChannelSwitch || mostrarSeletorDeTag || mostrarSeletorDeAtendente) && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {showChannelSwitch && (
               <Select
-                value={value.setor ? `setor:${value.setor}` : (value.channel_session_id ?? "all")}
+                value={!mostrarSetores && value.setor ? `setor:${value.setor}` : (value.channel_session_id ?? "all")}
                 onValueChange={(v) =>
                   v.startsWith("setor:")
                     ? onChange({ ...value, channel_session_id: undefined, setor: v.slice(6) })
-                    : onChange({ ...value, setor: undefined, channel_session_id: v === "all" ? undefined : v })
+                    : onChange({ ...value, setor: v === "all" ? value.setor : undefined, channel_session_id: v === "all" ? undefined : v })
                 }
               >
                 <SelectTrigger
@@ -487,7 +458,7 @@ export function InboxFilters({ value, onChange }: Props) {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">{t("Todos os números")}</SelectItem>
-                  {setoresDosNumeros(channels ?? []).map((s) => (
+                  {!mostrarSetores && setores.map((s) => (
                     <SelectItem key={s.nome} value={`setor:${s.nome}`}>
                       {`${t("Setor")} ${s.nome}`}
                     </SelectItem>
@@ -642,93 +613,52 @@ export function InboxFilters({ value, onChange }: Props) {
             )}
 
             {mostrarSeletorDeAtendente && (
-              <SeletorDeAtendente
-                value={value.assigned_to}
-                onChange={(atendente) => onChange({ ...value, assigned_to: atendente })}
-              />
+              <div className="flex basis-full items-center gap-2 border-t border-border pt-2">
+                <span className="text-[11px] font-medium text-text-muted">{t("Responsável")}</span>
+                <SeletorDeAtendente
+                  emptyLabel={value.tab === "mine" ? "Você (pessoa conectada)" : "Todos os atendentes"}
+                  value={value.assigned_to}
+                  onChange={(atendente) => onChange({ ...value, tab: atendente && value.tab === "mine" ? "all" : value.tab, assigned_to: atendente })}
+                />
+              </div>
             )}
           </div>
         )}
       </div>
 
-      {/* As setas aparecem só quando há abas fora da área visível; a faixa e o
-          sublinhado continuam com a altura compacta do Inbox.
-
-          `flex-wrap` + `gap-x-1` (#2745) — A FAIXA QUEBRA EM VEZ DE ESCONDER.
-          Medido em browser real, com o CSS do produto compilado e a fonte
-          verdadeira (`tests/sonda-abas-inbox-1280.test.tsx`), as seis abas
-          somam 358px de rótulo+contagem e 378px com o gap de 4px; a coluna da
-          lista vale de 240 (mínimo do arraste, `LIMITES_LISTA`) a 520px, e o
-          padrão da faixa `xl` — a janela de 1280px da issue — é 272px. Sem
-          quebra, o `overflow-x-auto` rolava 191px na coluna de 272 e 13px na
-          de 450: "Fechadas" cortada e "Arquivadas" escondida atrás da seta,
-          que era exatamente o corte medido. Agora, na mesma medição: 2 linhas
-          (68px) em 272, 1 linha (30px) em 450, e as seis dentro da coluna em
-          toda a faixa — rolagem zero.
-
-          `shrink-0` + `whitespace-nowrap` seguem valendo: rótulo não encolhe
-          nem parte no meio. O `gap-x-1` só aperta onde não há folga (com
-          `justify-between` a sobra continua distribuída, então a faixa larga
-          não muda de figura) — e é o que leva 272px de 3 linhas para 2. A
-          seta de rolagem fica sendo o que sempre foi: reserva para o caso em
-          que UMA aba sozinha não cabe (zoom alto, coluna arrastada no mínimo).
-
-          Só o LAYOUT mudou: `value.tab`, `onChange`, `visibleInboxTabs` e
-          `countFor` estão byte a byte como estavam — a aba continua o mesmo
-          filtro com o mesmo rótulo, e "Automático" continua "Automático". */}
-      <Tabs
-        value={value.tab}
-        onValueChange={(v) => onChange(comAba(value, v as InboxTab))}
-        className="px-3"
-      >
-        <div className="flex items-center gap-1">
-          {moreTabs.left ? (
-            <button
-              type="button"
-              onClick={() => moveTab(-1)}
-              aria-label={t("Aba anterior")}
-              className="flex w-4 shrink-0 items-center justify-center text-text-muted hover:text-text focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <CaretLeft size={13} aria-hidden />
-            </button>
-          ) : (
-            <span className="w-4 shrink-0" aria-hidden />
-          )}
-          <TabsList
-            ref={tabsListRef}
-            onScroll={updateMoreTabs}
-            className="h-auto min-w-0 flex-1 flex-wrap justify-between gap-x-1 gap-y-2 rounded-none bg-transparent p-0 [scrollbar-width:none]"
-          >
-            {tabs.map((tab) => {
-              const meta = INBOX_TABS.find((t) => t.value === tab)!;
-              const count = countFor[tab];
-              return (
-                <TabsTrigger
-                  key={tab}
-                  value={tab}
-                  className="shrink-0 gap-1 rounded-none border-b-2 border-transparent px-0 pb-2 pt-1 text-xs font-medium text-text-muted data-[state=active]:border-accent data-[state=active]:bg-transparent data-[state=active]:text-text data-[state=active]:shadow-none"
-                >
-                  {t(meta.label)}
-                  {depoisDeMontar && typeof count === "number" && count > 0 && (
-                    <span className="text-[11px] tabular-nums text-text-subtle">{count}</span>
-                  )}
-                </TabsTrigger>
-              );
-            })}
+      <Tabs orientation="vertical" value={value.tab} onValueChange={(v) => onChange(comAba(value, v as InboxTab))} className="gap-0 px-3 pb-3">
+        <TabsList aria-label={t("Atendimento")} className="grid h-auto w-full grid-cols-1 gap-1 rounded-none bg-transparent p-0">
+          {tabs.filter((tab) => tab !== "closed" && tab !== "archived").map((tab) => {
+            const meta = INBOX_TABS.find((item) => item.value === tab)!;
+            const count = countFor[tab];
+            return (
+              <TabsTrigger key={tab} value={tab}
+                className={cn("min-h-8 w-full justify-between gap-2 whitespace-normal rounded-md border border-transparent px-3 py-1.5 text-left text-xs font-medium text-text-muted data-[state=active]:border-accent/30 data-[state=active]:bg-accent-soft data-[state=active]:text-accent data-[state=active]:shadow-none", tab === "all" && "mt-1 border-t-border")}>
+                <span>{t(meta.label)}</span>
+                {depoisDeMontar && typeof count === "number" && count > 0 && <span className="shrink-0 text-[11px] tabular-nums">{count}</span>}
+              </TabsTrigger>
+            );
+          })}
+        </TabsList>
+        <button type="button" aria-expanded={historicoAberto || value.tab === "closed" || value.tab === "archived"}
+          onClick={() => {
+            if (value.tab === "closed" || value.tab === "archived") { setHistoricoAberto(false); onChange(comAba(value, "mine")); }
+            else setHistoricoAberto((open) => !open);
+          }}
+          className="mt-2 flex min-h-8 w-full items-center justify-between border-t border-border px-3 pt-2 text-xs font-medium text-text-muted hover:text-text focus-visible:ring-2 focus-visible:ring-ring">
+          {t("Histórico")}<CaretDown size={14} aria-hidden />
+        </button>
+        {(historicoAberto || value.tab === "closed" || value.tab === "archived") && (
+          <TabsList aria-label={t("Histórico")} className="mt-1 grid h-auto w-full grid-cols-2 gap-1 bg-transparent p-0">
+            {tabs.filter((tab) => tab === "closed" || tab === "archived").map((tab) => (
+              <TabsTrigger key={tab} value={tab} className="min-h-8 gap-1 whitespace-normal rounded-md text-xs text-text-muted data-[state=active]:bg-accent-soft data-[state=active]:text-accent data-[state=active]:shadow-none">
+                {t(INBOX_TABS.find((item) => item.value === tab)!.label)}
+                {depoisDeMontar && typeof countFor[tab] === "number" && countFor[tab]! > 0 && <span className="text-[11px] tabular-nums">{countFor[tab]}</span>}
+              </TabsTrigger>
+            ))}
           </TabsList>
-          {moreTabs.right ? (
-            <button
-              type="button"
-              onClick={() => moveTab(1)}
-              aria-label={t("Próxima aba")}
-              className="flex w-4 shrink-0 items-center justify-center text-text-muted hover:text-text focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <CaretRight size={13} aria-hidden />
-            </button>
-          ) : (
-            <span className="w-4 shrink-0" aria-hidden />
-          )}
-        </div>
+        )}
+        <p className="px-3 pt-2 text-[11px] leading-relaxed text-text-subtle">{t(DESCRICAO_DA_VISAO[value.tab])}</p>
       </Tabs>
     </div>
   );

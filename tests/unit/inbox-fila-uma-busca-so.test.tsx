@@ -184,7 +184,7 @@ function montar() {
 
 beforeEach(() => {
   chamadas.length = 0;
-  window.history.replaceState(null, "", "/app/inbox");
+  window.history.replaceState(null, "", "/app/inbox?filter=unassigned");
 });
 afterEach(() => cleanup());
 

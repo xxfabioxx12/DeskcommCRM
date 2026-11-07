@@ -1,29 +1,4 @@
-/**
- * A ORDEM DAS ABAS DO INBOX — só a ordem muda (#2498).
- *
- * ─── O defeito ─────────────────────────────────────────────────────────────
- *
- * "Automático" ficava FORA da faixa, no fim dela, depois de "Arquivadas" — o
- * valor que o operador mais olha era o último, atrás de dois passados. A ordem
- * pedida pela issue é a do trabalho: primeiro o que o robô conduz, depois a
- * fila de quem precisa de gente, depois o histórico.
- *
- * ─── O que este arquivo trava ──────────────────────────────────────────────
- *
- * A ordem NOVA renderizada na tela, e nada além dela. Os controles ao redor
- * são o que torna a troca inofensiva, e cada um vira caso próprio porque cada
- * um teria um sintoma silencioso se sumisse:
- *
- *   - rótulos e `value` — um valor novo nasceria `?filter=` que a rota não lê;
- *   - permissões (`visibleInboxTabs`) — reordenar filtrando de novo esconderia
- *     "Todas" de quem tem direito a vê-la;
- *   - contadores — o badge lê `counts` por CHAVE (`fila`, `automatico`, …), e
- *     a ordem nova não muda quem conta o quê;
- *   - as seis na mesma quantidade — uma aba perdida na remontagem do array não
- *     quebra nada visível para quem já estava na primeira.
- */
-import { readFileSync } from "node:fs";
-
+/** Organização NODZ: trabalho primeiro; histórico separado; filtros e contagens preservados. */
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -67,90 +42,19 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-describe("as seis abas, na ordem pedida pela #2498", () => {
-  it("Automático, Fila, Minhas, Todas, Fechadas, Arquivadas — nessa ordem", () => {
+describe("Inbox NODZ — trabalho antes do histórico", () => {
+  it("prioriza o atendente e mantém a visão geral separada", () => {
     render(<InboxFilters value={VALUE} onChange={() => {}} />);
-    expect(abasRenderizadas()).toEqual([
-      "Automático",
-      "Fila",
-      "Minhas",
-      "Todas",
-      "Fechadas",
-      "Arquivadas",
-    ]);
+    expect(abasRenderizadas()).toEqual(["Meus atendimentos", "Aguardando atendente", "IA atendendo", "Visão geral"]);
   });
-
-  it("os VALUES e os rótulos são os MESMOS de antes, só reordenados", () => {
-    // Pares lidos da FONTE, e não da tela: `value` é o que a rota recebe
-    // (`?filter=ai`) e nenhum deles é exposto como atributo no `TabsTrigger`.
-    // Um par trocado de rótulo nasceria um filtro que a rota não lê, e um par
-    // a mais nasceria uma aba que ninguém tem contador — por isso os 6, um por
-    // um, na ordem nova.
-    const fonte = readFileSync("components/inbox/InboxFilters.tsx", "utf8");
-    const pares = [...fonte.matchAll(/\{\s*value:\s*"(\w+)",\s*label:\s*"([^"]+)"\s*\}/g)].map(
-      ([, value, label]) => `${value}=${label}`,
-    );
-    expect(pares).toEqual([
-      "ai=Automático",
-      "unassigned=Fila",
-      "mine=Minhas",
-      "all=Todas",
-      "closed=Fechadas",
-      "archived=Arquivadas",
-    ]);
+  it("conserva os seis filtros e as permissões", () => {
+    expect(visibleInboxTabs("manager", "all")).toEqual(["mine", "unassigned", "ai", "all", "closed", "archived"]);
+    expect(visibleInboxTabs("agent", "own_and_unassigned")).toEqual(["mine", "unassigned", "ai", "closed", "archived"]);
+    expect(visibleInboxTabs("agent", "own_and_sector")).toContain("all");
   });
-
-  it("cada aba continua com o SEU contador (nada trocou de chave)", () => {
-    render(<InboxFilters value={VALUE} onChange={() => {}} />);
-    expect(screen.getByRole("tab", { name: /^Automático/ })).toHaveTextContent("7");
-    expect(screen.getByRole("tab", { name: /^Fila/ })).toHaveTextContent("3");
-    expect(screen.getByRole("tab", { name: /^Minhas/ })).toHaveTextContent("2");
-    expect(screen.getByRole("tab", { name: /^Todas/ })).toHaveTextContent("5");
-    expect(screen.getByRole("tab", { name: /^Fechadas/ })).toHaveTextContent("4");
-    expect(screen.getByRole("tab", { name: /^Arquivadas/ })).toHaveTextContent("1");
-  });
-});
-
-describe("só a ordem muda — as permissões continuam quem eram", () => {
-  it("manager vê as seis, com 'Todas' no meio", () => {
-    expect(visibleInboxTabs("manager", "all")).toEqual([
-      "ai",
-      "unassigned",
-      "mine",
-      "all",
-      "closed",
-      "archived",
-    ]);
-  });
-
-  it("agent em modo own* segue SEM 'Todas' — e com as outras cinco na ordem nova", () => {
-    // A regra de visão é filtrar, não reordenar: quem perde 'all' perde só ela,
-    // e a ordem que sobra é a mesma que todo mundo vê.
-    expect(visibleInboxTabs("agent", "own")).toEqual([
-      "ai",
-      "unassigned",
-      "mine",
-      "closed",
-      "archived",
-    ]);
-  });
-
-  it("agent com visibility 'all' tem as seis, 'Todas' na posição dela", () => {
-    expect(visibleInboxTabs("agent", "all")).toEqual([
-      "ai",
-      "unassigned",
-      "mine",
-      "all",
-      "closed",
-      "archived",
-    ]);
-  });
-
-  it("a aba ativa continua podendo ser QUALQUER uma das seis", () => {
-    // A faixa é navegável por seta (`moveTab` anda pelo array): uma ordem nova
-    // que embaralhasse os índices devolveria o operador à vizinha errada.
-    render(<InboxFilters value={{ ...VALUE, tab: "closed" }} onChange={() => {}} />);
-    const ativa = screen.getByRole("tab", { selected: true });
-    expect(ativa.textContent ?? "").toMatch(/^Fechadas/);
+  it("cada visão conserva seu contador", () => {
+    render(<InboxFilters value={{...VALUE, tab:"closed"}} onChange={() => {}} />);
+    for (const [name,count] of [["Meus atendimentos",2],["Aguardando atendente",3],["IA atendendo",7],["Visão geral",5],["Concluídas",4],["Arquivadas",1]] as const)
+      expect(screen.getByRole("tab",{name:new RegExp(name)})).toHaveTextContent(String(count));
   });
 });

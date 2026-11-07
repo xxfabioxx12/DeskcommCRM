@@ -40,6 +40,17 @@ import { TEXTOS_AGENDA_SERVICOS } from "./agenda-servicos";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Meus atendimentos": { es: "Mis atenciones" },
+  "IA atendendo": { es: "IA atendiendo" },
+  "Concluídas": { es: "Finalizadas" },
+  "Você (pessoa conectada)": { es: "Tú (persona conectada)" },
+  "Conversas atribuídas a você que ainda precisam de atendimento.": { es: "Conversaciones asignadas a ti que aún necesitan atención." },
+  "A IA saiu do atendimento e nenhuma pessoa assumiu ainda.": { es: "La IA dejó la atención y ninguna persona la ha asumido aún." },
+  "Conversas sob atendimento automático, dentro do seu acesso.": { es: "Conversaciones bajo atención automática, dentro de tu acceso." },
+  "Todas as conversas do seu acesso, com os filtros selecionados.": { es: "Todas las conversaciones de tu acceso, con los filtros seleccionados." },
+  "Atendimentos concluídos. O histórico das mensagens continua disponível.": { es: "Atenciones finalizadas. El historial de mensajes sigue disponible." },
+  "Conversas guardadas fora do atendimento ativo, sem apagar mensagens.": { es: "Conversaciones guardadas fuera de la atención activa, sin borrar mensajes." },
+
   // Fork NODZ — Concluir no Inbox.
   "Já foi resolvido: fecha a conversa e tira de Casos, sem mandar mensagem ao cliente.": { es: "Ya está resuelto: cierra la conversación y la saca de Casos, sin enviar mensaje al cliente." },
   "Concluindo...": { es: "Concluyendo..." },
