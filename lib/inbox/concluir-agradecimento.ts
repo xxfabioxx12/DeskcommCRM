@@ -4,7 +4,7 @@
  * Pedido do Fabio (06/11): a equipe atende, o cliente responde "Gratidão" e a
  * conversa fica parada em "em atendimento" até alguém clicar em Concluir. Aqui o
  * sistema faz o mesmo que o botão Concluir (`conversations/[id]/concluir`):
- * fecha a conversa e os casos abertos dela, sem mandar nada ao cliente, e deixa
+ * fecha a conversa quando não há caso pendente, sem mandar nada ao cliente, e deixa
  * uma nota dizendo que foi o sistema.
  *
  * Quem decide se a mensagem é só agradecimento é o Jev (OpenRouter, a mesma
@@ -98,6 +98,14 @@ export async function buscarCandidatas(db: Queryable, agora: Date): Promise<Cand
                       order by m.created_at desc limit 1) a on true
       where c.status not in ('closed', 'resolved', 'archived')
         and c.is_group is not true
+        -- Agradecer uma promessa de retorno não resolve o atendimento.
+        -- Mantém o caso com a equipe até ela concluir a pendência.
+        and not exists (
+          select 1 from agent_cases pendente
+           where pendente.organization_id = c.organization_id
+             and pendente.conversation_id = c.id
+             and pendente.status in ('awaiting_human', 'awaiting_lead')
+        )
         and u.direction = 'inbound' and a.direction = 'outbound'
         and length(btrim(coalesce(u.body, ''))) between 1 and 200
         and u.created_at < $1::timestamptz - make_interval(hours => $2)
