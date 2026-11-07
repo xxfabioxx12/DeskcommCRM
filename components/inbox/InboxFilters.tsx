@@ -378,8 +378,8 @@ export function InboxFilters({ value, onChange }: Props) {
             </div>
           </div>
         )}
-        <div className="flex items-center gap-2">
-          <div className="relative min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-0 basis-full">
             <MagnifyingGlass
               size={15}
               weight="regular"
@@ -613,7 +613,7 @@ export function InboxFilters({ value, onChange }: Props) {
             )}
 
             {mostrarSeletorDeAtendente && (
-              <div className="flex basis-full items-center gap-2 border-t border-border pt-2">
+              <div className="flex min-w-0 basis-full items-center gap-2 border-t border-border pt-2">
                 <span className="text-[11px] font-medium text-text-muted">{t("Responsável")}</span>
                 <SeletorDeAtendente
                   emptyLabel={value.tab === "mine" ? "Você (pessoa conectada)" : "Todos os atendentes"}
