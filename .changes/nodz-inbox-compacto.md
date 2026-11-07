@@ -1,6 +1,6 @@
 ---
 impacto: nada_mudou
-secao: melhorado
+secao: alterado
 titulo: Inbox compacto com responsável em cada conversa
 ---
 

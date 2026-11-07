@@ -1,6 +1,6 @@
 ---
 impacto: nada_mudou
-secao: melhorado
+secao: alterado
 titulo: Inbox separa atendimentos ativos do histórico
 ---
 
