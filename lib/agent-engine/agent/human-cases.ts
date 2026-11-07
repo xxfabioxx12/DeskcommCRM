@@ -1,3 +1,4 @@
+import { atribuirPassagemAoDestinoDoNumero } from '@/lib/routing/atribuir-passagem';
 import { currentExecutionBoundary, guardServiceEffect } from "@/lib/atendimento/fronteira-server";
 import { TIPOS_DE_CASO, type TipoDeCaso } from "@/lib/ai/case-copy";
 /**
@@ -286,11 +287,20 @@ export async function openCase(
 
   const caseId = rows[0]?.case_id;
   if (caseId === undefined) {
+    // Repetição após falha de atribuição: reparar a entrega do caso existente,
+    // sem duplicar caso/aviso e sem tocar caso que aguarda o cliente.
+    const existing = await db.query<{ id: string }>(
+      `select id from agent_cases where organization_id=$1 and conversation_id=$2
+       and status='awaiting_human' limit 1`,
+      [ids.tenantId, ids.conversationId],
+    );
+    if (existing.rows.length > 0) await atribuirPassagemAoDestinoDoNumero(db, ids);
     // A recusa é uma INSTRUÇÃO (não só um erro): é o texto que o modelo lê no
     // resultado da tool, e é ele que impede a promessa de que a equipe foi
     // acionada quando ninguém foi avisado (#3097).
     return recusaDeCasoAberto();
   }
+  await atribuirPassagemAoDestinoDoNumero(db, ids);
   return { ok: true, caseId };
 }
 
@@ -335,6 +345,7 @@ export async function provideCaseUpdate(
       },
     };
   }
+  await atribuirPassagemAoDestinoDoNumero(db, ids);
   return { ok: true };
 }
 

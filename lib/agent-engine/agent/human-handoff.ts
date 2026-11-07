@@ -1,3 +1,4 @@
+import { atribuirPassagemAoDestinoDoNumero } from '@/lib/routing/atribuir-passagem';
 import { guardServiceEffect } from "@/lib/atendimento/fronteira-server";
 /**
  * Handoff humano como cidadão de 1ª classe (F4-06; blueprint 5.5 — escalação humana
@@ -650,6 +651,8 @@ export async function performHumanHandoff(
       error: err instanceof Error ? err.message.slice(0, 200) : 'erro desconhecido',
     });
   }
+
+  await atribuirPassagemAoDestinoDoNumero(db, ids);
 
   // PII fora do log — e agora de verdade. A linha anterior logava `opts.reason`,
   // que no caminho do caso escalado É O TEXTO QUE O ATENDENTE ESCREVEU sobre o

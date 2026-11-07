@@ -16,7 +16,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * arquivo CONGELADO que chama `performHumanHandoff` com a assinatura antiga.
  */
 
-vi.mock("@/lib/atendimento/fronteira-server", () => ({ guardServiceEffect: vi.fn(async () => {}) }));
+vi.mock("@/lib/atendimento/fronteira-server", () => ({ guardServiceEffect: vi.fn(async () => {}), currentExecutionJob: () => null }));
 vi.mock("@/lib/leads/agent-activity", () => ({
   emitAgentActivityForContact: vi.fn(async () => ({ routed: true })),
 }));

@@ -14,7 +14,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * lê o UPDATE da conversa: o 6º parâmetro é a marca, e `{}` é "sem marca".
  */
 
-vi.mock("@/lib/atendimento/fronteira-server", () => ({ guardServiceEffect: vi.fn(async () => {}) }));
+vi.mock("@/lib/atendimento/fronteira-server", () => ({ guardServiceEffect: vi.fn(async () => {}), currentExecutionJob: () => null }));
 vi.mock("@/lib/escalacao/disponibilidade", () => ({
   expectativaDeAtendimento: vi.fn(async () => ({ frase: "Uma pessoa vai responder." })),
 }));
