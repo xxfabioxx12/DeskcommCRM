@@ -52,19 +52,20 @@ async function handle(req: NextRequest): Promise<Response> {
         p_org: c.organization_id, p_conversation: c.id, p_status: "closed", p_expected: c.service_revision,
       });
       // Conflito de revisão: alguém mexeu na conversa agora; a próxima rodada vê a mensagem nova.
-      if (error) continue;
-      const casos = await concluirCasosPeloSistema(db, c);
-      await anotar(db, c);
-      concluidas += 1;
-      void audit({
-        action: "conversation.closed",
-        organizationId: c.organization_id,
-        bypassedRls: true,
-        resourceType: "conversation",
-        resourceId: c.id,
-        requestId,
-        metadata: { via: "concluir-agradecimento", casos_concluidos: casos },
-      });
+      if (!error) {
+        const casos = await concluirCasosPeloSistema(db, c);
+        await anotar(db, c);
+        concluidas += 1;
+        void audit({
+          action: "conversation.closed",
+          organizationId: c.organization_id,
+          bypassedRls: true,
+          resourceType: "conversation",
+          resourceId: c.id,
+          requestId,
+          metadata: { via: "concluir-agradecimento", casos_concluidos: casos },
+        });
+      }
     } catch (erro) {
       logger.error("[concluir-agradecimento] falhou numa conversa", {
         conversation_id: c.id,

@@ -12,7 +12,7 @@ import { signInviteToken, verifyInviteToken } from "@/lib/auth/invite-token";
 const complete = { preset: "completa" } as const;
 const simplified = { preset: "simplificada" } as const;
 const granular = { preset: "completa", destinos: ["/app/products"] } as const;
-const hrefs = (settings: unknown, role: "agent" | "admin" = "admin", platform = false) =>
+const hrefs = (settings: unknown, role: "viewer" | "agent" | "admin" = "admin", platform = false) =>
   destinosDaInterface(settings, platform, role).map((d) => d.href);
 describe("interface por vínculo é apresentação", () => {
   it("legado completa acompanha catálogo e não duplica IDs", () => {
