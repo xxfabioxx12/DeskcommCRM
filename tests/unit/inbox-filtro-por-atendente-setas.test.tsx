@@ -45,15 +45,16 @@ describe("filtro por atendente — as setas de aba", () => {
   it("Entrar em Meus atendimentos limpa o atendente escolhido", () => {
     const onChange = vi.fn();
     render(<InboxFilters value={COM_ATENDENTE} onChange={onChange} />);
-    fireEvent.mouseDown(screen.getByRole("tab", { name: /Meus atendimentos/ }), { button: 0, ctrlKey: false });
+    fireEvent.keyDown(screen.getByRole("combobox", {name:"Visualização das conversas"}), {key:"ArrowDown"});
+    fireEvent.click(screen.getByRole("option", {name:/Meus chats/}));
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ tab: "mine", assigned_to: undefined }));
   });
 
   it("CONTROLE: abrir Histórico e uma aba que não é Minhas mantém a escolha", () => {
     const onChange = vi.fn();
     render(<InboxFilters value={{ ...COM_ATENDENTE, tab: "all" }} onChange={onChange} />);
-    fireEvent.click(screen.getByRole("button", { name: "Histórico" }));
-    fireEvent.mouseDown(screen.getByRole("tab", { name: /Concluídas/ }), { button: 0, ctrlKey: false });
+    fireEvent.keyDown(screen.getByRole("combobox", {name:"Visualização das conversas"}), {key:"ArrowDown"});
+    fireEvent.click(screen.getByRole("option", {name:/Concluídas/}));
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ tab: "closed", assigned_to: ATENDENTE }));
   });
 });

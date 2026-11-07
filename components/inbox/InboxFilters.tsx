@@ -1,9 +1,8 @@
 "use client";
 import { useT } from "@/hooks/i18n/useT";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CaretDown, MagnifyingGlass } from "@/lib/ui/icons";
+import { MagnifyingGlass } from "@/lib/ui/icons";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import {
   Select,
@@ -43,10 +42,10 @@ export type InboxTab = "unassigned" | "mine" | "all" | "closed" | "archived" | "
 
 /** Navigation labels change; API keys, permissions and counts stay unchanged. */
 const INBOX_TABS: { value: InboxTab; label: string }[] = [
-  { value: "mine", label: "Meus atendimentos" },
-  { value: "unassigned", label: "Aguardando atendente" },
+  { value: "mine", label: "Meus chats" },
+  { value: "unassigned", label: "Não atribuídos" },
   { value: "ai", label: "IA atendendo" },
-  { value: "all", label: "Visão geral" },
+  { value: "all", label: "Todos" },
   { value: "closed", label: "Concluídas" },
   { value: "archived", label: "Arquivadas" },
 ];
@@ -117,7 +116,6 @@ interface Props {
 export function InboxFilters({ value, onChange }: Props) {
   const t = useT();
   const [searchInput, setSearchInput] = useState(value.search);
-  const [historicoAberto, setHistoricoAberto] = useState(false);
   /**
    * O campo escuta o valor de FORA — e só ele.
    *
@@ -626,40 +624,23 @@ export function InboxFilters({ value, onChange }: Props) {
         )}
       </div>
 
-      <Tabs orientation="vertical" value={value.tab} onValueChange={(v) => onChange(comAba(value, v as InboxTab))} className="gap-0 px-3 pb-3">
-        <TabsList aria-label={t("Atendimento")} className="grid h-auto w-full grid-cols-1 gap-1 rounded-none bg-transparent p-0">
-          {tabs.filter((tab) => tab !== "closed" && tab !== "archived").map((tab) => {
-            const meta = INBOX_TABS.find((item) => item.value === tab)!;
-            const count = countFor[tab];
-            return (
-              <TabsTrigger key={tab} value={tab}
-                className={cn("min-h-8 w-full justify-between gap-2 whitespace-normal rounded-md border border-transparent px-3 py-1.5 text-left text-xs font-medium text-text-muted data-[state=active]:border-accent/30 data-[state=active]:bg-accent-soft data-[state=active]:text-accent data-[state=active]:shadow-none", tab === "all" && "mt-1 border-t-border")}>
-                <span>{t(meta.label)}</span>
-                {depoisDeMontar && typeof count === "number" && count > 0 && <span className="shrink-0 text-[11px] tabular-nums">{count}</span>}
-              </TabsTrigger>
-            );
-          })}
-        </TabsList>
-        <button type="button" aria-expanded={historicoAberto || value.tab === "closed" || value.tab === "archived"}
-          onClick={() => {
-            if (value.tab === "closed" || value.tab === "archived") { setHistoricoAberto(false); onChange(comAba(value, "mine")); }
-            else setHistoricoAberto((open) => !open);
-          }}
-          className="mt-2 flex min-h-8 w-full items-center justify-between border-t border-border px-3 pt-2 text-xs font-medium text-text-muted hover:text-text focus-visible:ring-2 focus-visible:ring-ring">
-          {t("Histórico")}<CaretDown size={14} aria-hidden />
-        </button>
-        {(historicoAberto || value.tab === "closed" || value.tab === "archived") && (
-          <TabsList aria-label={t("Histórico")} className="mt-1 grid h-auto w-full grid-cols-2 gap-1 bg-transparent p-0">
-            {tabs.filter((tab) => tab === "closed" || tab === "archived").map((tab) => (
-              <TabsTrigger key={tab} value={tab} className="min-h-8 gap-1 whitespace-normal rounded-md text-xs text-text-muted data-[state=active]:bg-accent-soft data-[state=active]:text-accent data-[state=active]:shadow-none">
-                {t(INBOX_TABS.find((item) => item.value === tab)!.label)}
-                {depoisDeMontar && typeof countFor[tab] === "number" && countFor[tab]! > 0 && <span className="text-[11px] tabular-nums">{countFor[tab]}</span>}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        )}
-        <p className="px-3 pt-2 text-[11px] leading-relaxed text-text-subtle">{t(DESCRICAO_DA_VISAO[value.tab])}</p>
-      </Tabs>
+      <div className="px-3 pb-3">
+        <Select value={value.tab} onValueChange={(v) => onChange(comAba(value, v as InboxTab))}>
+          <SelectTrigger aria-label={t("Visualização das conversas")} className="h-10 w-full bg-surface text-sm font-medium">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {["all", "mine", "unassigned", "ai", "closed", "archived"].filter((tab) => tabs.includes(tab as InboxTab)).map((key) => {
+              const tab = key as InboxTab;
+              const meta = INBOX_TABS.find((item) => item.value === tab)!;
+              return <SelectItem key={tab} value={tab}>
+                {t(meta.label)}{depoisDeMontar && typeof countFor[tab] === "number" ? ` · ${countFor[tab]}` : ""}
+              </SelectItem>;
+            })}
+          </SelectContent>
+        </Select>
+        <p className="pt-2 text-[11px] leading-relaxed text-text-subtle">{t(DESCRICAO_DA_VISAO[value.tab])}</p>
+      </div>
     </div>
   );
 }

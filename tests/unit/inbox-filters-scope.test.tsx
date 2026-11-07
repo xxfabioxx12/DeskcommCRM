@@ -113,31 +113,35 @@ describe("InboxFilters render — 3 visões + escopo", () => {
   it("mantém as visões de trabalho acessíveis sem setas horizontais", () => {
     setOrg("manager", "all");
     render(<InboxFilters value={VALUE} onChange={() => {}} />);
-    expect(screen.getByRole("tab", {name: /Visão geral/})).toBeVisible();
+    fireEvent.keyDown(screen.getByRole("combobox", {name:"Visualização das conversas"}), {key:"ArrowDown"});
+    expect(screen.getByRole("option", {name: /Todos/})).toBeVisible();
     expect(screen.queryByRole("button", {name: "Próxima aba"})).not.toBeInTheDocument();
-    expect(screen.getByRole("button", {name: "Histórico"})).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("option", {name: /Concluídas/})).toBeVisible();
   });
 
   it("agent em modo own*: mostra Minhas e Fila, esconde Todas", () => {
     setOrg("agent", "own_and_unassigned");
     render(<InboxFilters value={VALUE} onChange={() => {}} />);
-    expect(screen.getByRole("tab", { name: /Meus atendimentos/ })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /Aguardando atendente/ })).toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: /Visão geral/ })).not.toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole("combobox", {name:"Visualização das conversas"}), {key:"ArrowDown"});
+    expect(screen.getByRole("option", { name: /Meus chats/ })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /Não atribuídos/ })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Todos/ })).not.toBeInTheDocument();
   });
 
   it("manager: mostra Todas", () => {
     setOrg("manager", "own_and_unassigned");
     render(<InboxFilters value={VALUE} onChange={() => {}} />);
-    expect(screen.getByRole("tab", { name: /Visão geral/ })).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole("combobox", {name:"Visualização das conversas"}), {key:"ArrowDown"});
+    expect(screen.getByRole("option", { name: /Todos/ })).toBeInTheDocument();
   });
 
   it("contagens por visão são renderizadas (Fila=3, Minhas=2)", () => {
     setOrg("manager", "all");
     render(<InboxFilters value={VALUE} onChange={() => {}} />);
-    expect(screen.getByRole("tab", { name: /Aguardando atendente/ })).toHaveTextContent("3");
-    expect(screen.getByRole("tab", { name: /Meus atendimentos/ })).toHaveTextContent("2");
-    expect(screen.getByRole("tab", { name: /Visão geral/ })).toHaveTextContent("5");
+    fireEvent.keyDown(screen.getByRole("combobox", {name:"Visualização das conversas"}), {key:"ArrowDown"});
+    expect(screen.getByRole("option", { name: /Não atribuídos/ })).toHaveTextContent("3");
+    expect(screen.getByRole("option", { name: /Meus chats/ })).toHaveTextContent("2");
+    expect(screen.getByRole("option", { name: /Todos/ })).toHaveTextContent("5");
   });
 });
 

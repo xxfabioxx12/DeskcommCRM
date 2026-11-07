@@ -30,31 +30,23 @@ vi.mock("@/hooks/inbox/useConversationCounts", () => ({
 
 const VALUE: InboxFiltersValue = { tab: "ai", search: "", onlyUnread: false };
 
-/** O rótulo de cada aba, sem o contador que vem colado no `textContent`. */
-function abasRenderizadas(): string[] {
-  return screen
-    .getAllByRole("tab")
-    .map((el) => (el.textContent ?? "").replace(/\d+$/, "").trim());
-}
-
 beforeEach(() => {
   activeOrgRef.current = { orgId: "org-1", name: "Org", role: "manager", visibility_mode: "all" };
 });
 afterEach(cleanup);
 
 describe("Inbox NODZ — trabalho antes do histórico", () => {
-  it("prioriza o atendente e mantém a visão geral separada", () => {
+  it("identifica a visão atual no seletor compacto", () => {
     render(<InboxFilters value={VALUE} onChange={() => {}} />);
-    expect(abasRenderizadas()).toEqual(["Meus atendimentos", "Aguardando atendente", "IA atendendo", "Visão geral"]);
+    expect(screen.getByRole("combobox", {name:"Visualização das conversas"})).toHaveTextContent("IA atendendo · 7");
   });
   it("conserva os seis filtros e as permissões", () => {
     expect(visibleInboxTabs("manager", "all")).toEqual(["mine", "unassigned", "ai", "all", "closed", "archived"]);
     expect(visibleInboxTabs("agent", "own_and_unassigned")).toEqual(["mine", "unassigned", "ai", "closed", "archived"]);
     expect(visibleInboxTabs("agent", "own_and_sector")).toContain("all");
   });
-  it("cada visão conserva seu contador", () => {
-    render(<InboxFilters value={{...VALUE, tab:"closed"}} onChange={() => {}} />);
-    for (const [name,count] of [["Meus atendimentos",2],["Aguardando atendente",3],["IA atendendo",7],["Visão geral",5],["Concluídas",4],["Arquivadas",1]] as const)
-      expect(screen.getByRole("tab",{name:new RegExp(name)})).toHaveTextContent(String(count));
+  it.each([["mine", "Meus chats", 2], ["all", "Todos", 5], ["closed", "Concluídas", 4], ["archived", "Arquivadas", 1]] as const)("conserva o contador de %s", (tab,label,count) => {
+    render(<InboxFilters value={{...VALUE,tab}} onChange={() => {}} />);
+    expect(screen.getByRole("combobox",{name:"Visualização das conversas"})).toHaveTextContent(`${label} · ${count}`);
   });
 });

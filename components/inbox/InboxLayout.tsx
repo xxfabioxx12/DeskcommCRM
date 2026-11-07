@@ -233,8 +233,8 @@ const FILTER_TABS: InboxTab[] = ["unassigned", "mine", "all", "closed", "archive
  * Lê ?filter= (G4-02, deep-link). ?filter=all é HONRADO mesmo para agent — a
  * lista volta RLS-scoped (a tab só some cosmeticamente); default: meus atendimentos.
  */
-function parseFilterParam(v: string | null): InboxTab {
-  return v && FILTER_TABS.includes(v as InboxTab) ? (v as InboxTab) : "mine";
+function parseFilterParam(v: string | null, defaultTab: InboxTab = "mine"): InboxTab {
+  return v && FILTER_TABS.includes(v as InboxTab) ? (v as InboxTab) : defaultTab;
 }
 
 /**
@@ -297,7 +297,7 @@ export function InboxLayout({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const tab = parseFilterParam(searchParams.get("filter"));
+  const tab = parseFilterParam(searchParams.get("filter"), roleAtLeast(activeOrg?.role, "manager") ? "all" : "mine");
   const idNaUrl = searchParams.get("id");
   /**
    * `?tag=` é o destino do link de cada linha do relatório Por etiqueta

@@ -1,6 +1,6 @@
 import {cleanup,fireEvent,render,screen} from '@testing-library/react';
 import {afterEach,describe,expect,it,vi} from 'vitest';
-import {InboxFilters,type InboxFiltersValue} from '@/components/inbox/InboxFilters';
+import {InboxFilters,comAba,type InboxFiltersValue} from '@/components/inbox/InboxFilters';
 vi.mock('@/hooks/auth/AuthProvider',()=>({useAuth:()=>({activeOrg:{orgId:'org',role:'admin',visibility_mode:'all'}})}));
 vi.mock('@/hooks/channels/useChannelSessions',()=>({useChannelSessions:()=>({data:[{id:'suporte',display_name:'Suporte · 2233'},{id:'comercial',display_name:'Comercial · 6900'}]}),channelLabel:(c:{display_name:string})=>c.display_name}));
 vi.mock('@/hooks/inbox/useConversationTags',()=>({useConversationTagVocabulary:()=>({data:[]})}));
@@ -21,16 +21,12 @@ describe('organização NODZ sem alterar o alcance dos filtros',()=>{
   fireEvent.click(screen.getByRole('button',{name:'Comercial'}));
   expect(change).toHaveBeenCalledWith({...atual,setor:'Comercial',channel_session_id:undefined});
  });
- it('voltar para Meus atendimentos remove o responsável escolhido',()=>{
-  const change=vi.fn();render(<InboxFilters value={{...value,tab:'all',assigned_to:'henrique'}} onChange={change}/>);
-  fireEvent.mouseDown(screen.getByRole('tab',{name:'Meus atendimentos'}),{button:0,ctrlKey:false});
-  expect(change).toHaveBeenCalledWith({...value,assigned_to:undefined});
+ it('voltar para Meus chats remove o responsável escolhido e conserva setor e busca',()=>{
+  expect(comAba({...value,tab:'all',assigned_to:'henrique'},'mine')).toEqual({...value,assigned_to:undefined});
  });
- it('histórico abre sem mudar o filtro e fecha a visão arquivada voltando ao trabalho',()=>{
-  const change=vi.fn();const{rerender}=render(<InboxFilters value={value} onChange={change}/>);
-  fireEvent.click(screen.getByRole('button',{name:'Histórico'}));expect(change).not.toHaveBeenCalled();
-  rerender(<InboxFilters value={{...value,tab:'archived'}} onChange={change}/>);
-  fireEvent.click(screen.getByRole('button',{name:'Histórico'}));
-  expect(change).toHaveBeenCalledWith({...value,assigned_to:undefined});
+ it('apresenta um seletor compacto em vez de seis abas',()=>{
+  render(<InboxFilters value={value} onChange={vi.fn()}/>);
+  expect(screen.getByRole('combobox',{name:'Visualização das conversas'})).toHaveTextContent('Meus chats');
+  expect(screen.queryByRole('tablist')).toBeNull();
  });
 });

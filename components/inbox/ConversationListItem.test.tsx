@@ -166,3 +166,16 @@ describe("ConversationListItem — etiquetas que não couberam (#3649)", () => {
     expect(screen.getByText("+2")).toHaveAttribute("title", "retorno, boleto");
   });
 });
+
+describe("Inbox NODZ — responsável e leitura separados", () => {
+  it("identifica Henrique e mantém o contador de mensagens independente", () => {
+    render(<ConversationListItem {...conversaDeExemplo.props} mostrarAtendente conversation={{...conversaDeExemplo.conversation, assigned_to_user_id:"henrique",assigned_to_user_name:"Henrique",assignee_kind:"user",unread_count_for_assignee:2}} />);
+    expect(screen.getByLabelText("Responsável: Henrique")).toBeInTheDocument();
+    expect(screen.getByLabelText("2 Mensagens não lidas")).toBeInTheDocument();
+  });
+  it("identifica a IA mesmo sem mensagens não lidas", () => {
+    render(<ConversationListItem {...conversaDeExemplo.props} mostrarAtendente conversation={{...conversaDeExemplo.conversation,comando_da_conversa:"automatico",assignee_kind:"ai"}} />);
+    expect(screen.getByLabelText("Responsável: IA")).toBeInTheDocument();
+    expect(screen.queryByTitle("Mensagens não lidas")).toBeNull();
+  });
+});
