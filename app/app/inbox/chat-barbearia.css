@@ -1,0 +1,64 @@
+/* Mostra CRM Barbearia, Inbox: apresentação opt-in, sem alterar trilhas ou ações. */
+@font-face {
+  font-family: "Manrope Chat";
+  src: url("../../fonts/manrope-200-800-latin.woff2") format("woff2");
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}
+[data-chat-visual="barbearia"] {
+  font-family: "Manrope Chat", sans-serif;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+}
+[data-chat-visual="barbearia"] [data-chat-area="lista"] {
+  background: var(--color-surface);
+  border-radius: 16px 0 0 16px;
+}
+[data-chat-visual="barbearia"] [data-chat-area="contato"] {
+  background: var(--color-surface);
+  border-left: 1px solid var(--color-border);
+  border-radius: 0 16px 16px 0;
+}
+[data-chat-visual="barbearia"] .chat-barbearia-titulo { padding: 20px 16px 12px; }
+[data-chat-visual="barbearia"] .chat-barbearia-titulo h1 {
+  font-size: 22px;
+  line-height: 1.2;
+  font-weight: 800;
+  letter-spacing: -.035em;
+}
+[data-chat-visual="barbearia"] .chat-barbearia-titulo p {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  margin-top: 5px;
+}
+[data-chat-visual="barbearia"] [data-conversation-id] {
+  margin: 3px 8px;
+  padding: 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+}
+[data-chat-visual="barbearia"] [data-conversation-id][aria-current="true"] {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+[data-chat-visual="barbearia"] [data-conversation-id] > span[aria-hidden] { display: none; }
+[data-chat-visual="barbearia"] [data-testid="message-bubble"] { box-shadow: none; }
+[data-chat-visual="barbearia"] [data-testid="message-bubble"].rounded-2xl {
+  border-radius: 12px;
+  padding: 12px 16px;
+}
+[data-chat-visual="barbearia"] [data-testid="message-bubble"].pr-8 { padding-right: 32px; }
+@media (pointer: coarse) {
+  [data-chat-visual="barbearia"] [data-testid="message-bubble"].pr-8 { padding-right: 48px; }
+}
+[data-chat-visual="barbearia"] button,
+[data-chat-visual="barbearia"] input,
+[data-chat-visual="barbearia"] textarea { font-family: inherit; }
+@media (max-width: 767px) {
+  [data-chat-visual="barbearia"] { border-radius: 10px; }
+  [data-chat-visual="barbearia"] .chat-barbearia-titulo { padding: 12px 12px 6px; }
+  [data-chat-visual="barbearia"] .chat-barbearia-titulo h1 { font-size: 20px; }
+  [data-chat-visual="barbearia"] [data-conversation-id] { margin-inline: 4px; }
+}

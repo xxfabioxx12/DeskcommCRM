@@ -262,6 +262,7 @@ function armazenamentoDoNavegador(): Storage | null {
 const LARGURA_DO_TRILHO_DO_PAINEL = "2.75rem";
 
 interface InboxLayoutProps {
+  visualBarbearia?: boolean;
   initialSelectedId?: string | null;
   /** Rascunho sugerido por integração (issue #1611) — `null` é o caso comum. */
   rascunho?: AvisoDeRascunho | null;
@@ -283,6 +284,7 @@ interface InboxLayoutProps {
 }
 
 export function InboxLayout({
+  visualBarbearia = false,
   initialSelectedId = null,
   rascunho = null,
   painelRecolhidoInicial = false,
@@ -896,6 +898,7 @@ export function InboxLayout({
     <OpenConversationProvider conversationId={selectedId}>
     <div
       ref={gradeRef}
+      data-chat-visual={visualBarbearia ? "barbearia" : undefined}
       className={cn(
         "grid relative h-[calc(100dvh-var(--faixas-de-cima,0px)-3.5rem-var(--space-6)-max(var(--space-6),var(--rodape-ocupado,0px)))] w-full grid-cols-1 md:grid-cols-[300px_1fr]",
         // Recolhido (issue #3004), a terceira trilha vira o trilho estreito do
@@ -945,11 +948,18 @@ export function InboxLayout({
       */}
       <div
         ref={listaRef}
+        data-chat-area="lista"
         className={cn(
           "h-full min-h-0 flex-col border-r border-border md:flex",
           colunas.lista,
         )}
       >
+        {visualBarbearia && (
+          <div className="chat-barbearia-titulo">
+            <h1>{t("Conversas")}</h1>
+            <p>{t("Inbox")}</p>
+          </div>
+        )}
         <BotaoIniciarConversa />
         <InboxFilters value={filterValue} onChange={setFilterValue} />
         {podeAgirEmLote && (
@@ -1002,6 +1012,7 @@ export function InboxLayout({
       */}
       <div
         ref={conversaRef}
+        data-chat-area="conversa"
         data-teclado-aberto={tecladoAberto ? "" : undefined}
         className={cn(
           "h-full min-h-0 min-w-0 flex-col md:flex group/conversa",
@@ -1179,7 +1190,7 @@ export function InboxLayout({
         )}
       </div>
 
-      <div className="hidden h-full min-h-0 min-w-0 xl:block">
+      <div data-chat-area="contato" className="hidden h-full min-h-0 min-w-0 xl:block">
         <CRMSidePanel
           conversation={selectedConversation}
           recolhido={painelRecolhido}

@@ -40,6 +40,15 @@ import { TEXTOS_AGENDA_SERVICOS } from "./agenda-servicos";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Visual do chat da barbearia": { es: "Diseño del chat de la barbería" },
+  "Aplica o visual da barbearia às conversas desta organização. Mantém as mesmas abas, mensagens, responsáveis e ações de atendimento.": { es: "Aplica el diseño de la barbería a las conversaciones de esta organización. Mantiene las mismas pestañas, mensajes, responsables y acciones de atención." },
+  "Habilitar nesta organização": { es: "Habilitar en esta organización" },
+  "Salvar visual do chat": { es: "Guardar diseño del chat" },
+  "Abrir conversas": { es: "Abrir conversaciones" },
+  "Visual do chat salvo.": { es: "Diseño del chat guardado." },
+  "Não foi possível salvar o visual do chat.": { es: "No se pudo guardar el diseño del chat." },
+  "A organização foi alterada. Recarregue a página e tente novamente.": { es: "La organización fue modificada. Recarga la página e inténtalo de nuevo." },
+
   "Meus chats": { es: "Mis chats" },
   "Não atribuídos": { es: "Sin asignar" },
   "Visualização das conversas": { es: "Vista de las conversaciones" },

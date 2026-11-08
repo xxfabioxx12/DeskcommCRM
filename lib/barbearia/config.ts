@@ -15,3 +15,13 @@ export const DESTINOS_BARBEARIA = {
   caixa: "/app/faturamento",
   conversas: "/app/inbox",
 } as const;
+
+/** O chat é independente do painel: só muda com consentimento explícito da organização. */
+export function chatBarbeariaLigado(settings: unknown): boolean {
+  return (
+    typeof settings === "object" &&
+    settings !== null &&
+    !Array.isArray(settings) &&
+    (settings as Record<string, unknown>).chat_barbearia === true
+  );
+}

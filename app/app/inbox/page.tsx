@@ -1,3 +1,5 @@
+import { chatBarbeariaLigado } from "@/lib/barbearia/config";
+import "./chat-barbearia.css";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
@@ -40,6 +42,14 @@ export default async function InboxPage({
       </div>
     );
   }
+  const dbTema = await createClient();
+  const { data: organizacao } = await dbTema
+    .from("organizations")
+    .select("settings")
+    .eq("id", activeOrg.orgId)
+    .maybeSingle();
+  // Falha de leitura mantém o chat original disponível; nunca interrompe o atendimento.
+  const visualBarbearia = chatBarbeariaLigado(organizacao?.settings);
   const { id, rascunho } = await searchParams;
   // A preferência do painel do contato recolhido é lida AQUI, no servidor, pelo
   // mesmo motivo do `sidebar_collapsed` (`app/app/layout.tsx`): sem isto o
@@ -72,6 +82,7 @@ export default async function InboxPage({
   }
   return (
     <InboxLayout
+      visualBarbearia={visualBarbearia}
       initialSelectedId={id ?? null}
       rascunho={avisoDeRascunho}
       painelRecolhidoInicial={painelRecolhido}

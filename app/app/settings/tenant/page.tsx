@@ -1,3 +1,4 @@
+import { ConfigurarChatBarbearia } from "./_chat-barbearia";
 import { redirect } from "next/navigation";
 
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
@@ -8,7 +9,7 @@ import { alineasDoArt15Visiveis, art15DoControlador } from "@/lib/legal/art15";
 import { moedaServidaOu } from "@/lib/money";
 import { createClient } from "@/lib/supabase/server";
 import { ConfigurarPainelBarbearia } from "./_painel-barbearia";
-import { painelBarbeariaLigado } from "@/lib/barbearia/config";
+import { chatBarbeariaLigado, painelBarbeariaLigado } from "@/lib/barbearia/config";
 import { Art15Form } from "./_art15";
 import { ZonaDePerigoDaOrganizacao } from "./_danger-zone";
 import { InboxDaEmpresaForm } from "./_inbox";
@@ -122,6 +123,12 @@ export default async function TenantSettingsPage() {
         <ConfigurarPainelBarbearia
           key={activeOrg.orgId}
           initial={painelBarbeariaLigado(row.settings)}
+        />
+      )}
+      {row && (
+        <ConfigurarChatBarbearia
+          key={`chat-${activeOrg.orgId}`}
+          initial={chatBarbeariaLigado(row.settings)}
         />
       )}
       {row && <InboxDaEmpresaForm initial={row.interface_settings} />}
