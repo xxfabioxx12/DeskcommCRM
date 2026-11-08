@@ -55,6 +55,7 @@ let filtrosDaUltima: Array<[string, unknown]> = [];
  */
 function banco() {
   return {
+    rpc: async () => ({ data: "caso-confirmado", error: null }),
     from(tabela: string) {
       if (tabela === "messages") {
         let direcao = "";

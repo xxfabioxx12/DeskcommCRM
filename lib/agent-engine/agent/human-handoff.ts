@@ -431,6 +431,17 @@ export async function performHumanHandoff(
     log: Logger;
   },
 ): Promise<void> {
+  // Registra a tarefa mesmo quando não há aviso (janela fechada/canal indisponível).
+  // Opt-out continua sendo silêncio, não uma nova solicitação de suporte.
+  if (opts.passagem?.motivoCodigo !== "suspected_optout") {
+    await guardServiceEffect();
+    await db.query("select public.fn_nodz_garantir_caso_humano($1,$2,$3,$4)", [
+      ids.tenantId,
+      ids.conversationId,
+      opts.passagem?.briefing.title ?? "Atendimento encaminhado para uma pessoa",
+      opts.passagem?.briefing.body ?? "Conferir o histórico da conversa e retornar ao cliente.",
+    ]);
+  }
   // (a) FONTE DA VERDADE: force_human no contato — irrevogável pelo agente (regra dura 2).
   await guardServiceEffect();
   await db.query(`update contacts set force_human = true where organization_id = $1 and id = $2`, [

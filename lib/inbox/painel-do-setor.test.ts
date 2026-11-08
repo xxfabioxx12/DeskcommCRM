@@ -1,18 +1,38 @@
 import { describe, expect, it } from "vitest";
-import { haQuantoTempo, montarColunas, setoresDosNumeros, type ConversaDoPainel } from "./painel-do-setor";
+import {
+  haQuantoTempo,
+  montarColunas,
+  setoresDosNumeros,
+  type ConversaDoPainel,
+} from "./painel-do-setor";
 
 const agora = new Date("2026-10-23T21:00:00Z");
 function conv(id: string, p: Partial<ConversaDoPainel>): ConversaDoPainel {
-  return { id, status: "open", last_inbound_at: null, last_outbound_at: null, last_message_at: null, awaiting_since: null, ...p };
+  return {
+    id,
+    status: "open",
+    last_inbound_at: null,
+    last_outbound_at: null,
+    last_message_at: null,
+    awaiting_since: null,
+    ...p,
+  };
 }
 
 describe("painel do setor", () => {
   it("cliente que falou por último fica em Aguardando, o mais antigo em cima", () => {
     const { aguardando, emAtendimento } = montarColunas(
       [
-        conv("novo", { last_inbound_at: "2026-10-23T20:50:00Z", last_outbound_at: "2026-10-23T20:00:00Z" }),
+        conv("novo", {
+          last_inbound_at: "2026-10-23T20:50:00Z",
+          last_outbound_at: "2026-10-23T20:00:00Z",
+        }),
         conv("antigo", { last_inbound_at: "2026-10-23T19:00:00Z" }),
-        conv("respondido", { last_inbound_at: "2026-10-23T19:30:00Z", last_outbound_at: "2026-10-23T19:31:00Z", last_message_at: "2026-10-23T19:31:00Z" }),
+        conv("respondido", {
+          last_inbound_at: "2026-10-23T19:30:00Z",
+          last_outbound_at: "2026-10-23T19:31:00Z",
+          last_message_at: "2026-10-23T19:31:00Z",
+        }),
       ],
       agora,
     );
@@ -22,7 +42,13 @@ describe("painel do setor", () => {
 
   it("resposta da IA conta como atendimento", () => {
     const { aguardando, emAtendimento } = montarColunas(
-      [conv("ia", { status: "ai_handling", last_inbound_at: "2026-10-23T20:00:00Z", last_outbound_at: "2026-10-23T20:00:05Z" })],
+      [
+        conv("ia", {
+          status: "ai_handling",
+          last_inbound_at: "2026-10-23T20:00:00Z",
+          last_outbound_at: "2026-10-23T20:00:05Z",
+        }),
+      ],
       agora,
     );
     expect(aguardando).toHaveLength(0);
@@ -37,7 +63,10 @@ describe("painel do setor", () => {
           last_outbound_at: "2026-10-23T18:00:00Z",
           last_inbound_at: "2026-10-23T20:30:00Z",
         }),
-        conv("esperando", { awaiting_since: "2026-10-23T19:00:00Z", last_inbound_at: "2026-10-23T19:10:00Z" }),
+        conv("esperando", {
+          awaiting_since: "2026-10-23T19:00:00Z",
+          last_inbound_at: "2026-10-23T19:10:00Z",
+        }),
       ],
       agora,
     );
@@ -80,5 +109,28 @@ describe("setores dos números", () => {
       { nome: "Comercial", ids: ["a", "c"] },
       { nome: "Suporte", ids: ["b"] },
     ]);
+  });
+});
+
+describe("Caso humano prevalece sobre a última mensagem", () => {
+  it("promessa da IA e chat fechado continuam aguardando enquanto o Caso aguarda humano", () => {
+    const colunas = montarColunas(
+      [
+        conv("promessa", {
+          last_inbound_at: "2026-10-23T18:00:00Z",
+          last_outbound_at: "2026-10-23T18:01:00Z",
+          caso_aguardando_desde: "2026-10-23T18:00:00Z",
+        }),
+        conv("fechada", {
+          status: "closed",
+          service_closed_at: agora.toISOString(),
+          caso_aguardando_desde: "2026-10-22T18:00:00Z",
+        }),
+      ],
+      agora,
+    );
+    expect(colunas.aguardando.map((c) => c.id)).toEqual(["fechada", "promessa"]);
+    expect(colunas.emAtendimento).toEqual([]);
+    expect(colunas.atendidosHoje).toEqual([]);
   });
 });

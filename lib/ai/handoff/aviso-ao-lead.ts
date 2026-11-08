@@ -1,3 +1,4 @@
+import { assertServiceBoundarySupabase } from "@/lib/atendimento/origem";
 import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
 /**
  * O ENVIO do aviso de escalação — lado do CRM (`supabase-js`).
@@ -226,6 +227,14 @@ export async function avisarLeadDoCrm(
       input.contactId,
       idioma,
     );
+    if (input.serviceBoundary) await assertServiceBoundarySupabase(admin, input.serviceBoundary);
+    const recibo = await admin.rpc("fn_nodz_garantir_caso_humano", {
+      p_org: input.organizationId,
+      p_conversa: input.conversationId,
+      p_titulo: "Atendimento encaminhado para uma pessoa",
+      p_resumo: "A IA solicitou atendimento humano. Conferir o histórico e o briefing da passagem.",
+    });
+    if (recibo.error || !recibo.data) return { avisado: false, porque: "caso_nao_registrado" };
     const mensagem = await sendMessageHandler(
       admin,
       {
@@ -259,7 +268,11 @@ export async function avisarLeadDoCrm(
       };
     }
     const codigo = CODIGO_DO_ERRO[mensagem.error_code ?? ""] ?? "falhou_no_envio";
-    return { avisado: false, porque: mensagem.error_code ?? "falhou_no_envio", motivoCodigo: codigo };
+    return {
+      avisado: false,
+      porque: mensagem.error_code ?? "falhou_no_envio",
+      motivoCodigo: codigo,
+    };
   } catch (err) {
     // PII fora do log: só o motivo da falha.
     const porque = err instanceof Error ? err.name : "erro_desconhecido";
@@ -270,7 +283,6 @@ export async function avisarLeadDoCrm(
     return { avisado: false, porque };
   }
 }
-
 
 /**
  * Qual frase o cliente lê. Parte do motivo gravado (`last_handoff_reason`) e só

@@ -270,6 +270,16 @@ export async function triggerHandoff(
     // Precisa do `contact_id` — é a semente da variante do texto. Sem ele
     // (conversa órfã, que a UI não mostra) seguimos sem avisar: o handoff é mais
     // importante que o aviso, e a falta vira linha no item da Central abaixo.
+    await guard();
+    const caso = await admin.rpc("fn_nodz_garantir_caso_humano", {
+      p_org: input.organizationId,
+      p_conversa: input.conversationId,
+      p_titulo: "Atendimento encaminhado para uma pessoa",
+      p_resumo:
+        input.motivoTexto ??
+        "Conferir o histórico e o briefing da passagem para atendimento humano.",
+    });
+    if (caso.error) throw new Error("handoff_case_write_failed");
     const contactId = (convNow as unknown as { contact_id?: string | null }).contact_id ?? null;
     const aviso =
       contactId === null

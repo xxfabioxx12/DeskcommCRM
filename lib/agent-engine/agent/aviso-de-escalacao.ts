@@ -1,3 +1,4 @@
+import { guardServiceEffect } from "@/lib/atendimento/fronteira-server";
 import type {JobClaim} from "../queue/claim";
 /**
  * O ENVIO do aviso de que a IA está saindo de campo — lado do MOTOR (`pg`).
@@ -157,6 +158,21 @@ export async function avisarLeadDaEscalacao(
   }
 
   try {
+    if (opts.optedOutThisTurn) return { avisado: false, porque: "opt_out" };
+    await guardServiceEffect();
+    // A promessa só pode sair depois de existir uma tarefa durável para a equipe.
+    if (opts.motivo !== "suspeita_de_opt_out") {
+      const recibo = await pool.query<{ id: string | null }>(
+        "select public.fn_nodz_garantir_caso_humano($1,$2,$3,$4) as id",
+        [
+          ids.tenantId,
+          ids.conversationId,
+          "Atendimento encaminhado para uma pessoa",
+          "A IA solicitou atendimento humano. Conferir o histórico e o briefing da passagem.",
+        ],
+      );
+      if (!recibo.rows[0]?.id) return { avisado: false, porque: "caso_nao_registrado" };
+    }
     const chain = await runBeforeSend({
       pool,
       log: opts.log,

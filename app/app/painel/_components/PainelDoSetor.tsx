@@ -9,13 +9,22 @@ import { channelLabel, useChannelSessions } from "@/hooks/channels/useChannelSes
 import { apiClient } from "@/lib/api/client";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { gravarFiltrosLembrados, lerFiltrosLembrados } from "@/lib/inbox/filtros-lembrados";
-import { haQuantoTempo, montarColunas, setoresDosNumeros, type ConversaDoPainel } from "@/lib/inbox/painel-do-setor";
+import {
+  haQuantoTempo,
+  montarColunas,
+  setoresDosNumeros,
+  type ConversaDoPainel,
+} from "@/lib/inbox/painel-do-setor";
 import { Robot } from "@/lib/ui/icons";
 
 interface Conversa extends ConversaDoPainel {
   last_message_preview: string | null;
   assignee_kind?: string | null;
-  contacts?: { display_name: string | null; name: string | null; phone_number: string | null } | null;
+  contacts?: {
+    display_name: string | null;
+    name: string | null;
+    phone_number: string | null;
+  } | null;
 }
 
 function armazenamento(): Storage | null {
@@ -52,25 +61,36 @@ function Coluna({
         <h2 className="text-sm font-semibold">{titulo}</h2>
         <span
           className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-            destaque && itens.length > 0 ? "bg-red-600 text-white" : "bg-surface-elevated text-text-muted"
+            destaque && itens.length > 0
+              ? "bg-red-600 text-white"
+              : "bg-surface-elevated text-text-muted"
           }`}
         >
           {itens.length}
         </span>
       </header>
       <ul className="min-h-0 flex-1 divide-y divide-border overflow-y-auto">
-        {itens.length === 0 && <li className="px-4 py-6 text-center text-sm text-text-muted">{vazio}</li>}
+        {itens.length === 0 && (
+          <li className="px-4 py-6 text-center text-sm text-text-muted">{vazio}</li>
+        )}
         {itens.map((c) => (
           <li key={c.id}>
-            <Link href={`/app/inbox?id=${c.id}`} className="block px-4 py-3 hover:bg-surface-elevated">
+            <Link
+              href={`/app/inbox?id=${c.id}`}
+              className="block px-4 py-3 hover:bg-surface-elevated"
+            >
               <div className="flex items-center justify-between gap-2">
                 <span className="truncate text-sm font-medium">{nomeDoCliente(c)}</span>
-                <span className={`shrink-0 text-xs ${destaque ? "font-semibold text-red-500" : "text-text-muted"}`}>
+                <span
+                  className={`shrink-0 text-xs ${destaque ? "font-semibold text-red-500" : "text-text-muted"}`}
+                >
                   {tempo(c)}
                 </span>
               </div>
               <p className="mt-1 line-clamp-2 text-xs text-text-muted">
-                {c.assignee_kind === "ai" && <Robot className="mr-1 inline h-3 w-3" aria-label="IA" />}
+                {c.assignee_kind === "ai" && (
+                  <Robot className="mr-1 inline h-3 w-3" aria-label="IA" />
+                )}
                 {c.last_message_preview ?? ""}
               </p>
             </Link>
@@ -113,49 +133,99 @@ export function PainelDoSetor() {
     }
     if (valor.startsWith("setor:")) return;
     const atuais = lerFiltrosLembrados(armazenamento(), orgId);
-    gravarFiltrosLembrados(armazenamento(), orgId, { ...atuais, channel_session_id: valor || undefined });
+    gravarFiltrosLembrados(armazenamento(), orgId, {
+      ...atuais,
+      channel_session_id: valor || undefined,
+    });
   };
 
   // Setor = uma busca por número, juntas; "" = todos os números numa busca só.
   const setorEscolhido = numero.startsWith("setor:") ? numero.slice(6) : null;
-  const buscar = (filtro: string) =>
-    apiClient
-      .get<{ data: Conversa[] }>(
-        `/api/v1/conversations?${filtro}&limit=100${
-          setorEscolhido
-            ? `&setor=${encodeURIComponent(setorEscolhido)}`
-            : numero
-              ? `&channel_session_id=${numero}`
-              : ""
-        }`,
-      )
-      .then((r) => r.data ?? []);
+  const recorte = setorEscolhido
+    ? `&setor=${encodeURIComponent(setorEscolhido)}`
+    : numero
+      ? `&channel_session_id=${encodeURIComponent(numero)}`
+      : "";
+  const buscar = async (filtro: string): Promise<Conversa[]> => {
+    const itens: Conversa[] = [];
+    let cursor: string | undefined;
+    const visitados = new Set<string>();
+    do {
+      const pagina = await apiClient.get<{
+        data: Conversa[];
+        meta?: { cursor?: string; has_more?: boolean };
+      }>(
+        `/api/v1/conversations?${filtro}&limit=100${recorte}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+      );
+      itens.push(...(pagina.data ?? []));
+      cursor = pagina.meta?.has_more ? pagina.meta.cursor : undefined;
+      if (pagina.meta?.has_more && (!cursor || visitados.has(cursor)))
+        throw new Error("Paginação incompleta");
+      if (cursor) visitados.add(cursor);
+    } while (cursor);
+    return itens;
+  };
   const abertas = useQuery({
-    queryKey: ["painel-do-setor", "abertas", numero],
-    queryFn: () => buscar("status=open,claimed,ai_handling"),
+    queryKey: ["painel-do-setor", "abertas", orgId, numero],
+    queryFn: () => buscar("status=open,pending,claimed,ai_handling"),
     refetchInterval: 15_000,
     enabled: !!orgId,
   });
   const encerradas = useQuery({
-    queryKey: ["painel-do-setor", "encerradas", numero],
+    queryKey: ["painel-do-setor", "encerradas", orgId, numero],
     queryFn: () => buscar("status=closed"),
     refetchInterval: 60_000,
     enabled: !!orgId,
   });
   const casos = useQuery({
-    queryKey: ["painel-do-setor", "casos", numero],
+    queryKey: ["painel-do-setor", "casos", orgId, numero],
     queryFn: () =>
-      apiClient.get<{ data: { open_count?: number } }>(
-        `/api/v1/ai/cases?status=open${numero.startsWith("setor:") ? `&setor=${encodeURIComponent(numero.slice(6))}` : ""}`,
-      ),
+      apiClient.get<{
+        data: {
+          open_count: number;
+          cases: Array<{
+            id: string;
+            conversation_id: string;
+            status: string;
+            opened_at: string;
+            contact_name: string | null;
+            contact_phone: string | null;
+            summary: string;
+          }>;
+        };
+      }>(`/api/v1/ai/cases?status=open${recorte}`),
     refetchInterval: 30_000,
     enabled: !!orgId,
   });
 
-  const colunas = useMemo(
-    () => montarColunas([...(abertas.data ?? []), ...(encerradas.data ?? [])]),
-    [abertas.data, encerradas.data],
-  );
+  const colunas = useMemo(() => {
+    const porConversa = new Map(
+      [...(abertas.data ?? []), ...(encerradas.data ?? [])].map((c) => [c.id, c]),
+    );
+    for (const caso of casos.data?.data?.cases ?? []) {
+      if (caso.status !== "awaiting_human") continue;
+      const conversa = porConversa.get(caso.conversation_id);
+      const desde = conversa?.caso_aguardando_desde;
+      porConversa.set(caso.conversation_id, {
+        ...(conversa ?? {
+          id: caso.conversation_id,
+          status: "pending",
+          last_inbound_at: null,
+          last_outbound_at: null,
+          last_message_at: null,
+          awaiting_since: null,
+          last_message_preview: caso.summary,
+          contacts: {
+            display_name: caso.contact_name,
+            name: null,
+            phone_number: caso.contact_phone,
+          },
+        }),
+        caso_aguardando_desde: desde && desde < caso.opened_at ? desde : caso.opened_at,
+      });
+    }
+    return montarColunas([...porConversa.values()]);
+  }, [abertas.data, encerradas.data, casos.data]);
   const casosAbertos = casos.data?.data?.open_count ?? 0;
 
   return (
@@ -177,7 +247,9 @@ export function PainelDoSetor() {
           <option value="">{t("Todos os números")}</option>
           {setores.map((s) => (
             <option key={`setor:${s.nome}`} value={`setor:${s.nome}`}>
-              {t("Setor {nome} ({quantos} números)").replace("{nome}", s.nome).replace("{quantos}", String(s.ids.length))}
+              {t("Setor {nome} ({quantos} números)")
+                .replace("{nome}", s.nome)
+                .replace("{quantos}", String(s.ids.length))}
             </option>
           ))}
           {(numeros ?? []).map((n) => (
@@ -187,28 +259,41 @@ export function PainelDoSetor() {
           ))}
         </select>
         <Link
-          href="/app/ai/cases"
+          href={`/app/ai/cases${setorEscolhido ? `?setor=${encodeURIComponent(setorEscolhido)}` : ""}`}
           className={`h-9 rounded-md border px-3 text-sm leading-9 ${
-            casosAbertos > 0 ? "border-red-600 font-semibold text-red-500" : "border-border text-text-muted"
+            casosAbertos > 0
+              ? "border-red-600 font-semibold text-red-500"
+              : "border-border text-text-muted"
           }`}
         >
           {t("Casos da IA")}: {casosAbertos}
         </Link>
       </header>
-      {abertas.isError && <p className="text-sm text-red-500">{t("Não deu para carregar as conversas agora.")}</p>}
+      {(abertas.isError || encerradas.isError || casos.isError) && (
+        <p className="text-sm text-red-500">{t("Não deu para carregar as conversas agora.")}</p>
+      )}
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 md:grid-cols-3">
         <Coluna
           titulo={t("Aguardando atendimento")}
           itens={colunas.aguardando}
           destaque
           vazio={t("Ninguém esperando.")}
-          tempo={(c) => t("esperando há {tempo}").replace("{tempo}", haQuantoTempo((c as Conversa & { esperandoDesde: string }).esperandoDesde))}
+          tempo={(c) =>
+            t("esperando há {tempo}").replace(
+              "{tempo}",
+              haQuantoTempo((c as Conversa & { esperandoDesde: string }).esperandoDesde),
+            )
+          }
         />
         <Coluna
           titulo={t("Em atendimento")}
           itens={colunas.emAtendimento}
           vazio={t("Nenhuma conversa em andamento.")}
-          tempo={(c) => (c.last_message_at ? t("há {tempo}").replace("{tempo}", haQuantoTempo(c.last_message_at)) : "")}
+          tempo={(c) =>
+            c.last_message_at
+              ? t("há {tempo}").replace("{tempo}", haQuantoTempo(c.last_message_at))
+              : ""
+          }
         />
         <Coluna
           titulo={t("Atendidos hoje")}

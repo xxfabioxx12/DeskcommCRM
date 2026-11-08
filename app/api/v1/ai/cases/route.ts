@@ -31,6 +31,7 @@ export const dynamic = "force-dynamic";
 const querySchema = z.object({
   // Fork NODZ: `waiting` (esperando a equipe) e `answered` (respondido,
   // esperando o cliente) são as duas metades de `open` — uma aba cada.
+  channel_session_id: z.string().uuid().optional(),
   status: z.enum(["open", "resolved", "waiting", "answered"]).default("open"),
 });
 
@@ -48,9 +49,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { org } = authz;
 
-  const parsed = querySchema.safeParse(
-    Object.fromEntries(new URL(req.url).searchParams.entries()),
-  );
+  const parsed = querySchema.safeParse(Object.fromEntries(new URL(req.url).searchParams.entries()));
   if (!parsed.success) {
     return fail("validation_failed", t("Query inválida."), 422, {
       requestId,
@@ -63,7 +62,12 @@ export async function GET(req: NextRequest): Promise<Response> {
     // aplicada) ANTES da leitura privilegiada. Manager e admin seguem vendo
     // tudo porque é `fn_can_view_conversation` que decide — eles são org-wide
     // por desenho, e não há regra de papel repetida aqui para desatualizar.
-    const canais = await idsDoSetorEscolhido(org.orgId, new URL(req.url).searchParams.get("setor"));
+    const doSetor = await idsDoSetorEscolhido(
+      org.orgId,
+      new URL(req.url).searchParams.get("setor"),
+    );
+    const canal = parsed.data.channel_session_id;
+    const canais = canal ? (doSetor && !doSetor.includes(canal) ? [] : [canal]) : doSetor;
     const visiveisPara = await conversasVisiveisDosCasos(await createClient(), org.orgId, {
       filtroDoSetor: await filtroDoSetorPara(org.orgId, authz.user.id),
       canais,
@@ -73,7 +77,12 @@ export async function GET(req: NextRequest): Promise<Response> {
       visiveisPara,
     });
     return ok(
-      { cases: chamados, open_count: abertos, waiting_count: aguardando, answered_count: abertos - aguardando },
+      {
+        cases: chamados,
+        open_count: abertos,
+        waiting_count: aguardando,
+        answered_count: abertos - aguardando,
+      },
       { requestId },
     );
   } catch (erro) {

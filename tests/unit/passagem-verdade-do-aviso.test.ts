@@ -62,7 +62,7 @@ function bancoComFalaDaIa() {
   for (const m of ["select", "eq", "order"]) cadeia[m] = () => cadeia;
   cadeia.limit = () =>
     Promise.resolve({ data: [{ metadata: null, created_at: new Date().toISOString() }], error: null });
-  return { from: () => cadeia } as never;
+  return { from: () => cadeia, rpc: async () => ({ data: "caso-confirmado", error: null }) } as never;
 }
 
 function avisa() {
@@ -146,7 +146,7 @@ describe("o motor de conversa traduz o MESMO desfecho", () => {
     const { avisarLeadDaEscalacao } = await import(
       "@/lib/agent-engine/agent/aviso-de-escalacao"
     );
-    return avisarLeadDaEscalacao({} as never, {
+    return avisarLeadDaEscalacao({ query: async () => ({ rows: [{ id: "caso-confirmado" }] }) } as never, {
       tenantId: ORG,
       leadId: CONTATO,
       conversationId: CONVERSA,
