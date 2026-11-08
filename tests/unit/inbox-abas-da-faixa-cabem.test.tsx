@@ -36,14 +36,14 @@ describe("Histórico separado sem perder acesso", () => {
   it("abre as duas visões de histórico e mantém o identificador da aba", () => {
     const onChange=vi.fn();
     render(<InboxFilters value={{tab:"mine",search:"",onlyUnread:false}} onChange={onChange} />);
-    expect(screen.queryByRole("tab",{name:/Arquivadas/})).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button",{name:"Histórico"}));
-    expect(screen.getByRole("tab",{name:/Concluídas/})).toBeVisible();
-    fireEvent.mouseDown(screen.getByRole("tab",{name:/Arquivadas/}),{button:0,ctrlKey:false});
+    expect(screen.queryByRole("option",{name:/Arquivadas/})).not.toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole("combobox",{name:"Visualização das conversas"}),{key:"ArrowDown"});
+    expect(screen.getByRole("option",{name:/Concluídas/})).toBeVisible();
+    fireEvent.click(screen.getByRole("option",{name:/Arquivadas/}));
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({tab:"archived"}));
   });
   it("link direto para arquivadas abre o histórico", () => {
     render(<InboxFilters value={{tab:"archived",search:"",onlyUnread:false}} onChange={()=>{}} />);
-    expect(screen.getByRole("tab",{name:/Arquivadas/})).toHaveAttribute("data-state","active");
+    expect(screen.getByRole("combobox",{name:"Visualização das conversas"})).toHaveTextContent("Arquivadas · 9");
   });
 });

@@ -70,9 +70,9 @@ describe("Inbox › o badge das abas hidrata sem divergir da contagem (#3736)", 
   it("controle: o HTML do servidor sai SEM o badge (não há contagem no servidor)", () => {
     contagens = { fila: 41 };
     const html = renderToString(<InboxFilters value={FILTRO} onChange={() => {}} />);
-    expect(html).toContain("Aguardando atendente");
+    expect(html).toContain("Visualização das conversas");
     expect(html, "o servidor passou a imprimir a contagem: a divergência volta").not.toContain(
-      "tabular-nums",
+      " · 41",
     );
   });
 
@@ -99,7 +99,7 @@ describe("Inbox › o badge das abas hidrata sem divergir da contagem (#3736)", 
     ).toEqual([]);
 
     // E o badge NÃO foi escondido para sempre: depois de montar, a contagem está lá.
-    expect(container.querySelectorAll(".tabular-nums").length).toBe(1);
+    expect(container.querySelector('[aria-label="Visualização das conversas"]')?.textContent).toContain("Não atribuídos · 41");
     expect(container.textContent).toContain("41");
   });
 });
