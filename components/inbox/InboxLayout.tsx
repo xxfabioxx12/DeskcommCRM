@@ -231,10 +231,10 @@ const FILTER_TABS: InboxTab[] = ["unassigned", "mine", "all", "closed", "archive
 
 /**
  * Lê ?filter= (G4-02, deep-link). ?filter=all é HONRADO mesmo para agent — a
- * lista volta RLS-scoped (a tab só some cosmeticamente); default: meus atendimentos.
+ * lista volta RLS-scoped (a tab só some cosmeticamente); default: fila.
  */
-function parseFilterParam(v: string | null, defaultTab: InboxTab = "mine"): InboxTab {
-  return v && FILTER_TABS.includes(v as InboxTab) ? (v as InboxTab) : defaultTab;
+function parseFilterParam(v: string | null): InboxTab {
+  return v && FILTER_TABS.includes(v as InboxTab) ? (v as InboxTab) : "unassigned";
 }
 
 /**
@@ -297,7 +297,7 @@ export function InboxLayout({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const tab = parseFilterParam(searchParams.get("filter"), roleAtLeast(activeOrg?.role, "manager") ? "all" : "mine");
+  const tab = parseFilterParam(searchParams.get("filter"));
   const idNaUrl = searchParams.get("id");
   /**
    * `?tag=` é o destino do link de cada linha do relatório Por etiqueta
@@ -327,7 +327,6 @@ export function InboxLayout({
     setAux((atual) => ({
       ...atual,
       channel_session_id: lembrados.channel_session_id,
-      setor: lembrados.setor,
       onlyUnread: lembrados.onlyUnread ?? false,
     }));
     // O contexto acompanha o estado restaurado no PRÓXIMO render. Uma ref
@@ -338,15 +337,14 @@ export function InboxLayout({
     if (!orgId || orgDosFiltros !== orgId) return;
     gravarFiltrosLembrados(armazenamentoDoNavegador(), orgId, {
       channel_session_id: aux.channel_session_id,
-      setor: aux.setor,
       onlyUnread: aux.onlyUnread,
     });
-  }, [orgId, orgDosFiltros, aux.channel_session_id, aux.setor, aux.onlyUnread]);
+  }, [orgId, orgDosFiltros, aux.channel_session_id, aux.onlyUnread]);
   const filterValue: InboxFiltersValue = {
     tab,
     ...aux,
     // Uma troca de organização não leva o número anterior nem à consulta.
-    ...(orgDosFiltros !== orgId ? { channel_session_id: undefined, setor: undefined, onlyUnread: false } : {}),
+    ...(orgDosFiltros !== orgId ? { channel_session_id: undefined, onlyUnread: false } : {}),
   };
   const setFilterValue = useCallback(
     (next: InboxFiltersValue) => {
@@ -466,7 +464,6 @@ export function InboxLayout({
         ? filterValue.search
         : undefined,
       channel_session_id: filterValue.channel_session_id,
-      setor: filterValue.setor,
       tag: filterValue.tag,
       tagMode: filterValue.tagMode,
       unread: filterValue.onlyUnread || undefined,
@@ -478,7 +475,6 @@ export function InboxLayout({
       filterValue.assigned_to,
       filterValue.search,
       filterValue.channel_session_id,
-      filterValue.setor,
       filterValue.tag,
       filterValue.tagMode,
       filterValue.onlyUnread,

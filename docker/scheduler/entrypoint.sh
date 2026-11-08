@@ -79,7 +79,6 @@ CRONS="
 # AS VENDAS QUE FALHARAM (fork, Parte 2b). A cada 5 minutos porque a primeira
 # nova tentativa sai 5 minutos depois da falha. Barato: só lê a fila parcial.
 */5 * * * *|60|api/v1/cron/vendas-reprocessar
-*/30 * * * *|300|api/v1/cron/concluir-agradecimento
 # OAuth por contato dos servidores MCP do agente (migration 9095): revoga no
 # terceiro o acesso cuja conversa encerrou (ou cujo contato foi anonimizado).
 */5 * * * *|60|api/v1/cron/mcp-oauth-revogacao

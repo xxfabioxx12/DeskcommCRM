@@ -17,7 +17,6 @@ const closeMutate = vi.hoisted(() => vi.fn());
 const arquivarMutate = vi.hoisted(() => vi.fn());
 const startCall = vi.hoisted(() => vi.fn());
 const claimMutate = vi.hoisted(() => vi.fn());
-const concluirMutate = vi.hoisted(() => vi.fn());
 
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   useAuth: () => ({ user: { id: "u1", support: null } }),
@@ -30,7 +29,6 @@ vi.mock("@/hooks/inbox/useReleaseConversation", () => ({
 }));
 vi.mock("@/hooks/inbox/useCloseConversation", () => ({
   useCloseConversation: () => ({ mutate: closeMutate, isPending: false }),
-  useConcluirConversa: () => ({ mutate: concluirMutate, isPending: false }),
   useReopenConversation: () => ({ mutate: vi.fn(), isPending: false }),
   useArchiveConversation: () => ({ mutate: arquivarMutate, isPending: false }),
 }));
@@ -121,7 +119,6 @@ beforeEach(() => {
   arquivarMutate.mockReset();
   startCall.mockReset();
   claimMutate.mockReset();
-  concluirMutate.mockReset();
 });
 
 /**
@@ -281,25 +278,6 @@ describe("ConversationHeader — busca dentro da conversa (#1793)", () => {
     expect(buscar).toHaveBeenCalledOnce();
     expect(closeMutate).not.toHaveBeenCalled();
     expect(arquivarMutate).not.toHaveBeenCalled();
-  });
-});
-
-describe("ConversationHeader — Concluir (fork NODZ)", () => {
-  it("conversa aberta: confirma e conclui com a revisão atual", async () => {
-    const user = userEvent.setup();
-    render(<ConversationHeader conversation={conversa("open")} />);
-    await user.click(screen.getByTestId("concluir-conversa"));
-    expect(concluirMutate).not.toHaveBeenCalled();
-    await user.click(await screen.findByTestId("confirmar-concluir-conversa"));
-    expect(concluirMutate).toHaveBeenCalledWith({ conversation_id: "conv-1", expected_revision: 3 }, expect.anything());
-  });
-
-  it("conversa já fechada: o Concluir continua lá para soltar o caso preso", async () => {
-    const user = userEvent.setup();
-    render(<ConversationHeader conversation={conversa("closed")} />);
-    await user.click(screen.getByTestId("concluir-conversa"));
-    await user.click(await screen.findByTestId("confirmar-concluir-conversa"));
-    expect(concluirMutate).toHaveBeenCalledWith({ conversation_id: "conv-1", expected_revision: undefined }, expect.anything());
   });
 });
 

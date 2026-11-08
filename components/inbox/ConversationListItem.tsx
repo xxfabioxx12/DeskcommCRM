@@ -266,7 +266,7 @@ export function ConversationListItem({
   const temSelos =
     visibleTags.length > 0 ||
     exemploMarcado ||
-    (mostrarAtendente && (comando.quem === "humano" || isAi)) ||
+    (mostrarAtendente && comando.quem === "humano") ||
     (mostrarCanal && rotuloCanal != null) ||
     Boolean(c?.is_blocked) ||
     Boolean(c?.is_anonymized);
@@ -422,7 +422,7 @@ export function ConversationListItem({
             {truncated}
           </p>
           {unread > 0 && (
-            <span aria-label={`${unread} ${t("Mensagens não lidas")}`} title={t("Mensagens não lidas")} className="inline-flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-semibold tabular-nums text-accent-foreground">
+            <span className="inline-flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-semibold tabular-nums text-accent-foreground">
               {unread}
             </span>
           )}
@@ -450,8 +450,8 @@ export function ConversationListItem({
             {overflow > 0 && (
               <span className="text-[10px] text-text-muted" title={hiddenTags.join(", ")}>+{overflow}</span>
             )}
-            {mostrarAtendente && (comando.quem === "humano" || isAi) && (
-              <OwnerBadge ownerKind={isAi ? "ai" : "user"} ownerName={isAi ? t("IA") : comando.nome ?? t("Atendente")} compacto />
+            {mostrarAtendente && comando.quem === "humano" && (
+              <OwnerBadge ownerKind="user" ownerName={comando.nome ?? t("Atendente")} compacto />
             )}
             {/* #2383: `min-w-0` + `max-w` + `truncate` — o mesmo tratamento do
                 badge do cabeçalho. Uma linha de badges é `flex-wrap`, então um

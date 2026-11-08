@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/lib/atendimento/fronteira-server", () => ({ guardServiceEffect: vi.fn(async () => {}), currentExecutionJob: () => null }));
+vi.mock("@/lib/atendimento/fronteira-server", () => ({ guardServiceEffect: vi.fn(async () => {}) }));
 vi.mock("@/lib/escalacao/disponibilidade", () => ({
   expectativaDeAtendimento: vi.fn(async () => ({ frase: "A equipe dará continuidade." })),
 }));

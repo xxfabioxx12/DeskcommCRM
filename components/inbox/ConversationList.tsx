@@ -70,7 +70,7 @@ export function ConversationList({
   //
   // `?? []` e não `undefined`: enquanto a lista de canais carrega, o certo é
   // NÃO mostrar. Mostrar e sumir depois é pior que aparecer um instante tarde.
-  const canais = useChannelSessions({ incluirForaDoSetor: true }).data ?? [];
+  const canais = useChannelSessions().data ?? [];
   const maisDeUmCanal = canais.length > 1;
 
   // Fila (G5-03): a lista já vem ordenada por tempo de espera (server), então a
@@ -105,8 +105,28 @@ export function ConversationList({
   // setState in InboxLayout from inside ConversationList's render phase,
   // which React 19 forbids.
 
-  // NODZ: confirmar o responsável em toda conversa, inclusive em Meus chats.
-  const mostrarAtendente = true;
+  /**
+   * O badge de atendente só entra quando DISCRIMINA — mesma regra do badge de
+   * canal, e pelo mesmo motivo escrito lá: rótulo que se repete em toda linha
+   * ensina o olho a ignorar a área onde vivem os avisos que importam.
+   *
+   * Medido nas abas: "Fila" pede `comando=aguardando` (nenhuma linha tem dono —
+   * a régua põe quem tem dono em `humano`), "Minhas" filtra `assigned_to=me`
+   * (todas têm o MESMO) e "Automático" pede `comando=automatico` (também sem
+   * dono, pela mesma razão). Sobram "Todas" e "Fechadas" — e mesmo nelas, só
+   * vale se a página realmente tiver mais de um dono distinto.
+   *
+   * O `filters.comando` entrou junto com as abas novas: sem ele, a Fila voltaria
+   * a repetir o mesmo selo de atendente em cada uma das linhas.
+   */
+  const mostrarAtendente = useMemo(() => {
+    if (filters.assigned_to) return false;
+    if (filters.comando && !filters.comando.includes("humano")) return false;
+    const donos = new Set(
+      items.map((i) => i.assigned_to_user_id).filter((id): id is string => Boolean(id)),
+    );
+    return donos.size > 1;
+  }, [filters.assigned_to, filters.comando, items]);
 
   /**
    * O ícone de robô, mesma regra dos dois badges acima: só entra quando

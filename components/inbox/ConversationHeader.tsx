@@ -35,10 +35,8 @@ import { ROLE_RANK } from "@/lib/auth/types";
 import {
   useArchiveConversation,
   useCloseConversation,
-  useConcluirConversa,
   useReopenConversation,
 } from "@/hooks/inbox/useCloseConversation";
-import { toast } from "sonner";
 import { useResumeAiAttendance } from "@/hooks/inbox/useResumeAiAttendance";
 import { usePauseAiAttendance } from "@/hooks/inbox/usePauseAiAttendance";
 import { useAutomaticoAtivo } from "@/hooks/ai/useAutomaticoAtivo";
@@ -109,7 +107,6 @@ export function ConversationHeader({
   const claim = useClaimConversation();
   const release = useReleaseConversation();
   const close = useCloseConversation();
-  const concluir = useConcluirConversa();
   const reopen = useReopenConversation();
   const arquivar = useArchiveConversation();
   const retomar = useResumeAiAttendance();
@@ -119,7 +116,6 @@ export function ConversationHeader({
   const automaticoDaOrg = useAutomaticoAtivo();
   const [reassignOpen, setReassignOpen] = useState(false);
   const [confirmFecharOpen, setConfirmFecharOpen] = useState(false);
-  const [confirmConcluirOpen, setConfirmConcluirOpen] = useState(false);
   /**
    * A ESCOLHA AO FECHAR (#3313, item 1), e ela começa MARCADA em "devolver".
    *
@@ -530,18 +526,6 @@ export function ConversationHeader({
             {t("Transferir")}
           </Button>
         )}
-        {/* Fork NODZ — "Concluir": já foi resolvido. Fecha a conversa e tira a
-            pessoa de Casos, sem mandar mensagem. Aparece também na conversa já
-            fechada, para soltar o caso que ficou preso pelo Fechar antigo. */}
-        <Button
-          size="sm"
-          data-testid="concluir-conversa"
-          disabled={concluir.isPending}
-          title={t("Já foi resolvido: fecha a conversa e tira de Casos, sem mandar mensagem ao cliente.")}
-          onClick={() => setConfirmConcluirOpen(true)}
-        >
-          {concluir.isPending ? t("Concluindo...") : t("Concluir")}
-        </Button>
         {!encerrada && (
           <Button
             size="sm"
@@ -754,33 +738,6 @@ export function ConversationHeader({
             : undefined
         }
       />
-      <AlertDialog open={confirmConcluirOpen} onOpenChange={setConfirmConcluirOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("Concluir este atendimento?")}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t("A conversa é fechada e a pessoa sai de Casos. Nenhuma mensagem é enviada ao cliente.")}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("Cancelar")}</AlertDialogCancel>
-            <AlertDialogAction
-              data-testid="confirmar-concluir-conversa"
-              onClick={() =>
-                concluir.mutate(
-                  {
-                    conversation_id: conversation.id,
-                    expected_revision: encerrada ? undefined : conversation.service_revision,
-                  },
-                  { onSuccess: () => toast.success(t("Concluído. Nenhuma mensagem foi enviada ao cliente.")) },
-                )
-              }
-            >
-              {t("Concluir")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
       {/* O diálogo do convite, FORA do menu ⋯ (ver `DialogoDeConvite`): ele é
           modal, e modal dentro de modal esconde a página de quem usa leitor de
           tela. O item do menu só levanta `conviteAberto`. */}

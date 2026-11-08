@@ -1,4 +1,3 @@
-import { atribuirPassagemAoDestinoDoNumero } from '@/lib/routing/atribuir-passagem';
 import { currentExecutionBoundary, guardServiceEffect } from "@/lib/atendimento/fronteira-server";
 import { TIPOS_DE_CASO, type TipoDeCaso } from "@/lib/ai/case-copy";
 /**
@@ -287,20 +286,11 @@ export async function openCase(
 
   const caseId = rows[0]?.case_id;
   if (caseId === undefined) {
-    // Repetição após falha de atribuição: reparar a entrega do caso existente,
-    // sem duplicar caso/aviso e sem tocar caso que aguarda o cliente.
-    const existing = await db.query<{ id: string }>(
-      `select id from agent_cases where organization_id=$1 and conversation_id=$2
-       and status='awaiting_human' limit 1`,
-      [ids.tenantId, ids.conversationId],
-    );
-    if (existing.rows.length > 0) await atribuirPassagemAoDestinoDoNumero(db, ids);
     // A recusa é uma INSTRUÇÃO (não só um erro): é o texto que o modelo lê no
     // resultado da tool, e é ele que impede a promessa de que a equipe foi
     // acionada quando ninguém foi avisado (#3097).
     return recusaDeCasoAberto();
   }
-  await atribuirPassagemAoDestinoDoNumero(db, ids);
   return { ok: true, caseId };
 }
 
@@ -345,7 +335,6 @@ export async function provideCaseUpdate(
       },
     };
   }
-  await atribuirPassagemAoDestinoDoNumero(db, ids);
   return { ok: true };
 }
 
@@ -517,40 +506,6 @@ export async function concluirCasoSemMensagem(
   );
   return transitioned(rowCount);
 }
-
-/**
- * Fork NODZ — o "Concluir" do Inbox: todos os casos ABERTOS de uma conversa vão
- * para `resolved` pela mão da pessoa, SEM mensagem ao cliente (nada é
- * enfileirado). Devolve quantos casos fechou (0 = não havia caso aberto).
- */
-export async function concluirCasosDaConversa(
-  db: Queryable,
-  tenantId: string,
-  conversationId: string,
-  actorUserId: string,
-): Promise<number> {
-  const { rows } = await db.query<{ id: string }>(
-    `with updated as (
-       update agent_cases
-          set status = 'resolved', closed_at = now(), updated_at = now()
-        where organization_id = $1 and conversation_id = $2 and status = any($5::text[])
-        returning id
-     ), eventos as (
-       insert into agent_case_events (organization_id, case_id, kind, actor_kind, actor_user_id, human_action, body, metadata)
-       select $1::uuid, id, 'human_replied', 'human', $3::uuid, 'resolved', $4::text,
-              jsonb_build_object('source', 'concluido_no_inbox') from updated
-       union all
-       select $1::uuid, id, 'resolved', 'human', $3::uuid, null::text, null::text,
-              jsonb_build_object('source', 'concluido_no_inbox') from updated
-     )
-     select id from updated`,
-    [tenantId, conversationId, actorUserId, NOTA_CONCLUIDO_NO_INBOX, OPEN_STATUSES],
-  );
-  return rows.length;
-}
-
-export const NOTA_CONCLUIDO_NO_INBOX =
-  "Concluído no Inbox. Nenhuma mensagem foi enviada ao cliente.";
 
 /** Como um chamado pode terminar pela mão do agente. */
 export type DesfechoDoChamado = 'resolvido' | 'sem_necessidade';

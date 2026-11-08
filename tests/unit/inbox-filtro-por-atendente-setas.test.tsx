@@ -1,4 +1,10 @@
-/** Voltar para Meus atendimentos limpa o responsável escolhido, inclusive após consultar o histórico. */
+/**
+ * Entrar em Minhas limpa o atendente escolhido pelo gerente por QUALQUER caminho.
+ *
+ * O clique na aba já limpava; as setas de "Aba anterior"/"Próxima aba" não. Por
+ * elas, a escolha seguia viva em Minhas com o seletor escondido, e as outras
+ * abas continuavam contando só o atendente escolhido sem nada na tela dizer isso.
+ */
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -42,19 +48,17 @@ afterEach(() => {
 const COM_ATENDENTE: InboxFiltersValue = { tab: "unassigned", search: "", onlyUnread: false, assigned_to: ATENDENTE };
 
 describe("filtro por atendente — as setas de aba", () => {
-  it("Entrar em Meus atendimentos limpa o atendente escolhido", () => {
+  it("'Próxima aba' para Minhas limpa o atendente escolhido", () => {
     const onChange = vi.fn();
     render(<InboxFilters value={COM_ATENDENTE} onChange={onChange} />);
-    fireEvent.keyDown(screen.getByRole("combobox", {name:"Visualização das conversas"}), {key:"ArrowDown"});
-    fireEvent.click(screen.getByRole("option", {name:/Meus chats/}));
+    fireEvent.click(screen.getByRole("button", { name: "Próxima aba" }));
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ tab: "mine", assigned_to: undefined }));
   });
 
-  it("CONTROLE: abrir Histórico e uma aba que não é Minhas mantém a escolha", () => {
+  it("CONTROLE: seta para uma aba que não é Minhas mantém a escolha", () => {
     const onChange = vi.fn();
     render(<InboxFilters value={{ ...COM_ATENDENTE, tab: "all" }} onChange={onChange} />);
-    fireEvent.keyDown(screen.getByRole("combobox", {name:"Visualização das conversas"}), {key:"ArrowDown"});
-    fireEvent.click(screen.getByRole("option", {name:/Concluídas/}));
+    fireEvent.click(screen.getByRole("button", { name: "Próxima aba" }));
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ tab: "closed", assigned_to: ATENDENTE }));
   });
 });
