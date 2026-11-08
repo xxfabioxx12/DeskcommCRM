@@ -40,6 +40,10 @@ import { TEXTOS_AGENDA_SERVICOS } from "./agenda-servicos";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Meus chats": { es: "Mis chats" },
+  "Não atribuídos": { es: "Sin asignar" },
+  "Visualização das conversas": { es: "Vista de las conversaciones" },
+  "Mensagens não lidas": { es: "Mensajes no leídos" },
   "Meus atendimentos": { es: "Mis atenciones" },
   "IA atendendo": { es: "IA atendiendo" },
   "Concluídas": { es: "Finalizadas" },
