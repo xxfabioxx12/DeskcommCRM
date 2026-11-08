@@ -23,7 +23,7 @@ import { telefoniaEmUso } from "@/lib/telefonia/em-uso";
  * Ela é uma capacidade da ORGANIZAÇÃO, com o mesmo desenho de `propostas` — não
  * uma segunda régua: o menu lê `capacidades_ligadas` e mais nada.
  */
-export const CAPACIDADES_DA_ORGANIZACAO = ["propostas", "telefonia"] as const;
+export const CAPACIDADES_DA_ORGANIZACAO = ["propostas", "telefonia", "painel_barbearia"] as const;
 export type CapacidadeDaOrganizacao = (typeof CAPACIDADES_DA_ORGANIZACAO)[number];
 
 /**
@@ -40,6 +40,7 @@ export type CapacidadeDaOrganizacao = (typeof CAPACIDADES_DA_ORGANIZACAO)[number
 const MODULO_DA_CAPACIDADE: Record<CapacidadeDaOrganizacao, ModuloOpcional | null> = {
   propostas: "propostas",
   telefonia: null,
+  painel_barbearia: null,
 };
 
 function objeto(v: unknown): Record<string, unknown> | null {
@@ -73,6 +74,7 @@ export function capacidadesLigadas(
   // também não funciona — mas esse estado o app não enxerga, e fingir que
   // enxerga seria pior que o defeito.
   if (telefoniaEmUsoDaOrganizacao) daEmpresa.push("telefonia");
+  if (objeto(settings)?.painel_barbearia === true) daEmpresa.push("painel_barbearia");
   return daEmpresa;
 }
 

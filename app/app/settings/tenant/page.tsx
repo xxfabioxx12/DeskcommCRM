@@ -7,6 +7,8 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { alineasDoArt15Visiveis, art15DoControlador } from "@/lib/legal/art15";
 import { moedaServidaOu } from "@/lib/money";
 import { createClient } from "@/lib/supabase/server";
+import { ConfigurarPainelBarbearia } from "./_painel-barbearia";
+import { painelBarbeariaLigado } from "@/lib/barbearia/config";
 import { Art15Form } from "./_art15";
 import { ZonaDePerigoDaOrganizacao } from "./_danger-zone";
 import { InboxDaEmpresaForm } from "./_inbox";
@@ -114,6 +116,12 @@ export default async function TenantSettingsPage() {
           initial={row.interface_settings}
           role={activeOrg.role}
           camposDeCompra={camposDeCompra}
+        />
+      )}
+      {row && (
+        <ConfigurarPainelBarbearia
+          key={activeOrg.orgId}
+          initial={painelBarbeariaLigado(row.settings)}
         />
       )}
       {row && <InboxDaEmpresaForm initial={row.interface_settings} />}

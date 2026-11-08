@@ -858,6 +858,17 @@ export const NAV_CATALOG = [
   // lista as cinco (`hubSections`), então as duas continuam a um clique, com a
   // frase que explica para que servem. O ⌘K também as acha por nome.
   {
+    href: "/app/painel-da-barbearia",
+    label: "Painel da barbearia",
+    description: "Agenda, comandas e caixa desta barbearia.",
+    icon: "ChartBar",
+    group: "analise",
+    section: "Dinheiro",
+    minRole: "manager",
+    sidebar: true,
+    capacidade: "painel_barbearia",
+  },
+  {
     // A terceira ponta do módulo financeiro: Configurações › Financeiro descreve
     // para onde o dinheiro vai, CRM › Comandas é onde o dia acontece, e aqui se
     // responde a pergunta do fim do mês.
