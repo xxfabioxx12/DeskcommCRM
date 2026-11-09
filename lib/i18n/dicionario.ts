@@ -67,6 +67,7 @@ export const DICIONARIO: Traducoes = {
   // Fork NODZ — Concluir no Inbox.
   "Já foi resolvido: fecha a conversa e tira de Casos, sem mandar mensagem ao cliente.": { es: "Ya está resuelto: cierra la conversación y la saca de Casos, sin enviar mensaje al cliente." },
   "Concluindo...": { es: "Concluyendo..." },
+  "Não foi possível concluir o atendimento. Tente novamente.": { es: "No se pudo concluir la atención. Inténtalo de nuevo." },
   "Concluir este atendimento?": { es: "¿Concluir esta atención?" },
   "A conversa é fechada e a pessoa sai de Casos. Nenhuma mensagem é enviada ao cliente.": { es: "La conversación se cierra y la persona sale de Casos. No se envía ningún mensaje al cliente." },
   "Concluído. Nenhuma mensagem foi enviada ao cliente.": { es: "Concluido. No se envió ningún mensaje al cliente." },
