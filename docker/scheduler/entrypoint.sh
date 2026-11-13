@@ -66,6 +66,7 @@ CRONS="
 */5 * * * *|25|api/v1/cron/snooze-watcher
 */5 * * * *|60|api/v1/cron/handoff-devolucao
 */5 * * * *|60|api/v1/cron/rodizio-devolucao
+*/5 * * * *|60|api/v1/cron/concluir-ia-sem-resposta
 # A FOTO GUARDADA SEM DESCRIÇÃO (MEDIA_VISION_WITHOUT_READER=defer). De 5 em 5
 # minutos: é o prazo para um follow-up, um rascunho ou uma integração passar a ver
 # a descrição da foto que chegou quando a empresa ainda não tinha quem a lesse.
