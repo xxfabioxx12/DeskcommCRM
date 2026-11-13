@@ -47,6 +47,7 @@ import {
   type MotivoDaPassagem,
   type OrigemDaPassagem,
 } from '@/lib/escalacao/passagem';
+import { entregarPassagemAoResponsavel } from '@/lib/escalacao/destino-da-passagem';
 import { traduzir } from '@/lib/i18n/dicionario';
 import { normalizarIdioma, type Idioma } from '@/lib/i18n/idiomas';
 import { sqlContatoInterno } from '@/lib/contacts/tags-internas';
@@ -494,6 +495,19 @@ export async function performHumanHandoff(
   // O UPDATE trava a linha: chamadas concorrentes no mesmo silêncio reutilizam
   // o UUID. Depois de devolver ao automático (silêncio limpo), nasce outro episódio.
   const episodioDoAviso = conversaSilenciada.rows[0]?.aviso_episodio ?? null;
+
+  // (b2) Fork NODZ: a conversa vai para a fila de quem atende o número (ou do
+  // dono da carteira). Falhar aqui não desfaz a passagem: a conversa fica em
+  // Aguardando, como antes.
+  await guardServiceEffect();
+  try {
+    const destino = await entregarPassagemAoResponsavel(db, ids);
+    opts.log.info('handoff: destino da passagem', { motivo: destino.motivo, atribuida: destino.userId !== null });
+  } catch (err) {
+    opts.log.warn('handoff: conversa não atribuída — fica em Aguardando', {
+      erro: err instanceof Error ? err.message : String(err),
+    });
+  }
 
   // (c) Cancela os crons PENDENTES do lead (follow-ups agendados — F3-01/02). Idempotente,
   // via o cancel compartilhado (mesma garantia que o opt-out irrevogável usa — F4-07).
