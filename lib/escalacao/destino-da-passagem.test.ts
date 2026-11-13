@@ -3,31 +3,28 @@ import { describe, expect, it } from "vitest";
 import { decidirDestinoDaPassagem } from "./destino-da-passagem";
 
 const HENRIQUE = "11111111-1111-4111-8111-111111111111";
-const FABIO = "22222222-2222-4222-8222-222222222222";
 const ROBSON = "33333333-3333-4333-8333-333333333333";
+const OUTRO = "44444444-4444-4444-8444-444444444444";
 
 describe("decidirDestinoDaPassagem", () => {
-  it("número com um responsável (suporte) vai para ele, mesmo com carteira de outro", () => {
-    expect(
-      decidirDestinoDaPassagem({ responsaveisDoNumero: [HENRIQUE], carteira: FABIO, carteiraQualificada: true }),
-    ).toEqual({ userId: HENRIQUE, motivo: "responsavel_do_numero" });
+  it("suporte com um atendente responsável vai para ele", () => {
+    expect(decidirDestinoDaPassagem({ nomeDoNumero: "Suporte · 2233", responsaveisAtendentes: [HENRIQUE] })).toBe(
+      HENRIQUE,
+    );
   });
 
-  it("número com dois responsáveis usa o dono da carteira", () => {
-    expect(
-      decidirDestinoDaPassagem({ responsaveisDoNumero: [FABIO, ROBSON], carteira: ROBSON, carteiraQualificada: true }),
-    ).toEqual({ userId: ROBSON, motivo: "dono_da_carteira" });
+  it("comercial fica como está, mesmo com um responsável", () => {
+    expect(decidirDestinoDaPassagem({ nomeDoNumero: "Comercial · 1509", responsaveisAtendentes: [ROBSON] })).toBeNull();
   });
 
-  it("dois responsáveis e sem carteira fica em Aguardando", () => {
+  it("suporte com dois atendentes não escolhe", () => {
     expect(
-      decidirDestinoDaPassagem({ responsaveisDoNumero: [FABIO, ROBSON], carteira: null, carteiraQualificada: false }),
-    ).toEqual({ userId: null, motivo: "sem_destino" });
+      decidirDestinoDaPassagem({ nomeDoNumero: "Suporte · 2233", responsaveisAtendentes: [HENRIQUE, OUTRO] }),
+    ).toBeNull();
   });
 
-  it("carteira de quem saiu da equipe não conta", () => {
-    expect(
-      decidirDestinoDaPassagem({ responsaveisDoNumero: [], carteira: FABIO, carteiraQualificada: false }),
-    ).toEqual({ userId: null, motivo: "sem_destino" });
+  it("número sem setor no nome não escolhe", () => {
+    expect(decidirDestinoDaPassagem({ nomeDoNumero: "Robson Comercial 2023", responsaveisAtendentes: [ROBSON] })).toBeNull();
+    expect(decidirDestinoDaPassagem({ nomeDoNumero: null, responsaveisAtendentes: [HENRIQUE] })).toBeNull();
   });
 });

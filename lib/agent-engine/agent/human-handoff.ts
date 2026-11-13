@@ -496,13 +496,13 @@ export async function performHumanHandoff(
   // o UUID. Depois de devolver ao automático (silêncio limpo), nasce outro episódio.
   const episodioDoAviso = conversaSilenciada.rows[0]?.aviso_episodio ?? null;
 
-  // (b2) Fork NODZ: a conversa vai para a fila de quem atende o número (ou do
-  // dono da carteira). Falhar aqui não desfaz a passagem: a conversa fica em
-  // Aguardando, como antes.
+  // (b2) Fork NODZ: no Suporte, a conversa vai para a fila do atendente do
+  // número. Falhar aqui não desfaz a passagem: a conversa fica em Aguardando,
+  // como antes.
   await guardServiceEffect();
   try {
     const destino = await entregarPassagemAoResponsavel(db, ids);
-    opts.log.info('handoff: destino da passagem', { motivo: destino.motivo, atribuida: destino.userId !== null });
+    opts.log.info('handoff: destino da passagem', { atribuida: destino !== null });
   } catch (err) {
     opts.log.warn('handoff: conversa não atribuída — fica em Aguardando', {
       erro: err instanceof Error ? err.message : String(err),
