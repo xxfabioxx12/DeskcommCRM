@@ -458,7 +458,11 @@ async function ehContatoPessoal(admin: Admin, entrada: EntradaDeMensagem): Promi
  * é justamente o que prova, depois, que o pedido chegou e foi respeitado.
  */
 async function aplicarOptOut(admin: Admin, entrada: EntradaDeMensagem): Promise<void> {
-  if (!ehPedidoDeOptOut(entrada.texto)) return;
+  // Cópia NODZ: o sistema nunca bloqueia contato sozinho (Fabio, 16/11). "Cancelar" e
+  // "descadastrar os domínios" bloqueavam cliente que pedia ajuda; quem pede para sair
+  // é atendido pela equipe ou pela IA, e o bloqueio fica só com uma pessoa.
+  // `DESKCOMM_BLOQUEIO_AUTOMATICO=1` religa o comportamento do oficial (os testes dele usam).
+  if (process.env.DESKCOMM_BLOQUEIO_AUTOMATICO !== "1" || !ehPedidoDeOptOut(entrada.texto)) return;
 
   try {
     const agora = new Date().toISOString();

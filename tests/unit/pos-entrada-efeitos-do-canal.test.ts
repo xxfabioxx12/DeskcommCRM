@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { EntradaDeMensagem } from "@/lib/channels/pos-entrada";
 import { acelerarFollowupDoInbound, drenarEventosDoInbound } from "@/lib/dev/kick-local-pipeline";
@@ -254,6 +254,14 @@ beforeEach(() => {
   vi.mocked(drenarEventosDoInbound).mockReset();
 });
 
+// Cópia NODZ: o bloqueio automático vem desligado; estes testes conferem o comportamento do oficial.
+beforeAll(() => {
+  process.env.DESKCOMM_BLOQUEIO_AUTOMATICO = "1";
+});
+afterAll(() => {
+  delete process.env.DESKCOMM_BLOQUEIO_AUTOMATICO;
+});
+
 describe("a ordem dos três efeitos", () => {
   it("opt-out acontece ANTES do nascimento do lead", async () => {
     // Esta é a razão de o arquivo existir. `garantirLeadDaConversa` RELÊ o
@@ -290,6 +298,18 @@ describe("a ordem dos três efeitos", () => {
 });
 
 describe("opt-out", () => {
+  it("Cópia NODZ: sem a chave, nunca bloqueia o contato sozinho", async () => {
+    delete process.env.DESKCOMM_BLOQUEIO_AUTOMATICO;
+    try {
+      ultimoUpdate = null;
+      await rodar({ texto: "Eu não tô conseguindo acessar a plataforma pra descadastrar os domínios" });
+      await rodar({ texto: "Cancelar" });
+      expect(ultimoUpdate).toBeNull();
+    } finally {
+      process.env.DESKCOMM_BLOQUEIO_AUTOMATICO = "1";
+    }
+  });
+
   it("bloqueia o contato quando a mensagem pede para sair", async () => {
     await rodar({ texto: "quero PARAR de receber" });
     expect(ultimoUpdate).toMatchObject({ is_blocked: true, blocked_reason: "stop_keyword" });
