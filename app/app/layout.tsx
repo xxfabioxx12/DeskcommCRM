@@ -37,6 +37,7 @@ import { faixaDaCobranca, type FaixaDaCobranca as Faixa } from "@/lib/cobranca/f
 import { logger } from "@/lib/logger";
 import { IdiomaProvider } from "@/lib/i18n/IdiomaProvider";
 import { listarConexoesCaidas, type ConexaoCaida } from "@/lib/channels/health";
+import { atendenteTemSetor } from "@/lib/inbox/recorte-do-setor";
 import { VoiceCallProvider } from "@/components/voice/VoiceCallContext";
 import { ProvedorDaOcupacaoDoRodape } from "@/lib/ui/rodape-ocupado";
 import { acessoFoiRevogado } from "@/lib/auth/vinculo-revogado";
@@ -78,6 +79,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // EPIC-02: gate /app/* on completed onboarding.
   // EPIC-11: gate /app/* on org not being suspended (S-11.08).
   let conexoesCaidas: ConexaoCaida[] = [];
+  let religaPeloSetor = false;
   let faixa: Faixa = null;
   let orgFuso: string | null = null;
   let enrolled = false;
@@ -139,7 +141,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
      *    aplica. Vigiado por
      *    `tests/unit/faixa-respeita-os-canais-do-atendente.test.tsx`.
      */
-    const [orgRes, conexoes, isEnrolled, mfaRequired, modulos, telefonia] = await Promise.all([
+    const [orgRes, conexoes, isEnrolled, mfaRequired, modulos, telefonia, atendenteDoSetor] = await Promise.all([
       admin
         .from("organizations")
         .select("onboarded_at, status, settings, timezone")
@@ -159,6 +161,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       // leia — o que se mede é o tronco SIP que esta empresa salvou. Entra no
       // mesmo `Promise.all`, então custa a consulta mais lenta, não uma espera.
       telefoniaEmUso(admin, activeOrg.orgId),
+      // Cópia NODZ: o atendente com setor ganha o botão da faixa (falha vira false).
+      activeOrg.role === "agent" ? atendenteTemSetor(activeOrg.orgId, user.id) : Promise.resolve(false),
     ]);
 
     const orgRow = orgRes.data;
@@ -168,6 +172,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       throw new Error(`organizacao_ilegivel: ${orgRes.error.message}`);
     }
     conexoesCaidas = conexoes;
+    religaPeloSetor = atendenteDoSetor;
     enrolled = isEnrolled;
     needsMfaGate = mfaRequired;
 
@@ -348,7 +353,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         {/* As faixas medidas: a casca e o Inbox descontam a altura delas. */}
         <FaixasDeCima>
           <ImpersonateBanner impersonating={impersonating} />
-          <ConexaoCaidaBanner caidas={conexoesCaidas} />
+          <ConexaoCaidaBanner caidas={conexoesCaidas} religaPeloSetor={religaPeloSetor} />
           {faixa !== null && <FaixaDaCobranca faixa={faixa} fuso={orgFuso} />}
         </FaixasDeCima>
         {needsMfaGate ? (

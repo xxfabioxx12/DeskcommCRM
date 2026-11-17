@@ -21,9 +21,9 @@ const support: NonNullable<AuthUser["support"]> = {
   previous_organization_id: null, expires_at: "2030-01-01T00:00:00Z", name: "Organização",
   locale: "pt-BR", access_mode: "support_readonly", status: "active",
 };
-function view(role: Role, locale: "pt-BR" | "es", who = baseUser, caidas: ConexaoCaida[] = [{ id: "channel", apelido: "Vendas", status: "SCAN_QR_CODE" }]) {
+function view(role: Role, locale: "pt-BR" | "es", who = baseUser, caidas: ConexaoCaida[] = [{ id: "channel", apelido: "Vendas", status: "SCAN_QR_CODE" }], religaPeloSetor = false) {
   return <AuthProvider user={who} activeOrg={{ orgId: "org", name: "Organização", role }}>
-    <IdiomaProvider locale={locale}><ConexaoCaidaBanner caidas={caidas} /></IdiomaProvider>
+    <IdiomaProvider locale={locale}><ConexaoCaidaBanner caidas={caidas} religaPeloSetor={religaPeloSetor} /></IdiomaProvider>
   </AuthProvider>;
 }
 const copy = {
@@ -58,6 +58,13 @@ describe.each(["pt-BR", "es"] as const)("alerta de conexão em %s", locale => {
     expect(alert).toHaveTextContent(copy[locale].outage);
     expect(within(alert).queryByRole("link")).toBeNull();
     expect(within(alert).getByText(copy[locale].help)).toBeVisible();
+  });
+
+  it("atendente com setor (cópia NODZ) abre Conexões em vez de pedir ao admin", () => {
+    render(view("agent", locale, baseUser, undefined, true));
+    const alert = screen.getByRole("alert");
+    expect(within(alert).getByRole("link", { name: copy[locale].qr })).toHaveAttribute("href", "/app/connections");
+    expect(within(alert).queryByText(copy[locale].help)).toBeNull();
   });
 
   it("retira o alerta quando não há conexão caída", () => {

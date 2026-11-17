@@ -40,12 +40,13 @@ import type { ConexaoCaida } from "@/lib/channels/health";
  * aconteceu antes de agir. Mandar "Escanear" para quem precisa investigar faria
  * a pessoa perder tempo numa tela que não resolve o problema dela.
  */
-export function ConexaoCaidaBanner({ caidas }: { caidas: ConexaoCaida[] }) {
+export function ConexaoCaidaBanner({ caidas, religaPeloSetor = false }: { caidas: ConexaoCaida[]; religaPeloSetor?: boolean }) {
   const t = useT();
   const { user, activeOrg } = useAuth();
   if (caidas.length === 0) return null;
 
-  const podeAbrirConexoes = (user.is_platform_admin && !user.support)
+  // Cópia NODZ: o atendente com setor religa os números dele em Conexões (a página confere).
+  const podeAbrirConexoes = religaPeloSetor || (user.is_platform_admin && !user.support)
     || (activeOrg !== null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin);
   const uma = caidas.length === 1 ? caidas[0] : null;
   const precisaEscanear = caidas.some((c) => c.status === "SCAN_QR_CODE");
