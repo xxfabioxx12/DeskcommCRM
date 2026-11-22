@@ -330,7 +330,7 @@ jobs:
           # Pelo DIGEST: é exatamente o byte que este job empurrou, não uma tag que
           # outro run pode ter movido entretanto.
           bash scripts/verifica-build-id.sh \
-            "${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.name }}@${{ steps.build.outputs.digest }}"
+            "${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.name }}${{ vars.SUFIXO_DA_IMAGEM }}@${{ steps.build.outputs.digest }}"
 
   juntar-manifestos:
     needs: [build-and-push]
