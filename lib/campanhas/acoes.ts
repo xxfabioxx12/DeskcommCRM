@@ -20,6 +20,7 @@ import type { ApiErrorCode } from "@/lib/api/errors";
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import { beginServiceAtOrigin } from "@/lib/atendimento/origem";
 import { renderTemplateBody } from "@/lib/channels/meta/render-template";
+import { logger } from "@/lib/logger";
 
 import { baseLegalValida, motivoParaExcluir, recusouMarketing } from "./elegibilidade";
 import { ehStatusDaCampanha, podeTransitar } from "./maquina-de-estados";
@@ -68,7 +69,18 @@ export interface CampanhaCarregada {
   duplicated_from_campaign_id?: string | null;
 }
 
-export type Recusa = { ok: false; codigo: ApiErrorCode; mensagem: string; status: number };
+export type Recusa = {
+  ok: false;
+  codigo: ApiErrorCode;
+  mensagem: string;
+  status: number;
+  /**
+   * O que a ação JÁ gravou antes de falhar. Só o cancelamento parcial preenche:
+   * a campanha virou `cancelled` e a fila não fechou. A rota audita isto — o
+   * estado mudou, e a trilha não pode dizer que nada aconteceu.
+   */
+  gravado?: Record<string, unknown>;
+};
 export type Desfecho<T = unknown> = ({ ok: true } & T) | Recusa;
 
 const COLUNAS =
@@ -262,7 +274,7 @@ export async function prepararAcao(
       };
     }
 
-    await admin
+    const { error: erroAoConcluir } = await admin
       .from("campaigns")
       .update({
         status: "ready",
@@ -274,6 +286,15 @@ export async function prepararAcao(
       })
       .eq("id", c.id)
       .eq("status", "preparing");
+    if (erroAoConcluir) {
+      await voltarAoRascunho(admin, c.id, "erro_na_preparacao");
+      return {
+        ok: false,
+        codigo: "internal_error",
+        mensagem: `Não foi possível concluir a preparação da campanha: ${erroAoConcluir.message}`,
+        status: 500,
+      };
+    }
 
     return { ok: true, resumo };
   } catch (err) {
@@ -392,7 +413,11 @@ export async function cancelarAcao(
   admin: SupabaseClient,
   c: CampanhaCarregada,
   agora: Date,
-): Promise<Desfecho<{ cancelados: number }>> {
+): Promise<Desfecho<{ cancelados: number; reconciliado?: true }>> {
+  // Repetir o cancelamento não desfaz nada: termina de fechar a fila que uma
+  // tentativa anterior deixou aberta (a campanha já estava gravada `cancelled`
+  // quando o fechamento dos destinatários falhou). Sem pendência, continua 409.
+  if (c.status === "cancelled") return reconciliarFila(admin, c, agora);
   const recusa = recusaDeTransicao(c.status, "cancelled");
   if (recusa) return recusa;
   const { data } = await admin
@@ -405,13 +430,55 @@ export async function cancelarAcao(
 
   // A campanha já está cancelada quando esta linha roda: a rodada não escolhe
   // mais esta campanha, então não há corrida com o worker por estes pendentes.
-  const { data: cancelados } = await admin
+  const fila = await fecharFila(admin, c.id, agora);
+  if (!fila.ok) return filaNaoFechada({ cancelados: 0, fila_fechada: false });
+  return { ok: true, cancelados: fila.fechados };
+}
+
+/** `pending`/`queued` da campanha → `cancelled`. Erro de banco não vira «0». */
+async function fecharFila(
+  admin: SupabaseClient,
+  campanhaId: string,
+  agora: Date,
+): Promise<{ ok: true; fechados: number } | { ok: false }> {
+  const { data, error } = await admin
     .from("campaign_recipients")
     .update({ status: "cancelled", cancelled_at: agora.toISOString() })
-    .eq("campaign_id", c.id)
+    .eq("campaign_id", campanhaId)
     .in("status", ["pending", "queued"])
     .select("id");
-  return { ok: true, cancelados: (cancelados ?? []).length };
+  if (error) {
+    logger.warn("[campanha] cancelada sem fechar a fila", { campanha: campanhaId, codigo: error.code ?? null });
+    return { ok: false };
+  }
+  return { ok: true, fechados: (data ?? []).length };
+}
+
+/**
+ * A campanha já está `cancelled`: só a fila que sobrou é fechada. Não mexe em
+ * `cancelled_at` da campanha (o histórico do cancelamento fica como foi) nem
+ * em quem está `sending` (pode estar na borda externa).
+ */
+async function reconciliarFila(
+  admin: SupabaseClient,
+  c: CampanhaCarregada,
+  agora: Date,
+): Promise<Desfecho<{ cancelados: number; reconciliado: true }>> {
+  const fila = await fecharFila(admin, c.id, agora);
+  if (!fila.ok) return filaNaoFechada();
+  if (fila.fechados === 0) return recusaDeTransicao(c.status, "cancelled") ?? conflitoDeCorrida();
+  return { ok: true, cancelados: fila.fechados, reconciliado: true };
+}
+
+function filaNaoFechada(gravado?: Record<string, unknown>): Recusa {
+  return {
+    ok: false,
+    codigo: "internal_error",
+    mensagem:
+      "A campanha está cancelada, mas não foi possível fechar a fila de quem ainda não recebeu. Cancele de novo para concluir.",
+    status: 500,
+    ...(gravado ? { gravado } : {}),
+  };
 }
 
 export async function duplicarAcao(

@@ -83,6 +83,14 @@ export const MOTIVOS_DE_EXCLUSAO = [
    * `exclusion_reason` não tem CHECK no banco, então não pede migration.
    */
   "ja_recebeu_na_original",
+  /**
+   * Campanha de e-mail (#3441): o recorte é o mesmo, o ENDEREÇO muda. No fork
+   * só a classificação do oficial entrou (`classificarAudiencia` aceita o
+   * canal); a campanha de e-mail em si ficou de fora. Contato sem e-mail não recebe e-mail — o telefone dele não serve para nada aqui, e
+   * reaproveitar `sem_telefone` faria a tela mentir sobre o motivo.
+   */
+  "sem_email",
+  "email_invalido",
 ] as const;
 
 export type MotivoDeExclusao = (typeof MOTIVOS_DE_EXCLUSAO)[number];
@@ -95,12 +103,16 @@ export const TEXTO_DA_EXCLUSAO: Record<MotivoDeExclusao, string> = {
   anonimizado: "Contato anonimizado (LGPD)",
   recusou_marketing: "Recusou receber contato comercial",
   excluido_manualmente: "Excluído à mão desta campanha",
-  duplicado: "Mesmo telefone de outro contato da lista",
+  // "Endereço", e não "telefone": a unicidade é do canal, e na campanha de
+  // e-mail o que se repete é o e-mail (#3441).
+  duplicado: "Mesmo endereço de outro contato da lista",
   variavel_ausente: "Falta um dado que a mensagem usa",
   ja_em_campanha: "Já está em outra campanha ainda não concluída",
   suprimido: "Está na lista de exclusão de campanhas",
   contato_pessoal: "Contato marcado como pessoal",
   ja_recebeu_na_original: "Já recebeu a campanha original",
+  sem_email: "Sem e-mail no cadastro",
+  email_invalido: "E-mail fora do formato de envio",
 };
 
 /**
@@ -115,6 +127,16 @@ export const TEXTO_DA_EXCLUSAO: Record<MotivoDeExclusao, string> = {
 export const MODOS_DA_MENSAGEM = ["text", "template"] as const;
 
 export type ModoDaMensagem = (typeof MODOS_DA_MENSAGEM)[number];
+
+/**
+ * Vocabulário da coluna `campaigns.velocidade` (migrations 0711 e 0712 do
+ * oficial), par do CHECK `campaigns_velocidade_check`. No fork a campanha sai
+ * sempre `gradual` (o padrão da coluna): a rajada e a transmissão do oficial
+ * ficaram de fora. A lista existe só para o invariante banco × TypeScript.
+ */
+export const VELOCIDADES_DA_CAMPANHA = ["gradual", "rapida", "transmissao"] as const;
+
+export type VelocidadeDaCampanha = (typeof VELOCIDADES_DA_CAMPANHA)[number];
 
 /**
  * Por que uma campanha por template parou SOZINHA (`campaigns.failure_code`).

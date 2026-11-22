@@ -19,6 +19,7 @@ import type pg from "pg";
 
 import { SETOR_DA_PASSAGEM_DIRETA } from "@/lib/escalacao/destino-da-passagem";
 import { setorDoNome } from "@/lib/inbox/recorte-do-setor";
+import { instanteDoBanco } from "@/lib/tempo/agora";
 
 export interface FatosDaConversaParada {
   nomeDoNumero: string | null;
@@ -80,7 +81,6 @@ export async function lerConversasParadas(
   return rows.flatMap((r) => {
     const minutos = lerMinutosDoPrazo(r.settings);
     if (minutos === null) return [];
-    const iso = (d: Date | string | null) => (d === null ? null : new Date(d).toISOString());
     return [{
       id: r.id,
       organizationId: r.organization_id,
@@ -90,8 +90,8 @@ export async function lerConversasParadas(
       vendedor: r.assigned_to_user_id,
       casoAberto: r.caso_aberto,
       iaCalada: r.ia_calada,
-      ultima: r.sent_at ? { direcao: r.direction, via: r.sent_via, em: iso(r.sent_at)! } : null,
-      ultimaDoCliente: iso(r.last_inbound_at),
+      ultima: instanteDoBanco(r.sent_at) ? { direcao: r.direction, via: r.sent_via, em: instanteDoBanco(r.sent_at)! } : null,
+      ultimaDoCliente: instanteDoBanco(r.last_inbound_at),
       minutos,
     }];
   });

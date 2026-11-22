@@ -88,7 +88,8 @@ describe("os adaptadores devolvem contact_tags", () => {
     }));
     const db = createPgAdminClient({ query } as unknown as Parameters<typeof createPgAdminClient>[0]);
     const fatosDoBanco = await db.loadLeadFacts("org-1", "c-1");
-    expect(fatosDoBanco).toMatchObject({ tags: ["Card"], contact_tags: ["vip", "cliente"], contact_name: "Ana" });
+    // Fork: desde o #4586 do oficial `tags` junta card + contato (`etiquetasDoLead`); `contact_tags` segue só o contato.
+    expect(fatosDoBanco).toMatchObject({ tags: ["Card", "vip", "cliente"], contact_tags: ["vip", "cliente"], contact_name: "Ana" });
     const sqlDoContato = query.mock.calls.map(([sql]) => String(sql)).find((s) => s.includes("from contacts"));
     expect(sqlDoContato).toMatch(/select\s+name,\s*tags\s+from contacts/);
   });
@@ -121,7 +122,8 @@ describe("os adaptadores devolvem contact_tags", () => {
       },
     } as unknown as SupabaseClient;
     const fatosDoBanco = await createSupabaseAdminClient(admin).loadLeadFacts("org-1", "c-1");
-    expect(fatosDoBanco).toMatchObject({ tags: ["Card"], contact_tags: ["vip"], contact_name: "Ana" });
+    // Fork: `tags` junta card + contato desde o #4586 do oficial.
+    expect(fatosDoBanco).toMatchObject({ tags: ["Card", "vip"], contact_tags: ["vip"], contact_name: "Ana" });
     expect(selects).toContain("contacts:name, tags");
   });
 });

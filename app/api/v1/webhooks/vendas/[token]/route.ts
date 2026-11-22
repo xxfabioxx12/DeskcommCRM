@@ -13,7 +13,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
-import { fail } from "@/lib/api/wrappers";
+import { comIdDaRequisicao, fail } from "@/lib/api/wrappers";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { conferirAssinatura } from "@/lib/vendas/assinatura";
@@ -35,12 +35,12 @@ const LIMITE_DO_CORPO = 512 * 1024;
 /** Por conexão (Divergência D14). */
 const POR_MINUTO = 300;
 
-export async function GET(): Promise<NextResponse> {
-  return NextResponse.json({ status: "ok" });
+export async function GET(req?: NextRequest): Promise<NextResponse> {
+  return comIdDaRequisicao(NextResponse.json({ status: "ok" }), req);
 }
 
-export async function HEAD(): Promise<NextResponse> {
-  return new NextResponse(null, { status: 200 });
+export async function HEAD(req?: NextRequest): Promise<NextResponse> {
+  return comIdDaRequisicao(new NextResponse(null, { status: 200 }), req);
 }
 
 function objetoJson(corpo: string): Record<string, unknown> | null {
@@ -131,7 +131,10 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
 
   try {
     const r = await receberVenda(banco, conexao, { payload, corpo, cabecalho, config: conexao.config });
-    return NextResponse.json(r.duplicate ? { received: true, duplicate: true } : { received: true });
+    return comIdDaRequisicao(
+      NextResponse.json(r.duplicate ? { received: true, duplicate: true } : { received: true }),
+      requestId,
+    );
   } catch (err) {
     logger.error("[webhooks.vendas] não foi possível registrar a venda", {
       webhookSourceId: conexao.id,

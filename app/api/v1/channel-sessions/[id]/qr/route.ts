@@ -29,6 +29,7 @@ import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/arch
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { podeReligarNumero } from "@/lib/inbox/recorte-do-setor";
+import { comIdDaRequisicao } from "@/lib/api/wrappers";
 
 export const dynamic = "force-dynamic";
 
@@ -41,11 +42,11 @@ export async function GET(
   const { id } = await params;
 
   const user = await loadAuthUser();
-  if (!user) return new NextResponse(null, { status: 401 });
+  if (!user) return comIdDaRequisicao(new NextResponse(null, { status: 401 }), _req);
   const ativa = await orgAtivaDaApi(user);
   if (!ativa.ok) return ativa.response;
   const activeOrg = ativa.org;
-  if (!activeOrg) return new NextResponse(null, { status: 403 });
+  if (!activeOrg) return comIdDaRequisicao(new NextResponse(null, { status: 403 }), _req);
 
   // Cópia NODZ: o QR religa o número. Atendente e visualizador só veem o do setor deles.
   if (activeOrg.role !== "admin" && activeOrg.role !== "manager" && !(user.is_platform_admin && !user.support)) {
@@ -53,9 +54,9 @@ export async function GET(
     try {
       pode = await podeReligarNumero(createAdminClient(), activeOrg.orgId, user.id, id);
     } catch {
-      return new NextResponse(null, { status: 503 });
+      return comIdDaRequisicao(new NextResponse(null, { status: 503 }), _req);
     }
-    if (!pode) return new NextResponse(null, { status: 403 });
+    if (!pode) return comIdDaRequisicao(new NextResponse(null, { status: 403 }), _req);
   }
 
   const supabase = await createClient();
@@ -77,30 +78,30 @@ export async function GET(
     waha_session_name: string | null;
     archived_at?: string | null;
   } | null;
-  if (!session) return new NextResponse(null, { status: 404 });
+  if (!session) return comIdDaRequisicao(new NextResponse(null, { status: 404 }), _req);
   // 409, não 404: o canal ESTÁ na organização — foi excluído. O corpo é vazio
   // porque quem consome isto é um <img>; o cabeçalho é para quem depura.
   if (session.archived_at) {
-    return new NextResponse(null, {
+    return comIdDaRequisicao(new NextResponse(null, {
       status: 409,
       headers: { "x-channel-state": "archived" },
-    });
+    }), _req);
   }
   // Canal oficial não pareia por QR: `waha_session_name` é NULL nele por CHECK.
   // Afirmar `string` aqui (era um cast) só adiava a mentira até a URL, que virava
   // `/api/null/auth/qr` — 404 do transporte, indistinguível de "o QR ainda não
   // ficou pronto", que é exatamente o estado em que a tela fica insistindo.
   if (!session.waha_session_name) {
-    return new NextResponse(null, {
+    return comIdDaRequisicao(new NextResponse(null, {
       status: 409,
       headers: { "x-channel-state": "no-session" },
-    });
+    }), _req);
   }
 
   const baseUrl = process.env.WAHA_API_BASE_URL;
   const apiKey = process.env.WAHA_API_KEY;
   if (!baseUrl || !apiKey || apiKey === "dev_plaintext_change_me") {
-    return new NextResponse(null, { status: 503 });
+    return comIdDaRequisicao(new NextResponse(null, { status: 503 }), _req);
   }
 
   const upstream = await fetch(
@@ -108,16 +109,16 @@ export async function GET(
     { headers: { "X-Api-Key": apiKey }, cache: "no-store" },
   );
   if (!upstream.ok) {
-    return new NextResponse(null, {
+    return comIdDaRequisicao(new NextResponse(null, {
       status: upstream.status,
       headers: { "x-waha-status": String(upstream.status) },
-    });
+    }), _req);
   }
 
   const ct = upstream.headers.get("content-type") ?? "image/png";
   const buf = await upstream.arrayBuffer();
-  return new NextResponse(buf, {
+  return comIdDaRequisicao(new NextResponse(buf, {
     status: 200,
     headers: { "content-type": ct, "cache-control": "no-store, max-age=0" },
-  });
+  }), _req);
 }

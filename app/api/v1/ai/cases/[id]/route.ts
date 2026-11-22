@@ -13,12 +13,12 @@
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
-import { conversasVisiveisDosCasos, lerChamado } from "@/lib/escalacao/chamados";
+import { conversasVisiveisDosCasos, lerChamado, type ConversasVisiveis } from "@/lib/escalacao/chamados";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { filtroDoSetorEstrito } from "@/lib/inbox/recorte-do-setor";
 
@@ -28,12 +28,21 @@ interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-export async function GET(_req: NextRequest, { params }: RouteParams): Promise<Response> {
+export async function GET(req: NextRequest, { params }: RouteParams): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "agent_cases" });
+  // Sessão OU token (Spec 33, R1): o token precisa de config:read e papel admin.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "agent_cases",
+    role: "agent",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "agent_cases", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const org = { orgId: authz.organizationId };
   const { id } = await params;
 
   let chamado;
@@ -42,11 +51,20 @@ export async function GET(_req: NextRequest, { params }: RouteParams): Promise<R
     // organização inteira. Quem devolve o 404 é `lerChamado`, com o conjunto
     // vazio: assim o gate tem um dono só, o mesmo `in (conversation_id)` que a
     // lista usa, em vez de uma segunda decisão escrita aqui.
-    const visiveisPara = await conversasVisiveisDosCasos(await createClient(), org.orgId, {
-      caseId: id,
-      filtroDoSetor: await filtroDoSetorEstrito(org.orgId, authz.user.id),
+    // Token: admin é org-wide por desenho; a existência do caso na organização
+    // continua sendo conferida por `lerChamado` (filtra organization_id e id).
+    // Cópia NODZ: na sessão, o recorte do setor do atendente entra no mesmo conjunto.
+    const visiveisPara: ConversasVisiveis =
+      authz.via === "token"
+        ? "todas"
+        : await conversasVisiveisDosCasos(authz.supabase, org.orgId, {
+            caseId: id,
+            filtroDoSetor: await filtroDoSetorEstrito(org.orgId, authz.actor.id),
+          });
+    chamado = await lerChamado(createAdminClient(), org.orgId, id, {
+      visiveisPara,
+      contatoSeparado: authz.via === "token",
     });
-    chamado = await lerChamado(createAdminClient(), org.orgId, id, { visiveisPara });
   } catch (erro) {
     // Mesma correção da lista (ver o `catch` de `app/api/v1/ai/cases/route.ts`):
     // um 500 sem causa registrada deixa a tela vazia e o log mudo, e quem

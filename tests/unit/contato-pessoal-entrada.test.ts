@@ -163,8 +163,11 @@ describe("pós-entrada de contato pessoal não gera nada", () => {
   });
 
   it("STOP de pessoal ainda bloqueia (opt-out continua na frente)", async () => {
+    // Fork: bloqueio por palavra de saída só com DESKCOMM_BLOQUEIO_AUTOMATICO=1 (desligado por padrão).
+    vi.stubEnv("DESKCOMM_BLOQUEIO_AUTOMATICO", "1");
     contatoPessoal = true;
     await rodar({ texto: "quero PARAR de receber" });
+    vi.unstubAllEnvs();
 
     expect(ultimoUpdate).toMatchObject({ is_blocked: true, blocked_reason: "stop_keyword" });
     expect(audit).toHaveBeenCalledWith(
@@ -175,6 +178,16 @@ describe("pós-entrada de contato pessoal não gera nada", () => {
       rpcChamadas.filter((c) => c.args.p_event_type === "ai_agent.dispatch_requested"),
     ).toHaveLength(0);
     expect(garantirLeadDaConversa).not.toHaveBeenCalled();
+  });
+
+  it("fork: sem DESKCOMM_BLOQUEIO_AUTOMATICO, o STOP de pessoal não bloqueia nem audita bloqueio", async () => {
+    vi.stubEnv("DESKCOMM_BLOQUEIO_AUTOMATICO", "");
+    contatoPessoal = true;
+    await rodar({ texto: "quero PARAR de receber" });
+    vi.unstubAllEnvs();
+
+    expect(ultimoUpdate).toBeNull();
+    expect(audit).not.toHaveBeenCalledWith(expect.objectContaining({ action: "contact.blocked" }));
   });
 
   it("contato normal segue gerando tudo como antes", async () => {

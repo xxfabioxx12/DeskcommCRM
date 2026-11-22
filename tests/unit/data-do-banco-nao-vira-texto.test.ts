@@ -75,6 +75,12 @@ type Devida = { arquivo: string; nome: string; motivo: string };
 
 const DEVIDAS: readonly Devida[] = [
   {
+    arquivo: "lib/inbox/concluir-ia-sem-resposta.ts",
+    nome: "em",
+    motivo:
+      "Fork NODZ: `ultima.em` e `ultimaDoCliente` já saem de `lerConversasParadas` normalizados por `instanteDoBanco` (ISO); `deveConcluir` é pura e consome esse contrato de string, não a coluna",
+  },
+  {
     arquivo: "lib/vendas/assinatura.ts",
     nome: "quando",
     motivo:

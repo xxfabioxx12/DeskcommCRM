@@ -95,8 +95,8 @@ export async function removerEtiquetas(
   const { data, error } = await admin.rpc(
     doContato ? "fn_contato_remover_etiquetas" : "fn_lead_remover_etiquetas",
     doContato
-      ? { p_org: entrada.organizationId, p_contato: entrada.alvo.id, p_tags: entrada.tags }
-      : { p_org: entrada.organizationId, p_lead: entrada.alvo.id, p_tags: entrada.tags },
+      ? { p_org: entrada.organizationId, p_contato: entrada.alvo.id, p_etiquetas: entrada.tags }
+      : { p_org: entrada.organizationId, p_lead: entrada.alvo.id, p_etiquetas: entrada.tags },
   );
   if (error) return { ok: false, motivo: "erro", erro: error.message };
   // Nulo = linha inexistente OU de outra organização: nada foi tocado.

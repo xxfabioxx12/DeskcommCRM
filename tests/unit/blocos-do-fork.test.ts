@@ -38,6 +38,18 @@ function codigo(sql: string): string[] {
     .filter((l) => l.trim() !== "" && !l.trim().startsWith("--"));
 }
 
+/** A linha `i` pertence a uma função/grant/comment das `fn_*_remover_etiquetas` (só a 9002). */
+function trechoDoRemover(linhas: string[], i: number): boolean {
+  if (/remover_etiquetas/.test(linhas[i]!)) return true;
+  if (i > 0 && /^comment on function .*remover_etiquetas.* is$/.test(linhas[i - 1]!)) return true;
+  // Corpo: da linha `create ... remover_etiquetas(` até o `$fn$;` que a fecha.
+  for (let j = i; j >= 0; j--) {
+    if (j < i && /^\$fn\$;$/.test(linhas[j]!)) return false;
+    if (/^create or replace function /.test(linhas[j]!)) return /remover_etiquetas/.test(linhas[j]!);
+  }
+  return false;
+}
+
 function migrationDo(numero: string): string {
   const achadas = readdirSync(join(RAIZ, "supabase", "migrations")).filter(
     (f) => f.endsWith(".sql") && f.includes(`_${numero}_`),
@@ -90,6 +102,13 @@ describe("blocos do fork no baseline", () => {
   it.each(BLOCOS)("%s: o código do bloco é o código da migration, sem uma diferença", (arquivo) => {
     const bloco = ler(join("supabase", "fork", arquivo));
     expect(codigo(bloco).length).toBeGreaterThan(3);
+    if (arquivo === "9002.sql") {
+      // Fork: desde a 1.123 o tirar etiqueta é a 9234 do oficial; a migration 9002 fica como rodou em produção e o bloco é ela sem as remover_etiquetas.
+      const migration = codigo(migrationDo("9002"));
+      const semRemover = migration.filter((_, i) => !trechoDoRemover(migration, i));
+      expect(codigo(bloco)).toEqual(semRemover);
+      return;
+    }
     expect(codigo(bloco)).toEqual(codigo(migrationDo(arquivo.slice(0, 4))));
   });
 

@@ -17,12 +17,12 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
-import { conversasVisiveisDosCasos, listarChamados } from "@/lib/escalacao/chamados";
+import { conversasVisiveisDosCasos, listarChamados, type ConversasVisiveis } from "@/lib/escalacao/chamados";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { filtroDoSetorPara, idsDoSetorEscolhido } from "@/lib/inbox/recorte-do-setor";
 
@@ -44,10 +44,19 @@ const ESTADO_DO_STATUS = {
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "agent_cases" });
+  // Sessão OU token (Spec 33, R1): o token precisa de config:read e papel admin.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "agent_cases",
+    role: "agent",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "agent_cases", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const org = { orgId: authz.organizationId };
 
   const parsed = querySchema.safeParse(Object.fromEntries(new URL(req.url).searchParams.entries()));
   if (!parsed.success) {
@@ -62,19 +71,29 @@ export async function GET(req: NextRequest): Promise<Response> {
     // aplicada) ANTES da leitura privilegiada. Manager e admin seguem vendo
     // tudo porque é `fn_can_view_conversation` que decide — eles são org-wide
     // por desenho, e não há regra de papel repetida aqui para desatualizar.
+    // Cópia NODZ: `?setor=` e `channel_session_id` recortam a fila por número.
     const doSetor = await idsDoSetorEscolhido(
       org.orgId,
       new URL(req.url).searchParams.get("setor"),
     );
     const canal = parsed.data.channel_session_id;
     const canais = canal ? (doSetor && !doSetor.includes(canal) ? [] : [canal]) : doSetor;
-    const visiveisPara = await conversasVisiveisDosCasos(await createClient(), org.orgId, {
-      filtroDoSetor: await filtroDoSetorPara(org.orgId, authz.user.id),
-      canais,
-    });
+    // Token: admin é org-wide por desenho (o mesmo que a RLS devolveria), então
+    // o recorte é "todas" (ou só os números pedidos); a organização continua
+    // filtrada em toda consulta. Sessão: RLS + recorte do setor do atendente.
+    const visiveisPara: ConversasVisiveis =
+      authz.via === "token"
+        ? canais
+          ? await conversasVisiveisDosCasos(authz.supabase, org.orgId, { canais })
+          : "todas"
+        : await conversasVisiveisDosCasos(authz.supabase, org.orgId, {
+            filtroDoSetor: await filtroDoSetorPara(org.orgId, authz.actor.id),
+            canais,
+          });
     const { chamados, abertos, aguardando } = await listarChamados(createAdminClient(), org.orgId, {
       estado: ESTADO_DO_STATUS[parsed.data.status],
       visiveisPara,
+      contatoSeparado: authz.via === "token",
     });
     return ok(
       {

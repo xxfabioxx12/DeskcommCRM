@@ -11,12 +11,13 @@ import { randomUUID } from "node:crypto";
 
 import type { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { preverAudiencia } from "@/lib/campanhas/preparacao";
 import { previaSchema } from "@/lib/campanhas/schemas";
 import { TEXTO_DA_EXCLUSAO } from "@/lib/campanhas/tipos";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -32,9 +33,19 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (negado) return negado;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "campaigns" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "campaigns",
+    role: "manager",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  // POST sem gravação: pede o escopo de escrita (decisão conservadora, como
+  // toda POST da API). A prévia não grava nada.
+  const teto = await tetoDeEscritaDoToken(authz, "campaigns_previa", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const org = { orgId: authz.organizationId };
 
   const parsed = previaSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
@@ -50,7 +61,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const admin = createAdminClient();
   try {
     const resumo = await preverAudiencia(admin, {
-      organizationId: authz.org.orgId,
+      organizationId: org.orgId,
       filtro: parsed.data.audience_filter,
       corpo: parsed.data.message_body,
       agora: new Date(),

@@ -90,6 +90,8 @@ const FORA_DE_INTERFACE: Record<string, string> = {
   // da interface faria um documento de conformidade mudar de forma conforme
   // quem apertou o botão.
   "lib/lgpd/pdf-renderer.tsx": "documento legal brasileiro: a data acompanha a lei, não a interface",
+  // Fork: o Painel da barbearia é nosso e só pt-BR (mesma exceção do i18n-espanhol-cobre-a-tela).
+  "lib/barbearia/dados.ts": "fork: dados do painel da barbearia, só pt-BR",
 };
 
 function arquivos(dir: string, acc: string[] = []): string[] {

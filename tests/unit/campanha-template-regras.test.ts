@@ -48,7 +48,9 @@ describe("capacidade do canal", () => {
   it("oficial exige template, QR Code não; desconhecido é null", () => {
     expect(canalExigeTemplate(CHANNEL_PROVIDER_META)).toBe(true);
     expect(canalExigeTemplate(CHANNEL_PROVIDER_WAHA)).toBe(false);
-    expect(canalExigeTemplate("telegram")).toBeNull();
+    // Fork: o oficial passou a conhecer "telegram" (texto, sem template); quem recusa campanha nele é a conferência.
+    expect(canalExigeTemplate("telegram")).toBe(false);
+    expect(canalExigeTemplate("provedor-que-nao-existe")).toBeNull();
     expect(canalExigeTemplate(null)).toBeNull();
   });
   it("intervalo mínimo da plataforma: 6 s no oficial, nenhum no QR Code", () => {

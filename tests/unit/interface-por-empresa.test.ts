@@ -55,7 +55,7 @@ describe("portas por empresa (issue #1341)", () => {
   it("sem escolha de nenhum dos lados nada muda: a empresa completa segue completa", () => {
     expect(combinarInterfaces(completa, completa)).toEqual(INTERFACE_COMPLETA);
     expect(combinarInterfaces(undefined, null).destinos).toBeUndefined();
-    expect(hrefs(combinarInterfaces(completa, completa))).toEqual(NAV_CATALOG.map((d) => d.href));
+    expect(hrefs(combinarInterfaces(completa, completa))).toEqual(NAV_CATALOG.filter((d) => !("agenciaOnly" in d && d.agenciaOnly)).map((d) => d.href));
   });
 
   it("o vínculo NÃO abre porta que a empresa não oferece", () => {
@@ -187,10 +187,11 @@ describe("medição da folga (pergunta de aceite da issue #1341)", () => {
   // Fork NODZ (23/10/2026): o "Painel do setor" entrou no Atendimento por pedido do
   // Fabio e o menu passou a 16 itens (folga -1 a 1280x900). Quem precisa de menu
   // curto esconde áreas por vínculo em Equipe › Interface.
-  it("hoje: 16 itens no menu lateral (fork: +Painel do setor)", () => {
-    expect(itensNoMenuLateral(INTERFACE_COMPLETA)).toBe(16);
+  // Fork: +Painel da barbearia (capacidade; sem a lista de capacidades, a porta conta).
+  it("hoje: 17 itens no menu lateral (fork: +Painel do setor, +Painel da barbearia)", () => {
+    expect(itensNoMenuLateral(INTERFACE_COMPLETA)).toBe(17);
     // `undefined` é o caminho de quem não tem escolha nenhuma gravada
-    expect(itensNoMenuLateral(undefined)).toBe(16);
+    expect(itensNoMenuLateral(undefined)).toBe(17);
   });
 
   /**
@@ -198,8 +199,8 @@ describe("medição da folga (pergunta de aceite da issue #1341)", () => {
    * A escolha da empresa é interseção, então o menu só ENCOLHE — a mudança não
    * tem como empurrar o instrumento de tela para o vermelho.
    */
-  it("configuração COMPLETA (ninguém escolheu): 16 itens — igual a hoje", () => {
-    expect(itensNoMenuLateral(combinarInterfaces(completa, completa))).toBe(16);
+  it("configuração COMPLETA (ninguém escolheu): 17 itens — igual a hoje", () => {
+    expect(itensNoMenuLateral(combinarInterfaces(completa, completa))).toBe(17);
   });
 
   it("configuração SIMPLIFICADA (empresa escolhe o preset): 6 itens, folga 9", () => {

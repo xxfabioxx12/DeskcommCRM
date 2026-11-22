@@ -243,7 +243,8 @@ vi.mock("@/lib/escalacao/aviso-ao-lead", () => ({
 import { avisarLeadDaEscalacao } from "@/lib/agent-engine/agent/aviso-de-escalacao";
 
 const poolSimples = {
-  query: async () => ({ rows: [] }),
+  // Fork: o aviso só sai depois do caso humano gravado (fn_nodz_garantir_caso_humano devolve o id).
+  query: async (sql: string) => ({ rows: String(sql).includes("fn_nodz_garantir_caso_humano") ? [{ id: "caso-1" }] : [] }),
 } as never;
 
 describe("aviso de escalação: envia como RESPOSTA quando quem pediu escreveu", () => {
@@ -291,6 +292,8 @@ vi.mock("@/lib/ai/replies/delivery", () => ({
 }));
 vi.mock("@/lib/atendimento/fronteira-server", () => ({
   withServiceJob: vi.fn(async (_db: unknown, _job: unknown, action: () => Promise<unknown>) => action()),
+  // Fork: o aviso de escalação passa pela fronteira do serviço antes de prometer.
+  guardServiceEffect: vi.fn(async () => undefined),
 }));
 vi.mock("@/lib/channels/runtime", () => ({
   createRuntimeSendChannel: vi.fn(() => ({ send: vi.fn() })),

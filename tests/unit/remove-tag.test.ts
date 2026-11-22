@@ -33,8 +33,8 @@ describe("remove_tag", () => {
   it("contato: normaliza, tira pela 9002 e devolve o que saiu; não emite evento", async () => {
     const { ctx, chamadas } = cenario({ tags: ["outra"], removidas: ["vip"] }, { lead: { id: "L", contact_id: "C" } });
     const r = await getAction("remove_tag")!.execute(ctx, { tags: ["VIP "], destino: "contato" });
-    expect(r).toEqual({ type: "remove_tag", status: "success", detail: { removed: ["vip"] } });
-    expect(chamadas).toEqual([{ nome: "fn_contato_remover_etiquetas", args: { p_org: ORG, p_contato: "C", p_tags: ["vip"] } }]);
+    expect(r).toEqual({ type: "remove_tag", status: "success", detail: { removed: ["vip"], alvo: "contacts", alvo_id: "C" } });
+    expect(chamadas).toEqual([{ nome: "fn_contato_remover_etiquetas", args: { p_org: ORG, p_contato: "C", p_etiquetas: ["vip"] } }]);
   });
 
   it("card: tira do card; sem card, cai no contato (simetria com add_tag)", async () => {
@@ -51,14 +51,14 @@ describe("remove_tag", () => {
     expect(await getAction("remove_tag")!.execute(ctx, { tags: ["z"], destino: "contato" })).toEqual({
       type: "remove_tag",
       status: "success",
-      detail: { removed: [] },
+      detail: { removed: [], alvo: "contacts", alvo_id: "C", reason: "nada_a_tirar" },
     });
   });
 
   it("card sem card cai no contato: etiqueta normalizada e 41 recusada (tabela resolvida)", async () => {
     const { ctx, chamadas } = cenario({ tags: [], removidas: ["quente"] }, { contact: { id: "C" } });
     await getAction("remove_tag")!.execute(ctx, { tags: [" Quente "], destino: "card" });
-    expect(chamadas).toEqual([{ nome: "fn_contato_remover_etiquetas", args: { p_org: ORG, p_contato: "C", p_tags: ["quente"] } }]);
+    expect(chamadas).toEqual([{ nome: "fn_contato_remover_etiquetas", args: { p_org: ORG, p_contato: "C", p_etiquetas: ["quente"] } }]);
     const longa = cenario(null, { contact: { id: "C" } });
     expect(await getAction("remove_tag")!.execute(longa.ctx, { tags: ["x".repeat(41)], destino: "card" })).toEqual({
       type: "remove_tag",
@@ -89,9 +89,9 @@ describe("remove_tag", () => {
     expect(longa.chamadas).toEqual([]);
   });
 
-  it("schema: exige destino e 1..10 etiquetas; contato recusa 41", () => {
+  it("schema: destino opcional (regra feita pelo oficial), 1..10 etiquetas; contato recusa 41", () => {
     expect(actionSchema.safeParse({ type: "remove_tag", config: { tags: ["a"], destino: "card" } }).success).toBe(true);
-    expect(actionSchema.safeParse({ type: "remove_tag", config: { tags: ["a"] } }).success).toBe(false);
+    expect(actionSchema.safeParse({ type: "remove_tag", config: { tags: ["a"] } }).success).toBe(true);
     expect(actionSchema.safeParse({ type: "remove_tag", config: { tags: [], destino: "card" } }).success).toBe(false);
     expect(actionSchema.safeParse({ type: "remove_tag", config: { tags: ["x".repeat(41)], destino: "contato" } }).success).toBe(false);
   });

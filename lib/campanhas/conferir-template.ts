@@ -24,6 +24,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { ApiErrorCode } from "@/lib/api/errors";
+import { modoDeCampanhaDoCanal } from "@/lib/channels/capabilities";
 import { linhaDoEspelho } from "@/lib/channels/linha-do-espelho";
 import { bindingState, type BindingState } from "@/lib/channels/meta/template-binding";
 import { deriveTemplateContract } from "@/lib/channels/meta/template-contract";
@@ -307,7 +308,8 @@ export function avaliarConteudoDaCampanha(
   sessoes: ReadonlyArray<{ id: string; provider: string | null }>,
   linhas: ReadonlyMap<string, LinhaDoModelo | null>,
 ): ConferenciaDoConteudo {
-  const exigencias = sessoes.map((s) => canalExigeTemplate(s.provider));
+  // Fork: canal que o oficial diz não ter campanha (telegram, redes sociais) conta como desconhecido aqui.
+  const exigencias = sessoes.map((s) => (modoDeCampanhaDoCanal(s.provider) === null ? null : canalExigeTemplate(s.provider)));
   if (exigencias.length === 0 || exigencias.some((e) => e === null)) {
     return recusa("campanha_canal_indisponivel", MENSAGENS_DA_CONFERENCIA.canal_desconhecido, 409);
   }

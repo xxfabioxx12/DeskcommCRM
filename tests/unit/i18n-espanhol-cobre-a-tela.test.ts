@@ -102,6 +102,10 @@ const PASTAS_IGNORADAS = new Set(["api", "node_modules"]);
 const FORA_DO_PRODUTO: Record<string, string> = {
   "app/design": "vitrine do design system: rota noindex, sem porta na navegação",
   "app/vitrine-agenda": "vitrine do kit visual da Agenda: dado de mentira, noindex",
+  // Fork: o Painel da barbearia é nosso e só atende barbearia brasileira (pt-BR); traduzir é passe à parte.
+  "app/app/painel-da-barbearia": "fork: painel da barbearia, só pt-BR",
+  "app/app/settings/tenant/_painel-barbearia.tsx": "fork: chave do painel da barbearia, só pt-BR",
+  "components/barbearia": "fork: painel da barbearia, só pt-BR",
 };
 
 /**

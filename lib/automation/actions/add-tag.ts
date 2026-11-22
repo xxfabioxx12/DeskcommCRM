@@ -63,6 +63,7 @@
  */
 import { originFromAutomationEvent } from "@/lib/atendimento/origem-automacao";
 import { registerAction } from "@/lib/automation/actions";
+import { etiquetasGoogleAds } from "@/lib/automation/etiquetas-google-ads";
 import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
 import {
   MENSAGEM_ETIQUETA_LONGA_DO_CONTATO,
@@ -94,7 +95,11 @@ function lista(valor: unknown): string[] {
 }
 
 async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise<ActionResultDetail> {
-  const cruas = Array.isArray(config.tags) ? config.tags.map(String) : [];
+  const literais = Array.isArray(config.tags) ? config.tags.map(String) : [];
+  const automaticas = etiquetasGoogleAds(ctx.context, config.google_ads_fields);
+  // As literais mantêm a semântica antiga. A opção nova usa a mesma junção
+  // atômica, destino e evento, dentro do teto nativo de dez por ação.
+  const cruas = [...literais, ...automaticas.slice(0, Math.max(0, 10 - literais.length))];
   if (!cruas.length) return { type: "add_tag", status: "skipped", detail: { reason: "no_tags" } };
 
   const destino: Destino = config.destino === "contato" ? "contato" : "card";
@@ -142,7 +147,8 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
   // `card` mas a pessoa não tem card e a escrita cai no contato — a etiqueta sai
   // como o contato a guarda (`normalizarTags`, #1224) e maior que 40 é recusada
   // (cortar em silêncio gravaria outra etiqueta). O CARD continua byte a byte.
-  if (target.table === "contacts" && etiquetaLongaDoContato(cruas) !== null) {
+  // Só as literais: as do Google Ads já vêm no tamanho que o oficial decide.
+  if (target.table === "contacts" && etiquetaLongaDoContato(literais) !== null) {
     return { type: "add_tag", status: "failed", error: MENSAGEM_ETIQUETA_LONGA_DO_CONTATO };
   }
   const tags = target.table === "contacts" ? etiquetasDoDestino(cruas, "contato") : cruas;

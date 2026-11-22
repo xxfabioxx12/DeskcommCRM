@@ -45,7 +45,8 @@ describe("editor de automações — Tirar tag e Gravar campo", () => {
   });
 
   it("padrões: tirar do card; gravar no contato", () => {
-    expect(defaultActionConfig("remove_tag")).toEqual({ type: "remove_tag", config: { tags: [], destino: "card" } });
+    // Fork: destino ficou opcional (o padrão do oficial, sem a chave = card).
+    expect(defaultActionConfig("remove_tag")).toEqual({ type: "remove_tag", config: { tags: [] } });
     expect(defaultActionConfig("set_field")).toEqual({ type: "set_field", config: { destino: "contato", campo: "", valor: "" } });
   });
 

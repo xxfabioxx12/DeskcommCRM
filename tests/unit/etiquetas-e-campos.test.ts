@@ -98,11 +98,11 @@ describe("regras puras", () => {
 });
 
 describe("escrita pelas RPCs da 9002", () => {
-  it("tirar do contato chama fn_contato_remover_etiquetas com p_tags", async () => {
+  it("tirar do contato chama fn_contato_remover_etiquetas com p_etiquetas", async () => {
     const { admin, chamadas } = adminQueGuarda({ data: { tags: ["b"], removidas: ["a"] }, error: null });
     const r = await removerEtiquetas(admin, { organizationId: ORG, alvo: { tabela: "contacts", id: "C" }, tags: ["a"] });
     expect(r).toEqual({ ok: true, tags: ["b"], removidas: ["a"] });
-    expect(chamadas[0]).toEqual({ nome: "fn_contato_remover_etiquetas", args: { p_org: ORG, p_contato: "C", p_tags: ["a"] } });
+    expect(chamadas[0]).toEqual({ nome: "fn_contato_remover_etiquetas", args: { p_org: ORG, p_contato: "C", p_etiquetas: ["a"] } });
   });
 
   it("tirar do card chama fn_lead_remover_etiquetas; nulo do banco = sem_linha", async () => {

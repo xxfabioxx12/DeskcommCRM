@@ -73,6 +73,11 @@ function fakePool(c: Cenario) {
     }
     if (/select \* from contacts/.test(sql)) return { rows: [c.contato ?? { id: LEAD, name: "Ana Souza", custom_fields: { link: "https://area" } }] };
     if (/select \* from crm_leads/.test(sql)) return { rows: [] };
+    // Fork: a carência do oficial (`lerJanelaDaConversa`) lê a janela da conversa antes do modelo.
+    if (sql.includes("c.last_inbound_at")) {
+      const agora = new Date().toISOString();
+      return { rows: [{ provider: c.provider, last_inbound_at: agora, last_outbound_at: agora }] };
+    }
     if (/from conversations/.test(sql)) return { rows: [{ id: CONVERSA, channel_session_id: CANAL, archived_at: null }] };
     if (sql.includes("select current_node_id, status from followup_enrollments")) return { rows: [{ current_node_id: "passo", status: "active" }] };
     return { rows: [] };

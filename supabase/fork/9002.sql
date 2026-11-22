@@ -21,113 +21,13 @@
 --
 -- Idempotente: `create or replace`, `revoke`/`grant` reaplicáveis. Sem tabela,
 -- coluna, policy ou dado a corrigir.
-
-create or replace function public.fn_contato_remover_etiquetas(
-  p_org uuid,
-  p_contato uuid,
-  p_tags text[]
-)
-returns jsonb
-language plpgsql
-security definer
-set search_path = public, pg_temp
-as $fn$
-declare
-  v_tags      text[];
-  v_antes     text[];
-  v_removidas text[];
-  v_depois    text[];
-begin
-  v_tags := array(select x from unnest(coalesce(p_tags, '{}'::text[])) as x where x is not null);
-  if cardinality(v_tags) = 0 then
-    raise exception 'etiquetas_vazio' using errcode = '22023';
-  end if;
-
-  select coalesce(tags, '{}'::text[])
-    into v_antes
-    from public.contacts
-   where organization_id = p_org and id = p_contato
-     for update;
-  if not found then
-    return null;
-  end if;
-
-  v_removidas := array(select unnest(v_antes) intersect select unnest(v_tags));
-  if cardinality(v_removidas) = 0 then
-    return jsonb_build_object('tags', to_jsonb(v_antes), 'removidas', '[]'::jsonb);
-  end if;
-
-  update public.contacts
-     set tags = array(
-           select t.etiqueta
-             from unnest(coalesce(tags, '{}'::text[])) with ordinality as t(etiqueta, ordem)
-            where not (t.etiqueta = any (v_tags))
-            order by t.ordem
-         ),
-         updated_at = now()
-   where organization_id = p_org and id = p_contato
-   returning tags into v_depois;
-
-  return jsonb_build_object(
-    'tags', to_jsonb(coalesce(v_depois, '{}'::text[])),
-    'removidas', to_jsonb(v_removidas)
-  );
-end
-$fn$;
-
-create or replace function public.fn_lead_remover_etiquetas(
-  p_org uuid,
-  p_lead uuid,
-  p_tags text[]
-)
-returns jsonb
-language plpgsql
-security definer
-set search_path = public, pg_temp
-as $fn$
-declare
-  v_tags      text[];
-  v_antes     text[];
-  v_removidas text[];
-  v_depois    text[];
-begin
-  -- Irmã da de cima, na tabela do CARD. Corpo idêntico trocando a tabela.
-  v_tags := array(select x from unnest(coalesce(p_tags, '{}'::text[])) as x where x is not null);
-  if cardinality(v_tags) = 0 then
-    raise exception 'etiquetas_vazio' using errcode = '22023';
-  end if;
-
-  select coalesce(tags, '{}'::text[])
-    into v_antes
-    from public.crm_leads
-   where organization_id = p_org and id = p_lead
-     for update;
-  if not found then
-    return null;
-  end if;
-
-  v_removidas := array(select unnest(v_antes) intersect select unnest(v_tags));
-  if cardinality(v_removidas) = 0 then
-    return jsonb_build_object('tags', to_jsonb(v_antes), 'removidas', '[]'::jsonb);
-  end if;
-
-  update public.crm_leads
-     set tags = array(
-           select t.etiqueta
-             from unnest(coalesce(tags, '{}'::text[])) with ordinality as t(etiqueta, ordem)
-            where not (t.etiqueta = any (v_tags))
-            order by t.ordem
-         ),
-         updated_at = now()
-   where organization_id = p_org and id = p_lead
-   returning tags into v_depois;
-
-  return jsonb_build_object(
-    'tags', to_jsonb(coalesce(v_depois, '{}'::text[])),
-    'removidas', to_jsonb(v_removidas)
-  );
-end
-$fn$;
+--
+-- Desde a 1.123: TIRAR etiqueta saiu deste bloco. O oficial criou as mesmas
+-- `fn_contato_remover_etiquetas`/`fn_lead_remover_etiquetas` (migration 9234,
+-- parâmetro `p_etiquetas`, compara sem caixa) com o mesmo retorno
+-- {tags, removidas}; ficam as deles. Em produção a 9234 precisa que as nossas
+-- (parâmetro `p_tags`) sejam apagadas antes (Postgres não troca nome de
+-- parâmetro em `create or replace`).
 
 create or replace function public.fn_contato_anotar_campos(
   p_org uuid,
@@ -159,17 +59,9 @@ begin
 end
 $fn$;
 
-revoke all on function public.fn_contato_remover_etiquetas(uuid, uuid, text[]) from public, anon, authenticated;
-revoke all on function public.fn_lead_remover_etiquetas(uuid, uuid, text[]) from public, anon, authenticated;
 revoke all on function public.fn_contato_anotar_campos(uuid, uuid, jsonb) from public, anon, authenticated;
-grant execute on function public.fn_contato_remover_etiquetas(uuid, uuid, text[]) to service_role;
-grant execute on function public.fn_lead_remover_etiquetas(uuid, uuid, text[]) to service_role;
 grant execute on function public.fn_contato_anotar_campos(uuid, uuid, jsonb) to service_role;
 
-comment on function public.fn_contato_remover_etiquetas(uuid, uuid, text[]) is
-  'Tira etiquetas do contato DENTRO do UPDATE e devolve {tags, removidas}. Fork 9002 (motor de fluxo).';
-comment on function public.fn_lead_remover_etiquetas(uuid, uuid, text[]) is
-  'Tira etiquetas do card DENTRO do UPDATE e devolve {tags, removidas}. Fork 9002 (motor de fluxo).';
 comment on function public.fn_contato_anotar_campos(uuid, uuid, jsonb) is
   'Mescla campos em contacts.custom_fields numa instrução atômica, sem apagar as outras chaves. Fork 9002.';
 

@@ -52,7 +52,13 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
     return { type: TIPO, status: "failed", error: r.erro };
   }
   if (alvo.foto) alvo.foto.tags = r.tags;
-  return { type: TIPO, status: "success", detail: { removed: r.removidas } };
+  // Mesmo rastro do oficial (#9234): a aba Atividade explica o "nada a tirar".
+  const rastro = { removed: r.removidas, alvo: alvo.tabela, alvo_id: alvo.id };
+  return {
+    type: TIPO,
+    status: "success",
+    detail: r.removidas.length ? rastro : { ...rastro, reason: "nada_a_tirar" },
+  };
 }
 
 registerAction({ type: TIPO, execute });

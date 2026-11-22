@@ -24,7 +24,14 @@ describe("migration 9002 — etiquetas e campos do motor de fluxo", () => {
     const sql = ler(MIGRATION);
     expect(sql.split("\n")[0]).toMatch(/^-- manifest: \S/);
     expect(ler(BLOCO).startsWith(CABECALHO)).toBe(true);
-    expect(sql.endsWith(ler(BLOCO))).toBe(true);
+    // Desde a 1.123 o bloco não leva mais o "tirar etiqueta" (ficou o da 9234 do
+    // oficial); a migration fica como rodou em produção, a história não muda.
+    expect(sql).toContain(CABECALHO);
+  });
+
+  it("⭐ desde a 1.123 o bloco não recria o tirar etiqueta (é a 9234 do oficial, p_etiquetas)", () => {
+    expect(ler(BLOCO)).not.toContain("remover_etiquetas(\n");
+    expect(ler(BLOCO)).not.toMatch(/function public\.fn_(contato|lead)_remover_etiquetas/);
   });
 
   it("⭐ as três funções com a assinatura combinada", () => {
@@ -66,6 +73,13 @@ describe("migration 9002 — etiquetas e campos do motor de fluxo", () => {
       expect(sql).toContain(`revoke all on function public.${assinatura} from public, anon, authenticated;`);
       expect(sql).toContain(`grant execute on function public.${assinatura} to service_role;`);
     }
+  });
+
+  it("⭐ o bloco continua com o gravar campo, só para service_role", () => {
+    const bloco = ler(BLOCO);
+    expect(bloco).toContain("create or replace function public.fn_contato_anotar_campos(\n  p_org uuid,\n  p_contato uuid,\n  p_campos jsonb\n)");
+    expect(bloco).toContain("revoke all on function public.fn_contato_anotar_campos(uuid, uuid, jsonb) from public, anon, authenticated;");
+    expect(bloco).toContain("grant execute on function public.fn_contato_anotar_campos(uuid, uuid, jsonb) to service_role;");
   });
 
   it("⭐ o bloco está no baseline UMA vez, ANTES da varredura anon", () => {

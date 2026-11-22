@@ -163,6 +163,16 @@ describe("ondeOModuloAparece: a tela pode dizer o que ligar vai mudar", () => {
       "avisos",
       "conferir_whatsapp",
       "mcp_por_agente",
+      "status_whatsapp",
+      // Fork: o /app/painel é o nosso Painel do setor; a chave do oficial não cria porta.
+      "painel_atendimento",
+      "reservas_de_lugar",
+      "link_de_pagamento",
+      "canal_bot",
+      "campanha_por_email",
+      "revisao_por_km",
+      "agencias",
+      "catalogo_por_feed",
     ]);
   });
 });

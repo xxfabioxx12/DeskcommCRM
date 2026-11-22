@@ -5,40 +5,50 @@ import { z } from "zod";
 
 import { audit } from "@/lib/audit";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { lerMencoesDeGrupo, textoComMencoesResolvidas } from "@/lib/messaging/mencoes-de-grupo";
 import { previaDaMensagem } from "@/lib/messaging/previa-da-mensagem";
-import { createClient } from "@/lib/supabase/server";
 import { exigirConversaDoSetor } from "@/lib/inbox/recorte-do-setor";
 
 interface Ctx { params: Promise<{ id: string }> }
 
 async function alterar(req: NextRequest, ctx: Ctx, ocultar: boolean): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "messages" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "messages",
+    role: "manager",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "messages_hide", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
   const { id } = await ctx.params;
   if (!z.string().uuid().safeParse(id).success) {
     return fail("validation_failed", t("Dados inválidos."), 422, { requestId });
   }
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const { data: message, error } = await supabase.from("messages")
     .select("id, organization_id, conversation_id, direction, body, type, metadata, revoked_at")
-    .eq("id", id).eq("organization_id", authz.org.orgId).maybeSingle();
+    .eq("id", id).eq("organization_id", authz.organizationId).maybeSingle();
   if (error) return fail("internal_error", t("Erro ao buscar mensagem."), 500, { requestId });
   if (!message) return fail("not_found", t("Mensagem não encontrada."), 404, { requestId });
   // Cópia NODZ: conversa de outro setor responde como se não existisse.
-  const foraDoSetor = await exigirConversaDoSetor({
-    organizationId: authz.org.orgId,
-    userId: authz.user.id,
-    conversationId: message.conversation_id,
-    requestId,
-    papel: authz.org.role,
-    idioma: authz.user.idioma,
-  });
+  // Só na sessão: o token é org-wide por desenho (Spec 33).
+  const foraDoSetor =
+    authz.via === "session" && authz.actor.type === "user"
+      ? await exigirConversaDoSetor({
+          organizationId: authz.organizationId,
+          userId: authz.actor.id,
+          conversationId: message.conversation_id,
+          requestId,
+          idioma: authz.idioma,
+        })
+      : null;
   if (foraDoSetor) return foraDoSetor;
   if (message.direction !== "inbound" || message.revoked_at) {
     return fail("forbidden", t("Esta mensagem não pode ser ocultada."), 403, { requestId });
@@ -47,13 +57,13 @@ async function alterar(req: NextRequest, ctx: Ctx, ocultar: boolean): Promise<Re
   const metadata = { ...anterior };
   if (ocultar) {
     metadata.crm_hidden_at = new Date().toISOString();
-    metadata.crm_hidden_by = authz.user.id;
+    metadata.crm_hidden_by = authz.actor.type === "user" ? authz.actor.id : null;
   } else {
     delete metadata.crm_hidden_at;
     delete metadata.crm_hidden_by;
   }
   const { data: updated, error: updateError } = await supabase.from("messages")
-    .update({ metadata }).eq("id", id).eq("organization_id", authz.org.orgId)
+    .update({ metadata }).eq("id", id).eq("organization_id", authz.organizationId)
     .select("id, metadata").maybeSingle();
   if (updateError || !updated) {
     return fail("internal_error", t("Não foi possível atualizar a mensagem."), 500, { requestId });
@@ -62,7 +72,7 @@ async function alterar(req: NextRequest, ctx: Ctx, ocultar: boolean): Promise<Re
   // O preview desnormalizado no painel lateral não pode continuar expondo o
   // texto oculto. Só o alteramos se esta ainda for a última mensagem da conversa.
   const { data: latest } = await supabase.from("messages").select("id")
-    .eq("organization_id", authz.org.orgId).eq("conversation_id", message.conversation_id)
+    .eq("organization_id", authz.organizationId).eq("conversation_id", message.conversation_id)
     .order("sent_at", { ascending: false }).limit(1).maybeSingle();
   if (latest?.id === id) {
     // A régua do filtro é a MESMA que gravou a coluna: em grupo, a ingestão grava
@@ -70,17 +80,20 @@ async function alterar(req: NextRequest, ctx: Ctx, ocultar: boolean): Promise<Re
     // cru (`@<lid>`) faria o compare-and-set não achar a linha — a rota responde
     // 200 e a lista segue mostrando o texto que o gestor acabou de ocultar.
     const antigoPreview = previaDaMensagem(
+      // Mesma ORDEM da ingestão (#3566): contato do CRM → palavra de reserva.
       textoComMencoesResolvidas(message.body, lerMencoesDeGrupo(message.metadata)),
       message.type,
     );
     await supabase.from("conversations").update({
       last_message_preview: ocultar ? "Mensagem ocultada no CRM" : antigoPreview,
-    }).eq("id", message.conversation_id).eq("organization_id", authz.org.orgId)
+    }).eq("id", message.conversation_id).eq("organization_id", authz.organizationId)
       .eq("last_message_preview", ocultar ? antigoPreview : "Mensagem ocultada no CRM");
   }
   await audit({
     action: ocultar ? "message.hidden_in_crm" : "message.restored_in_crm",
-    actorUserId: authz.user.id, organizationId: authz.org.orgId,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: authz.organizationId,
     resourceType: "message", resourceId: id, requestId,
     metadata: { conversation_id: message.conversation_id },
   });

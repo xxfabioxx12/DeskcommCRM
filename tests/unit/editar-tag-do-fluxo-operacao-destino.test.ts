@@ -41,7 +41,7 @@ function supabaseFalso(linhas: { lead: Record<string, unknown> | null; contato: 
     rpc: async (nome: string, args: Record<string, unknown>) => {
       rpcs.push({ nome, args });
       if (nome === "emit_event") return { data: null, error: null };
-      if (nome.endsWith("_remover_etiquetas")) return { data: { tags: [], removidas: args.p_tags }, error: null };
+      if (nome.endsWith("_remover_etiquetas")) return { data: { tags: [], removidas: args.p_etiquetas }, error: null };
       return { data: { tags: args.p_etiquetas, adicionadas: args.p_etiquetas }, error: null };
     },
   };
@@ -72,7 +72,7 @@ describe("adaptador de produção (editarTagDoLead)", () => {
   it("remover no contato: fn_contato_remover_etiquetas com a etiqueta normalizada, o contato do card", async () => {
     const { db, rpcs } = supabaseFalso({ lead: { id: LEAD, contact_id: CONTATO, tags: [] }, contato: null });
     await db.editarTagDoLead!(item({ tags: ["VIP "], operacao: "remover", destino: "contato" }));
-    expect(rpcs).toEqual([{ nome: "fn_contato_remover_etiquetas", args: { p_org: ORG, p_contato: CONTATO, p_tags: ["vip"] } }]);
+    expect(rpcs).toEqual([{ nome: "fn_contato_remover_etiquetas", args: { p_org: ORG, p_contato: CONTATO, p_etiquetas: ["vip"] } }]);
   });
 
   it("adicionar no contato: fn_contato_adicionar_etiquetas e contact.tag_added", async () => {
@@ -96,7 +96,7 @@ describe("adaptador de produção (editarTagDoLead)", () => {
 
     const tirar = supabaseFalso({ lead: null, contato });
     await tirar.db.editarTagDoLead!(item({ tags: ["VIP "], operacao: "remover", destino: "card" }));
-    expect(tirar.rpcs).toEqual([{ nome: "fn_contato_remover_etiquetas", args: { p_org: ORG, p_contato: CONTATO, p_tags: ["vip"] } }]);
+    expect(tirar.rpcs).toEqual([{ nome: "fn_contato_remover_etiquetas", args: { p_org: ORG, p_contato: CONTATO, p_etiquetas: ["vip"] } }]);
   });
 
   it("pulado (sem contato) vira erro legível — o motor registra na inscrição", async () => {

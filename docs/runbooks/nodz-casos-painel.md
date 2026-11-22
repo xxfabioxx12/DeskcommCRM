@@ -6,6 +6,6 @@ No painel, Caso em `awaiting_human` prevalece sobre a última mensagem e sobre c
 
 Entrada: solicitação de atendimento humano. Saída: Caso + evento opened + passagem vinculada + coluna Aguardando. Responsável é determinado pelo número e pela configuração existente, sem reatribuição feita por esta mudança. Casos > responder/concluir fecha o ciclo; aguardar informação do cliente muda o estado do Caso. Falha de gravação aparece nos logs do encaminhamento e não autoriza o aviso. Não existe promessa de ausência absoluta de falhas de rede ou indisponibilidade.
 
-Aplicação: migration 9222 antes das imagens novas. A versão anterior continua compatível com o schema aditivo. Bloco preservado em `supabase/fork/9222.sql` para próximas atualizações do oficial. Nenhum dado existente é apagado. Agentation existe somente na bancada local de revisão, fora das imagens.
+Aplicação: migration 9010 (era 9222) antes das imagens novas. A versão anterior continua compatível com o schema aditivo. Bloco preservado em `supabase/fork/9010.sql` para próximas atualizações do oficial. Nenhum dado existente é apagado. Agentation existe somente na bancada local de revisão, fora das imagens.
 
 Validação: `pnpm test:db tests/invariants/nodz-handoff-com-caso.test.ts tests/invariants/escalacao-ciclo-humano.test.ts`; testes de avisos dos dois motores; testes da classificação; typecheck; revisão visual do componente real com casos sintéticos (promessa, chat fechado e segunda página).
