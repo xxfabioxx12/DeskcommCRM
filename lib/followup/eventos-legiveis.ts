@@ -37,6 +37,7 @@ import {
   fraseDoRamo,
   type NomesDeValor,
 } from "./vocabulario";
+import { descreverAdiamento } from "./adiamento-legivel";
 
 // ---------------------------------------------------------------------------
 // Duração
@@ -139,6 +140,7 @@ const TIPO_DO_NO: Record<FlowNode["type"], string> = {
   // #2065 — as duas ações que também não falam com o cliente.
   move_lead: "Mover no funil",
   edit_lead_tag: "Editar tag",
+  gravar_campo: "Gravar campo",
   end: "Fim",
 };
 
@@ -166,7 +168,7 @@ export function resumoDoNo(node: FlowNode): NoDoDossie {
         ...base,
         resumo:
           node.config.mode === "fixed"
-            ? `espera ${duracaoLegivel(node.config.duration_ms)}`
+            ? `espera ${duracaoLegivel(node.config.duration_ms)}${node.config.ate_o_horario ? " e só termina em horário comercial" : ""}`
             : `espera adaptativa, entre ${duracaoLegivel(node.config.min_ms)} e ${duracaoLegivel(node.config.max_ms)}`,
       };
     case "condition":
@@ -201,7 +203,9 @@ export function resumoDoNo(node: FlowNode): NoDoDossie {
             ? "o agente escreve e envia a mensagem"
             : node.config.mode === "text"
               ? "envia um texto fixo"
-              : "envia uma mensagem de modelo pronto",
+              : node.config.mode === "mensagem"
+                ? "envia o template no número oficial ou o texto no número comum"
+                : "envia uma mensagem de modelo pronto",
       };
     case "internal_task": {
       const prazo = node.config.vence_em_dias === 0 ? "hoje" : `em ${node.config.vence_em_dias} dia(s)`;
@@ -209,12 +213,23 @@ export function resumoDoNo(node: FlowNode): NoDoDossie {
     }
     case "move_lead":
       return { ...base, resumo: "move o card para outra etapa do funil — sem mensagem ao cliente" };
-    case "edit_lead_tag":
+    case "edit_lead_tag": {
+      const tags = node.config.tags.join(", ");
+      if (!node.config.tags.length) {
+        return { ...base, resumo: "grava tag no lead, ainda sem destino escolhido — sem mensagem ao cliente" };
+      }
+      const onde = node.config.destino === "contato" ? "no contato" : "no lead";
+      if (node.config.operacao === "remover") {
+        return { ...base, resumo: `tira a(s) tag(s) ${tags} ${onde} — sem mensagem ao cliente` };
+      }
+      return { ...base, resumo: `grava a(s) tag(s) ${tags} ${onde} — sem mensagem ao cliente` };
+    }
+    case "gravar_campo":
       return {
         ...base,
-        resumo: node.config.tags.length
-          ? `grava a(s) tag(s) ${node.config.tags.join(", ")} no lead — sem mensagem ao cliente`
-          : "grava tag no lead, ainda sem destino escolhido — sem mensagem ao cliente",
+        resumo: node.config.campo
+          ? `grava o campo "${node.config.campo}" no ${node.config.destino === "contato" ? "contato" : "card"} — sem mensagem ao cliente`
+          : "grava um campo, ainda sem campo escolhido — sem mensagem ao cliente",
       };
     case "end":
       return { ...base, resumo: `encerra — ${DESFECHO[node.config.outcome] ?? node.config.outcome}` };
@@ -423,12 +438,21 @@ export function descreveEvento(
       // Adiar NÃO é falhar, e o dossiê tem de dizer isso com todas as letras:
       // sem esta linha o operador vê o passo parado por horas e lê defeito onde
       // há obediência à janela que ele mesmo configurou.
-      const ate = quandoLegivel(p.until, idioma);
-      return {
-        titulo: "Segurou o envio até o horário permitido",
-        detalhe: ate ? `a janela estava fechada; envia em ${ate}` : "a janela estava fechada",
-        ...motor,
-      };
+      //
+      // E o dossiê tem de dizer POR QUE adiou. A frase única ("a janela estava
+      // fechada") mentia em dois sentidos: chamava de janela o horário de envio
+      // da conexão, a faixa do acompanhamento e até a pessoa no comando; e
+      // anunciava a janela de 24 h da Meta numa conexão por QR, onde ela não
+      // existe. O motivo está em `payload.reason`, e o escopo do canal em
+      // `payload.janela_regulatoria` — gravado por quem tinha o provedor em mãos
+      // (ver `aJanelaRegulatoriaSeAplica`). Evento antigo, sem o campo, mantém a
+      // leitura conservadora (escopo regulatório), que é a de antes deste fix.
+      const adiamento = descreverAdiamento({
+        reason: p.reason,
+        quando: quandoLegivel(p.until, idioma),
+        janelaRegulatoria: p.janela_regulatoria !== false,
+      });
+      return { ...adiamento, ...motor };
     }
     case "condition_revalidated": {
       // O operador tem de ler ISTO e não "o fluxo parou": o envio não saiu
@@ -471,7 +495,7 @@ export function descreveEvento(
       const ate = quandoLegivel(p.next_eval_at, idioma);
       return {
         titulo: "Segurou o fluxo por causa de um retorno agendado",
-        detalhe: ate ? `volta a andar em ${ate}, um dia depois do retorno` : null,
+        detalhe: ate ? `volta a andar em ${ate}, depois do retorno` : null,
         ...motor,
       };
     }
@@ -505,12 +529,39 @@ export function descreveEvento(
         detalhe: texto(p.error) ?? texto(p.codigo),
         ...motor,
       };
+    case "edit_lead_tag_failed":
+      return { titulo: "Não conseguiu gravar a etiqueta", detalhe: texto(p.error), ...motor };
+    case "gravar_campo_failed":
+      return { titulo: "Não conseguiu gravar o campo", detalhe: texto(p.error), ...motor };
+    case "waiting_for_taken_slot":
+      // A espera "imune à resposta" libera a vaga do contato; outro fluxo entrou
+      // nela enquanto esta dormia. Adiar NÃO é falhar — sem esta linha a trilha
+      // mostrava um silêncio sem dizer que a espera era por causa de outro
+      // acompanhamento.
+      return {
+        titulo: "Esperando o outro acompanhamento deste contato terminar",
+        detalhe: "tenta de novo a cada hora, por até 7 dias",
+        ...motor,
+      };
+    case "gave_up_taken_slot":
+      // A espera pela vaga estourou o limite: o retorno foi cancelado, e o
+      // cancelamento saiu na Central com aviso. A trilha repete a mesma
+      // história para quem não viu o aviso.
+      return {
+        titulo: "Cancelado: outro acompanhamento ocupou o contato por 7 dias",
+        detalhe: "esperou 7 dias pelo outro acompanhamento deste contato terminar",
+        ...motor,
+      };
     case "inbound_woke":
       return { titulo: "O cliente respondeu — o fluxo acordou na hora", detalhe: null, ...cliente };
     case "reactivity_replied":
       return { titulo: "Encerrado porque o cliente respondeu", detalhe: null, ...cliente };
     case "reactivity_opted_out":
       return { titulo: "Encerrado porque o cliente pediu para parar", detalhe: null, ...cliente };
+    case "cancelled_sem_interesse":
+      // `lib/followup/encerrar-pela-recusa.ts`: a retomada da prospecção não fala de
+      // novo com quem disse que não tem interesse.
+      return { titulo: "Encerrado porque o cliente disse que não tem interesse", detalhe: null, ...cliente };
     case "reactivity_handoff_cancel":
       return { titulo: "Encerrado porque uma pessoa assumiu a conversa", detalhe: null, ...pessoa };
     case "handoff_paused":
@@ -535,8 +586,29 @@ export function descreveEvento(
       };
     case "turn_skipped":
       return {titulo:"Acompanhamento encerrado sem novo envio",detalhe:texto(p.reason),...motor};
+    case "modelo_pago_dispensado":
+      // #4835 — o modelo APROVADO (pago) não saiu porque o cliente escreveu
+      // durante a carência e a janela de 24 h abriu de graça. Duas linhas
+      // diferentes porque as duas saídas são diferentes: a reserva da IA segue
+      // em texto livre; o passo de modelo puro não tem texto livre e é pulado.
+      return {
+        titulo: "Nenhum modelo pago foi enviado — o cliente escreveu antes",
+        detalhe:
+          p.tem_texto_livre === true
+            ? "a janela de 24 horas abriu durante a espera, e o atendimento seguiu em texto livre"
+            : "a janela de 24 horas abriu durante a espera; este passo era só de modelo aprovado e foi pulado",
+        ...cliente,
+      };
     case "cancelled_manual":
       return { titulo: "Cancelado por uma pessoa da equipe", detalhe: null, ...pessoa };
+    case "replaced_by_rule":
+      // `start_message_flow` com `replace_live_flow`: outra regra pôs o contato
+      // num fluxo diferente. O nome da regra é o que a pessoa procura na tela.
+      return {
+        titulo: "Encerrado porque uma automação o colocou em outro fluxo",
+        detalhe: texto(p.rule_name),
+        ...motor,
+      };
     case "paused_manual":
       return { titulo: "Pausado por uma pessoa da equipe", detalhe: texto(p.motivo), ...pessoa };
     case "resumed_manual": {
@@ -592,6 +664,25 @@ export function descreveEvento(
       return {
         titulo: "Cancelado porque o caso foi resolvido",
         detalhe: "o follow-up existia para esse caso e parou junto com ele",
+        ...motor,
+      };
+    // O vínculo do negócio (#3363): a execução do roteiro passou a ter um card
+    // EXPLÍCITO, e o roteiro continua nele até terminar. Sem frase, a escolha
+    // aparecia como "Passo registrado pelo motor, código: roteiro_negocio" — o
+    // nome da variável no lugar do fato, que é o defeito que este arquivo existe
+    // para não ter.
+    case "roteiro_negocio":
+      return {
+        titulo: "Negócio do roteiro definido",
+        detalhe: "as respostas deste roteiro vão para este negócio até ele terminar",
+        ...motor,
+      };
+    case "cancelled_by_stage_change":
+      return {
+        titulo: "Cancelado porque o negócio saiu da etapa",
+        // Sem nome de etapa no detalhe de propósito: o payload guarda o
+        // `to_stage_id`, e um uuid na tela é pior que a frase cobrindo o caso.
+        detalhe: "o toque era da etapa que armou este fluxo, e o card saiu dela",
         ...motor,
       };
     default:

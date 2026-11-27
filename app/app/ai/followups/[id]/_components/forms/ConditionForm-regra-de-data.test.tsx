@@ -189,7 +189,7 @@ describe("o que o painel GRAVA no grafo", () => {
       { field: "lead_date", op: "passou_ha", value: 0, key: "fim_teste" },
     ]);
 
-    await escolherCampo(user, "Etiqueta do contato");
+    await escolherCampo(user, "Etiqueta do card");
 
     await waitFor(() => expect(ultimaRegra(onChange).field).toBe("tag"));
     expect(ultimaRegra(onChange)).not.toHaveProperty("key");

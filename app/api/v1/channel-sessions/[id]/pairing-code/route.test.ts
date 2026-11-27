@@ -28,7 +28,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   h.role.mockResolvedValue({
     ok: true,
-    org: { orgId: "trusted-org" },
+    org: { orgId: "trusted-org", role: "admin" },
     user: { id: "admin", idioma: "pt-BR" },
   });
   h.mfa.mockResolvedValue(false);
@@ -38,7 +38,7 @@ beforeEach(() => {
 it("requires admin, uses trusted org, returns no-store and audits without phone or code", async () => {
   const response = await call();
   expect(response.status).toBe(200);
-  expect(h.role).toHaveBeenCalledWith("admin", expect.anything());
+  expect(h.role).toHaveBeenCalledWith("agent", expect.anything());
   expect(h.request).toHaveBeenCalledWith({}, "trusted-org", id, "5511999991234");
   expect(response.headers.get("cache-control")).toContain("no-store");
   expect(h.audit).toHaveBeenCalledWith(

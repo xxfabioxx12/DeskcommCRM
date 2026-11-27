@@ -34,11 +34,17 @@ export interface TemplateView {
   previews: TemplatePreview[];
   /** Links de mídia salvos no modelo — o painel da janela fechada pré-preenche com eles. */
   savedValues: Record<string, string>;
+  /** A definição crua (a rota já devolve) — a prévia da campanha monta o texto com ela. */
+  components?: unknown[];
+  /** Da conta oficial desta conexão: só estes têm Editar/Apagar (o espelho é da organização). */
+  daConexao: boolean;
 }
 
 export interface TemplatesPayload {
   /** `null` = canal oficial não conectado. Distinto de "conectado e sem template". */
   waba: string | null;
+  /** O canal gerencia definições pela API: a tela mostra "Criar template", editar e apagar. */
+  podeGerenciar?: boolean;
   templates: TemplateView[];
 }
 
@@ -53,6 +59,27 @@ export function useTemplates() {
   return useQuery({
     queryKey: ["channel-templates"],
     queryFn: async () => apiClient.get<{ data: TemplatesPayload }>("/api/v1/channels/templates"),
+    staleTime: 30_000,
+    // Template "Em análise": a Meta decide em minutos ou horas, e o aviso dela
+    // (webhook de status) atualiza o espelho. A tela reconsulta enquanto houver
+    // um pendente, e para quando não houver — sem polling eterno.
+    refetchInterval: (q) => (q.state.data?.data.templates.some((m) => m.status === "PENDING") ? 30_000 : false),
+  });
+}
+
+/**
+ * Os modelos de UM número — a lista da campanha. Mesma rota, com
+ * `channel_session_id`; a chave começa por `channel-templates` para o sync e o
+ * "salvar link" (que invalidam esse prefixo) atualizarem esta lista também.
+ */
+export function useTemplatesDoNumero(channelSessionId: string | null) {
+  return useQuery({
+    queryKey: ["channel-templates", "numero", channelSessionId],
+    enabled: !!channelSessionId,
+    queryFn: async () =>
+      apiClient.get<{ data: TemplatesPayload }>(
+        `/api/v1/channels/templates?channel_session_id=${encodeURIComponent(channelSessionId ?? "")}`,
+      ),
     staleTime: 30_000,
   });
 }

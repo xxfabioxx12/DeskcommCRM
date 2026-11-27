@@ -2,7 +2,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({}) }));
-vi.mock("@/lib/channels/meta/credentials", () => ({ resolveMetaCreds: vi.fn() }));
+vi.mock("@/lib/channels/meta/credentials", async (orig) => ({
+  // Mantém o resto do módulo real (eventoDaSessao, campoDaContaDeMensagens).
+  ...(await orig<Record<string, unknown>>()), resolveMetaCreds: vi.fn() }));
 
 import { resolveMetaCreds } from "@/lib/channels/meta/credentials";
 import { sendTemplateForSession } from "@/lib/channels/meta/send-template-for-session";

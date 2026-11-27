@@ -1,6 +1,6 @@
 import type { ComponentType } from "react";
 
-import { Bell, Play, Clock, GitBranch, Brain, ChatCircle, ArrowsClockwise, PaperPlaneTilt, Flag, Question, PuzzlePiece, Funnel, Tag } from "@/lib/ui/icons";
+import { Bell, Play, Clock, GitBranch, Brain, ChatCircle, ArrowsClockwise, PaperPlaneTilt, Flag, Question, PuzzlePiece, Funnel, Tag, PencilSimple } from "@/lib/ui/icons";
 import type { FlowNode, NodeType } from "@/lib/followup/graph-schema";
 import { RESULTADOS_DO_FIM } from "@/lib/followup/vocabulario";
 import { NOS_DA_SUPERFICIE } from "@/lib/followup/validate-publish";
@@ -187,6 +187,16 @@ export const NODE_VISUALS: Record<NodeType, NodeVisual> = {
     defaultLabel: "Gravar tag no lead",
     defaultConfig: () => ({ tags: [] }),
   },
+  // Parte 1 do motor de fluxo — grava um campo; nasce vazio, o publish exige.
+  gravar_campo: {
+    type: "gravar_campo",
+    paletteLabel: "Gravar campo",
+    icon: PencilSimple,
+    chipClassName: "bg-info-bg text-info-fg",
+    borderClassName: "border-l-info",
+    defaultLabel: "Gravar campo",
+    defaultConfig: () => ({ destino: "contato", campo: "", valor: "" }),
+  },
   end: {
     type: "end",
     paletteLabel: "Fim",
@@ -232,8 +242,12 @@ export function describeNodeConfig(
       return t("Início do fluxo");
     case "wait": {
       const c = config as ConfigOf<"wait">;
+      // O horário da espera aparece no card: sem isto, "1440 min" prometia o
+      // toque à mesma hora do dia seguinte, e o motor o segura até a próxima abertura.
       return c.mode === "fixed"
-        ? minutos(c.duration_ms)
+        ? c.ate_o_horario
+          ? `${minutos(c.duration_ms)} · ${t("só em horário comercial")}`
+          : minutos(c.duration_ms)
         : `${Math.round(c.min_ms / 60_000)}–${minutos(c.max_ms)} ${t("(adaptativo)")}`;
     }
     case "condition": {
@@ -276,6 +290,10 @@ export function describeNodeConfig(
       const c = config as ConfigOf<"action">;
       if (c.mode === "ai_message") return c.prompt_hint;
       if (c.mode === "text") return c.body;
+      if (c.mode === "mensagem") {
+        const partes = [c.modelo?.name, c.texto?.body].filter((p): p is string => !!p);
+        return partes.length ? partes.join(" · ") : t("sem mensagem escolhida");
+      }
       return t("Template fixo");
     }
     case "internal_task": {
@@ -291,7 +309,18 @@ export function describeNodeConfig(
     }
     case "edit_lead_tag": {
       const c = config as ConfigOf<"edit_lead_tag">;
-      return c.tags.length ? c.tags.join(", ") : t("sem tag escolhida");
+      if (!c.tags.length) return t("sem tag escolhida");
+      const lista = c.tags.join(", ");
+      // Sem as chaves novas (fluxo antigo), o card mostra o mesmo de sempre.
+      if (!c.operacao && !c.destino) return lista;
+      const acao = c.operacao === "remover" ? t("tira") : t("põe");
+      const onde = c.destino === "contato" ? t("no contato") : t("no card");
+      return `${acao} ${lista} ${onde}`;
+    }
+    case "gravar_campo": {
+      const c = config as ConfigOf<"gravar_campo">;
+      if (!c.campo) return t("sem campo escolhido");
+      return `${c.campo} = ${c.valor} · ${c.destino === "contato" ? t("no contato") : t("no card")}`;
     }
     case "end": {
       const c = config as ConfigOf<"end">;

@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "diagram_type": "fluxo",
+  "meta": {
+    "titulo": "Painel da barbearia por organização",
+    "pergunta": "Como reunir os dados reais da barbearia sem alterar outros fluxos?",
+    "resumo": "Extensão opt-in com leitura pela sessão, isolamento por organização e destinos existentes."
+  },
+  "lanes": [
+    {
+      "id": "dados",
+      "label": "Dados da organização"
+    },
+    {
+      "id": "app",
+      "label": "Aplicação"
+    },
+    {
+      "id": "humano",
+      "label": "Operação"
+    }
+  ],
+  "mainPath": ["tabelas", "leitura", "painel", "destinos"],
+  "nodes": [
+    {
+      "id": "tabelas",
+      "lane": "dados",
+      "col": 0,
+      "label": "Agenda e financeiro",
+      "sublabel": "RLS + filtro organization_id e páginas completas",
+      "type": "service"
+    },
+    {
+      "id": "leitura",
+      "lane": "app",
+      "col": 1,
+      "label": "carregarPainel",
+      "sublabel": "Sessão manager, opt-in, moeda e fuso",
+      "type": "service"
+    },
+    {
+      "id": "painel",
+      "lane": "humano",
+      "col": 2,
+      "label": "PainelBarbeariaConectado",
+      "sublabel": "Totais, estado vazio e erro explícito",
+      "type": "frontend"
+    },
+    {
+      "id": "destinos",
+      "lane": "humano",
+      "col": 3,
+      "label": "Agenda / Comandas / Faturamento / Inbox",
+      "sublabel": "Operações existentes, sem novo motor",
+      "type": "frontend"
+    }
+  ],
+  "edges": [
+    {
+      "from": "tabelas",
+      "to": "leitura",
+      "label": "consulta autorizada"
+    },
+    {
+      "from": "leitura",
+      "to": "painel",
+      "label": "dados completos"
+    },
+    {
+      "from": "painel",
+      "to": "destinos",
+      "label": "atalhos autorizados"
+    },
+    {
+      "from": "destinos",
+      "to": "tabelas",
+      "label": "operações existentes"
+    }
+  ]
+}

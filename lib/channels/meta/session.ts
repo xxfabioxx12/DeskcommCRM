@@ -19,6 +19,8 @@ export interface MetaWebhookSession {
   id: string;
   organizationId: string;
   wabaId: string | null;
+  /** `channel_sessions.meta_messaging_account_id` (fork 9005). */
+  contaDeMensagensId?: string | null;
 }
 
 /**
@@ -62,7 +64,7 @@ export async function metaSessionByWebhookToken(
   const base = () =>
     admin
       .from("channel_sessions")
-      .select("id, organization_id, meta_waba_id")
+      .select("id, organization_id, meta_waba_id, meta_messaging_account_id")
       .eq("webhook_path_token", token)
       .eq("provider", CHANNEL_PROVIDER_META);
   const { data } = await queryTolerantToMissingArchived(
@@ -75,6 +77,7 @@ export async function metaSessionByWebhookToken(
     id: data.id,
     organizationId: data.organization_id,
     wabaId: data.meta_waba_id ?? null,
+    contaDeMensagensId: data.meta_messaging_account_id ?? null,
   };
 }
 
@@ -116,4 +119,56 @@ export async function metaSessionForOrg(
     wabaId: data.meta_waba_id ?? null,
     phoneNumberId: data.meta_phone_number_id ?? null,
   };
+}
+
+/**
+ * O evento é deste número? A WABA da conexão ou, desde a 9005, a conta de
+ * mensagens: com a conta nova, a Meta pode carimbar os avisos de mensagem com o ID
+ * dela. Sem um dos dois lados, não filtra (comportamento de antes).
+ */
+export function eventoDaSessao(session: MetaWebhookSession, wabaDoEvento: string | null | undefined): boolean {
+  if (!session.wabaId || !wabaDoEvento) return true;
+  return wabaDoEvento === session.wabaId || wabaDoEvento === (session.contaDeMensagensId ?? null);
+}
+
+/**
+ * A CONTA (WABA) da conexão oficial que atende este número — a chave com que se
+ * gerencia modelo pela tela (#3635).
+ *
+ * `sessionRef` deste canal é o `phone_number_id` (ver `resolveSessionRef`), e é
+ * por ele que a credencial é achada — mas a coleção de modelos vive na CONTA, não
+ * no número: `POST /{waba_id}/message_templates`. Resolver a WABA pela MESMA
+ * sessão que assina a chamada é o que impede uma organização alcançar o modelo
+ * de outra: o par `(organization_id, meta_phone_number_id)` é único por conta e
+ * a linha arquivada não conta (mesmo recorte do índice da 0165).
+ *
+ * `null` = conexão sem WABA gravada (base anterior à 0144) ou número que não é
+ * desta organização. Quem chama transforma isso em erro claro, nunca em chamada
+ * "no escuro".
+ */
+export async function metaWabaDoNumero(
+  organizationId: string,
+  phoneNumberId: string,
+): Promise<string | null> {
+  if (!organizationId || !phoneNumberId) return null;
+  const admin = createAdminClient();
+  const base = () =>
+    admin
+      .from("channel_sessions")
+      .select("meta_waba_id")
+      .eq("organization_id", organizationId)
+      .eq("provider", CHANNEL_PROVIDER_META)
+      .eq("meta_phone_number_id", phoneNumberId);
+  const { data, error } = await queryTolerantToMissingArchived(
+    () => base().is(ARCHIVED_AT, null).maybeSingle(),
+    () => base().maybeSingle(),
+  );
+  if (error) {
+    // Falha de leitura FECHA a ação: com `null` no lugar do erro a chamada
+    // sairia para a WABA errada (ou para o ambiente), que é a classe de defeito
+    // que a #236 pagou caro para descobrir.
+    throw new Error(`meta_waba_lookup_failed: ${error.code ?? "sem_codigo"} ${error.message ?? ""}`.trim());
+  }
+  const waba = data?.meta_waba_id;
+  return typeof waba === "string" && waba.length > 0 ? waba : null;
 }

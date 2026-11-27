@@ -100,6 +100,17 @@ const cadeia = (() => {
 const noBaseline = definicoes(BASELINE);
 
 describe("apêndice do baseline não diverge da cadeia de migrations", () => {
+  it("fork: a sobrecarga de 4 args de fn_contato_anotar_campos (9398) está no baseline igual à migration", () => {
+    const corpoDe = (texto: string) =>
+      [...texto.matchAll(/create or replace function public\.fn_contato_anotar_campos\(\s*p_org uuid, p_contato uuid, p_campos jsonb, p_remover text\[\][\s\S]*?end \$fn\$;/g)].map((m) =>
+        semComentarios(m[0]),
+      );
+    const migration = readdirSync(join(RAIZ, "migrations")).find((f) => f.includes("_9398_"))!;
+    const daMigration = corpoDe(readFileSync(join(RAIZ, "migrations", migration), "utf8"));
+    expect(daMigration).toHaveLength(1);
+    expect(corpoDe(BASELINE)).toEqual(daMigration);
+  });
+
   it("a sonda está viva — o apêndice existe e tem função escrita à mão", () => {
     // Sem este controle, um `search` que voltasse -1 faria o conjunto medido
     // ficar vazio e o caso abaixo passar por vacuidade.
@@ -120,6 +131,8 @@ describe("apêndice do baseline não diverge da cadeia de migrations", () => {
       if (def.pos <= INICIO_DO_APENDICE) continue; // veio do pg_dump: reformatado, não comparável
       const naCadeia = cadeia.get(nome);
       if (!naCadeia) continue; // só no baseline: fora do escopo desta regra
+      // Fork: fn_contato_anotar_campos tem duas sobrecargas (3 args do fork 9002, 4 args da 9398 do oficial) e esta sonda casa só pelo nome; cada uma é conferida contra a sua migration (blocos-do-fork e a 9398 abaixo).
+      if (nome === "fn_contato_anotar_campos") continue;
       if (naCadeia.corpo !== def.corpo) divergentes.push(nome);
     }
     expect(

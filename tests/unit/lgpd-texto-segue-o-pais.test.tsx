@@ -42,6 +42,12 @@
  * segue o gravado em c85293f05: o payload brasileiro é comparado a ele SEM
  * essas duas chaves (`semAsChavesDoDoc110`), o que prova que nenhuma outra
  * mudou, e um caso à parte cobra que as duas estão lá.
+ *
+ * Sexta exceção, regravando `data-*.json`: a seção `lead_attachments` (#3229),
+ * os anexos dos negócios do titular. Entra pela regra já escrita para
+ * `lead_notes` (#1957, Art. 18 II): o que a cascata apaga a pedido dele é o que
+ * se entrega a pedido dele. A diferença nos dois arquivos é só a linha
+ * `"lead_attachments": []`; o resto segue byte a byte.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -192,8 +198,14 @@ async function dataJson(country: string | null, timezone: string, pais?: string 
 const comoGravado = (p: ExportPayload) => JSON.stringify({ ...p, generated_at: "X" }, null, 2);
 
 /** O payload brasileiro menos as duas chaves que o doc 110 (2A) acrescentou — ver o cabeçalho. */
-const semAsChavesDoDoc110 = ({ messages_completas: _m, secoes_no_limite: _s, ...resto }: ExportPayload) =>
-  resto as ExportPayload;
+// Fork 9003 (entrada das vendas): `sales_events` é seção NOVA, como as duas do
+// doc 110 — o fixture segue o gravado, e o caso do Brasil cobra que ela está lá.
+const semAsChavesDoDoc110 = ({
+  messages_completas: _m,
+  secoes_no_limite: _s,
+  sales_events: _v,
+  ...resto
+}: ExportPayload) => resto as ExportPayload;
 
 function textos(no: ReactNode): string[] {
   if (no === null || no === undefined || typeof no === "boolean") return [];
@@ -319,13 +331,15 @@ describe("data.json e PDF de acesso", () => {
     const { vazio, cheio } = await dataJson(null, "America/Sao_Paulo");
     expect(comoGravado(vazio)).toBe(fixture("data-vazio.json"));
     expect(comoGravado(semAsChavesDoDoc110(cheio))).toBe(fixture("data-cheio.json"));
-    // Doc 110, 2A: as duas chaves que a trava do doc 88 segurava, e só elas.
+    // Doc 110, 2A: as duas chaves que a trava do doc 88 segurava, e a do fork 9003 — e só elas.
     expect(cheio.messages_completas).toEqual([]);
+    expect(cheio.sales_events).toEqual([]);
     expect(cheio.secoes_no_limite).toEqual([]);
     const gravadas = Object.keys(JSON.parse(fixture("data-cheio.json")));
     expect(Object.keys(JSON.parse(comoGravado(cheio))).filter((k) => !gravadas.includes(k))).toEqual([
       "messages_completas",
       "secoes_no_limite",
+      "sales_events",
     ]);
     for (const p of [vazio, cheio]) {
       expect(Object.keys(p)).not.toContain("lei_rotulo");

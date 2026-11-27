@@ -27,8 +27,17 @@ import { conferirCamposDoNegocio, type CampoPersonalizado, type CampoRecusado } 
 import { lerConfigDoJev } from "@/lib/ai/decisao/config";
 import { estadoEfetivoDaTarefa, TAREFA_DA_CONFERENCIA_DE_CAMPO } from "@/lib/ai/decisao/tarefas";
 import type { DependenciasDoPonto } from "@/lib/ai/decisao/ponto";
-import { settingsDoFunil } from "@/lib/leads/campos-exigidos";
 import { camposDoFunil } from "@/lib/leads/campos-do-funil";
+import { settingsDoFunil } from "@/lib/leads/campos-exigidos";
+import {
+  defsDoPadraoDoFunil,
+  mensagemDaRecusa,
+  recusasDePadrao,
+  type DefComPadrao,
+  type MotivoDoPadrao,
+  type RecusaDePadrao,
+} from "@/lib/leads/padrao-do-campo";
+import { testaComPrazo } from "@/lib/leads/padrao-do-campo-no-servidor";
 import { scrubMessage } from "@/lib/sentry/scrub";
 
 import type { McpContext } from "./types";
@@ -106,14 +115,34 @@ export async function mensagensPendentesDoTurno(
 }
 
 /**
- * De onde sai o funil dos rótulos: o negócio que já existe (`crm_update_lead`)
- * ou o funil em que ele vai nascer (`crm_create_lead`, #2297 — ainda não há
- * linha em `crm_leads` para ler).
+ * De onde sai o funil: o negócio que já existe (`crm_update_lead`) ou o funil
+ * em que ele vai nascer (`crm_create_lead`, #2297 — ainda não há linha em
+ * `crm_leads` para ler).
  */
 export type AlvoDaConferencia = { leadId: string } | { pipelineId: string };
 
-/** O rótulo que o dono deu ao campo no funil — mapa vazio quando não deu para ler. */
-async function rotulosDoFunil(ctx: McpContext, alvo: AlvoDaConferencia): Promise<Map<string, string>> {
+/**
+ * O funil da conferência: rótulos (a #2234) e DEFINIÇÕES (o `padrao` da #2730),
+ * das duas leituras de sempre — negócio (`crm_update_lead`) ou funil de
+ * nascimento (`crm_create_lead`, #2297). Um só descer às linhas, porque as
+ * duas coisas saem do MESMO `settings`, e descer duas vezes seria pagar o
+ * custo da leitura por nada.
+ */
+interface FunilDaConferencia {
+  rotulos: Map<string, string>;
+  defs: DefComPadrao[];
+  /**
+   * Toda chave que o funil declara, dos DOIS escopos (#4667). `null` quando o
+   * funil não foi lido (falha, negócio sem funil, funil de outra organização):
+   * aí não há régua para cobrar e a escrita segue como hoje — fail-open, como
+   * o resto deste arquivo. Lido e sem campo nenhum é o conjunto VAZIO, não `null`.
+   */
+  chavesDeclaradas: ReadonlySet<string> | null;
+}
+
+const FUNIL_NAO_LIDO: FunilDaConferencia = { rotulos: new Map(), defs: [], chavesDeclaradas: null };
+
+async function funilDaConferencia(ctx: McpContext, alvo: AlvoDaConferencia): Promise<FunilDaConferencia> {
   try {
     let settings: unknown;
     if ("pipelineId" in alvo) {
@@ -126,7 +155,7 @@ async function rotulosDoFunil(ctx: McpContext, alvo: AlvoDaConferencia): Promise
         .eq("organization_id", ctx.organizationId)
         .eq("id", alvo.pipelineId)
         .maybeSingle();
-      if (error || !data) return new Map();
+      if (error || !data) return FUNIL_NAO_LIDO;
       settings = (data as { settings?: unknown }).settings;
     } else {
       const { data, error } = await ctx.supabase
@@ -135,21 +164,66 @@ async function rotulosDoFunil(ctx: McpContext, alvo: AlvoDaConferencia): Promise
         .eq("organization_id", ctx.organizationId)
         .eq("id", alvo.leadId)
         .maybeSingle();
-      if (error || !data) return new Map();
-      settings = await settingsDoFunil(ctx.supabase, (data as { pipeline_id?: string | null }).pipeline_id);
+      if (error || !data) return FUNIL_NAO_LIDO;
+      settings = await settingsDoFunil(ctx.supabase, (data as { pipeline_id?: string | null }).pipeline_id, ctx.organizationId);
     }
-    return new Map(
-      camposDoFunil(settings as Record<string, unknown> | null | undefined).map((c) => [c.key, c.label]),
-    );
+    const defs = defsDoPadraoDoFunil(settings);
+    // `settingsDoFunil` devolve `null` tanto na falha quanto no funil ausente:
+    // nos dois casos não há o que cobrar. Um objeto é um funil LIDO.
+    const lido = settings !== null && typeof settings === "object" && !Array.isArray(settings);
+    return {
+      rotulos: new Map(defs.map((c) => [c.key, c.label ?? c.key])),
+      defs,
+      chavesDeclaradas: lido
+        ? new Set(camposDoFunil(settings as Record<string, unknown>).map((c) => c.key))
+        : null,
+    };
   } catch {
-    return new Map();
+    return FUNIL_NAO_LIDO;
   }
+}
+
+/**
+ * A recusa da CHAVE que o funil não declara (#4667): o agente não tinha como
+ * saber as chaves (a lista de funis não as trazia) e inventava uma, que ia
+ * para `crm_leads.custom_fields` sem aparecer em card nenhum.
+ *
+ * Só a chave que NENHUM escopo declara. A chave declarada como campo do
+ * CONTATO não entra aqui: ela não é inventada, e para onde ela deve ir é
+ * outra pergunta, fora desta issue.
+ */
+export interface RecusaDeChaveNoTurno {
+  campo: string;
+  motivo: "chave_fora_do_funil";
+  /** A frase que o MODELO recebe, com as chaves válidas do negócio. */
+  mensagem: string;
+}
+
+function mensagemDaChaveForaDoFunil(chave: string, defs: readonly DefComPadrao[]): string {
+  if (defs.length === 0) {
+    return `Campo «${chave}»: este funil não tem campos personalizados do negócio, e nada foi gravado nele. Não use custom_fields neste negócio.`;
+  }
+  const validas = defs.map((c) => `${c.key} (${c.label ?? c.key})`).join(", ");
+  return `Campo «${chave}»: não existe no funil deste negócio, e nada foi gravado nele. Chaves válidas: ${validas}. Grave de novo com uma delas, ou deixe o valor de fora se nenhuma serve.`;
+}
+
+function recusasDeChave(funil: FunilDaConferencia, campos: Record<string, unknown>): RecusaDeChaveNoTurno[] {
+  const declaradas = funil.chavesDeclaradas;
+  if (declaradas === null) return [];
+  return Object.keys(campos)
+    .filter((chave) => !declaradas.has(chave))
+    .map((chave) => ({
+      campo: chave,
+      motivo: "chave_fora_do_funil" as const,
+      mensagem: mensagemDaChaveForaDoFunil(chave, funil.defs),
+    }));
 }
 
 export interface ConferenciaDeCampos {
   /** `undefined` quando não havia `custom_fields` — o resto da escrita não muda. */
   custom_fields?: Record<string, unknown>;
-  recusados: CampoRecusado[];
+  /** A de CONFERÊNCIA (#2234) e a de PADRÃO (#2730) — mesma forma, dois motivos. */
+  recusados: RecusaDoTurno[];
   /** Por que não houve conferência, ou o estado em que ela rodou. */
   estado: string;
   /** `jev_*` quando o degrau 2 falhou (fail-open: o valor foi gravado mesmo assim). */
@@ -159,8 +233,57 @@ export interface ConferenciaDeCampos {
 const SEM_CONFERENCIA = (estado: string): ConferenciaDeCampos => ({ recusados: [], estado });
 
 /**
+ * Uma recusa do turno (#2730): a MESMA forma da `CampoRecusado` para quem
+ * consome (`campo` + `mensagem` vai para o prompt em `tools/leads.ts`), com o
+ * motivo do PRÓPRIO domínio — o union da #2234 (`cliente_nao_disse` /
+ * `cliente_disse_o_contrario`) é do degrau 2 e não muda por causa disto.
+ */
+export interface RecusaDePadraoNoTurno {
+  campo: string;
+  motivo: MotivoDoPadrao;
+  /** A frase que o MODELO recebe — nunca o texto do cliente. */
+  mensagem: string;
+}
+
+export type RecusaDoTurno = CampoRecusado | RecusaDePadraoNoTurno | RecusaDeChaveNoTurno;
+
+/**
+ * A frase do ERRO DE ENSINO de um campo fora do padrão: a do CAMPO (o que o
+ * dono escreveu) mais a ordem que o modelo precisa — PERGUNTAR DE NOVO em vez
+ * de gravar torto. É para o modelo ler, como todo texto de conferência da casa;
+ * o que a PESSOA vê na tela vem de `mensagemDaRecusa`, sem esta costura.
+ */
+function mensagemDeErroDePadrao(recusa: RecusaDePadrao): string {
+  const ordem =
+    recusa.motivo === "padrao_invalido"
+      ? "O PADRÃO do campo está inválido na configuração do funil: não dá para conferir nem para gravar. Não tente preenchê-lo — avise a pessoa e siga com os outros campos."
+      : "O valor não confere com o PADRÃO do campo. Não grave assim: pergunte de novo à pessoa, citando a instrução acima, e só grave o que ela responder.";
+  // O rótulo entra NA FRASE porque o modelo lê vários campos por vez: sem o
+  // nome do campo, duas recusas seguidas viram duas instruções soltas.
+  return `Campo «${recusa.rotulo}»: ${mensagemDaRecusa(recusa)} — ${ordem}`;
+}
+
+/** As chaves que sobram depois das recusas do degrau 0, na ordem original. */
+function restantesSem(campos: Record<string, unknown>, recusados: readonly { campo: string }[]) {
+  const fora = new Set(recusados.map((r) => r.campo));
+  return Object.fromEntries(Object.entries(campos).filter(([chave]) => !fora.has(chave)));
+}
+
+/** A recusa de padrão na forma do turno: `campo` + `mensagem`, já traduzida. */
+function paraTurno(recusa: RecusaDePadrao): RecusaDePadraoNoTurno {
+  return { campo: recusa.campo, motivo: recusa.motivo, mensagem: mensagemDeErroDePadrao(recusa) };
+}
+
+/**
  * Confere os `custom_fields` da chamada, se a origem for o agente de IA.
  * Nunca lança: falha aberto, com o campo gravado como hoje.
+ *
+ * Antes de TUDO (depois só da origem), roda o DEGRAU 0 — o padrão do campo
+ * (#2730). Ele é determinístico e INDEPENDENTE do interruptor da conferência
+ * (#2234, que nasce desligada): se o `padrao` dependesse do Jev, toda
+ * organização que nunca ligou aquilo gravaria torto, que é o estado padrão do
+ * produto. Ler o funil antes do degrau 2 custa a mesma linha que o rótulo já
+ * custava — e quando a tarefa está desligada é a única leitura a mais.
  */
 export async function conferirCamposPersonalizados(
   ctx: McpContext,
@@ -182,15 +305,39 @@ export async function conferirCamposPersonalizados(
   } catch {
     config = lerConfigDoJev(null);
   }
+
+  // ── DEGRAU 0 (#2730): o padrão, com ou sem conferência ───────────────────
+  const funil = await funilDaConferencia(ctx, alvo);
+  // A chave que o funil não declara (#4667) sai no mesmo degrau: é tão
+  // determinística quanto o padrão e não pode depender do interruptor do Jev.
+  const recusadosDeChave = recusasDeChave(funil, campos);
+  const recusadosDePadrao = recusasDePadrao(funil.defs, campos, testaComPrazo);
+  const recusadosDoDegrau0: RecusaDoTurno[] = [...recusadosDeChave, ...recusadosDePadrao.map(paraTurno)];
+  const restantes = restantesSem(campos, recusadosDoDegrau0);
+  if (recusadosDoDegrau0.length > 0 && Object.keys(restantes).length === 0) {
+    // Nada sobrou para perguntar: nem conversa, nem Jev. O motivo de gravar
+    // zero é do próprio produto: o FORMATO, ou a chave que o funil não tem.
+    return {
+      custom_fields: {},
+      recusados: recusadosDoDegrau0,
+      estado: recusadosDePadrao.length > 0 ? "fora_do_padrao" : "chave_fora_do_funil",
+    };
+  }
+
   if (estadoEfetivoDaTarefa(config, TAREFA_DA_CONFERENCIA_DE_CAMPO) === "desligada") {
-    return SEM_CONFERENCIA("desligada");
+    return recusadosDoDegrau0.length > 0
+      ? {
+          custom_fields: restantes,
+          recusados: recusadosDoDegrau0,
+          estado: "desligada",
+        }
+      : SEM_CONFERENCIA("desligada");
   }
 
   const { conversationId, mensagens } = await mensagensPendentesDoTurno(ctx);
-  const rotulos = await rotulosDoFunil(ctx, alvo);
-  const lista: CampoPersonalizado[] = Object.entries(campos).map(([chave, valor]) => ({
+  const lista: CampoPersonalizado[] = Object.entries(restantes).map(([chave, valor]) => ({
     chave,
-    nome: rotulos.get(chave) ?? chave,
+    nome: funil.rotulos.get(chave) ?? chave,
     valor,
   }));
 
@@ -209,10 +356,10 @@ export async function conferirCamposPersonalizados(
   );
 
   const gravaveis = new Set(r.gravaveis);
-  const restantes = Object.fromEntries(Object.entries(campos).filter(([chave]) => gravaveis.has(chave)));
+  const finais = Object.fromEntries(Object.entries(restantes).filter(([chave]) => gravaveis.has(chave)));
   return {
-    custom_fields: restantes,
-    recusados: r.recusados,
+    custom_fields: finais,
+    recusados: [...recusadosDoDegrau0, ...r.recusados],
     estado: r.estado,
     ...(r.error_code === undefined ? {} : { error_code: r.error_code }),
   };

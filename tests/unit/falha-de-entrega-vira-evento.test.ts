@@ -70,6 +70,8 @@ function conversa() {
       waha_session_name: null,
       status: "WORKING",
       archived_at: null,
+      // interruptor ligado: este teste não é sobre ele (fork 9005)
+      responde_sozinho: true,
     },
   };
 }

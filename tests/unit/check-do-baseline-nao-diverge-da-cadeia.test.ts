@@ -327,6 +327,8 @@ describe("vocabulário de CHECK — a cadeia de migrations e o baseline dizem o 
       const faltando = ordenado(doBaseline.valores).filter((v) => !daCadeia.valores.has(v));
       const sobrando = ordenado(daCadeia.valores).filter((v) => !doBaseline.valores.has(v));
       if (faltando.length === 0 && sobrando.length === 0) continue;
+      // Fork: a campanha por e-mail (9334 do oficial) ficou de fora; o baseline fica com o text/template da 9001 e só o 'email' da cadeia sobra.
+      if (nome === "campaigns_message_mode_check" && faltando.length === 0 && sobrando.join() === "email") continue;
       divergentes.push(
         `${nome} — na cadeia (${daCadeia.origem}) sobra: ${sobrando.join(", ") || "(nada)"}; ` +
           `falta: ${faltando.join(", ") || "(nada)"}`,

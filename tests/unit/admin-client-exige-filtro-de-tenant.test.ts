@@ -146,15 +146,6 @@ const SEM_FILTRO_LIBERADO: readonly { arquivo: string; tabela: string; motivo: s
       "carrega `organization_id` e volta a ser leitura de dado de inquilino, que " +
       "precisa de decisão própria sobre o que o dono da instalação pode ver.",
   },
-  {
-    arquivo: "lib/notifications/web_push.ts",
-    tabela: "push_subscriptions",
-    motivo:
-      "`store(admin)` devolve o BUILDER (`admin.from(\"push_subscriptions\")`); quem " +
-      "filtra é cada chamador — `enviarPushDaOrg`/`removerPush` filtram por " +
-      "`organization_id` e, na remoção, por `endpoint`. A cadeia sem filtro não " +
-      "consulta nada: ela não foi aguardada.",
-  },
 ];
 
 /**
@@ -187,20 +178,6 @@ const ESTEIRAS: readonly { caminho: string; motivo: string }[] = [
  * Exceções da R3, cadeia a cadeia, com a razão escrita. Só encolhe.
  */
 const CHAVE_SEM_TENANT_LIBERADA: readonly { arquivo: string; tabela: string; motivo: string }[] = [
-  {
-    arquivo: "app/api/v1/ai/skills/[name]/route.ts",
-    tabela: "skill_versions",
-    motivo:
-      "Versão de plataforma tem organization_id nulo. O id vem de skill_pointers, " +
-      "lido com filtro de organização logo acima.",
-  },
-  {
-    arquivo: "app/api/v1/ai/skills/route.ts",
-    tabela: "skill_versions",
-    motivo:
-      "Mesma razão: os ids vêm dos pointers da organização e dos de plataforma " +
-      "(organization_id nulo).",
-  },
   {
     arquivo: "app/app/ai/skills/page.tsx",
     tabela: "skill_versions",

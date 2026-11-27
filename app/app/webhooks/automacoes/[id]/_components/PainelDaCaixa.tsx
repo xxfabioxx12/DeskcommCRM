@@ -1,14 +1,26 @@
 "use client";
 
+import Link from "next/link";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Trash } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
+import { useCapacidadesLigadas } from "@/hooks/auth/AuthProvider";
 import { useT } from "@/hooks/i18n/useT";
 import { usePipelineStages, usePipelines, useWebhookSources } from "@/hooks/webhooks/useWebhookSources";
 import { acoesQueFechamLaco, MENSAGEM_DO_LACO_DE_LEAD, TRIGGER_EVENTS } from "@/lib/schemas/webhooks";
+import {
+  CAMPOS_ALTERAVEIS_DO_NEGOCIO,
+  CONDICOES_DO_CONTATO,
+  contarCondicoes,
+  OPERADORES_SEM_VALOR,
+  operadorCabeNoCampo,
+  rotuloDoCampoAlterado,
+  valorPadraoDoCampo,
+} from "@/lib/automation/conditions";
 import { DIAS_MAX, DIAS_MIN, GATILHO_DE_DATA_DO_FUNIL } from "@/lib/automation/gatilho-de-data-do-funil";
 import {
   DIRECOES_DO_SILENCIO,
@@ -28,12 +40,24 @@ import {
 } from "@/lib/automation/desenho-da-regra";
 import { camposDeDataDoNegocio } from "@/lib/leads/campos-do-funil";
 import { ActionConfigForm, type ActionItem } from "@/app/app/webhooks/_components/ActionConfigForm";
-import { CURATED_FIELDS, OP_LABELS, type Op } from "@/app/app/webhooks/_components/RuleEditor";
-import { ACTION_LABELS, TRIGGER_LABELS, type ActionType, type TriggerEvent } from "@/app/app/webhooks/_components/labels";
+import {
+  ValorDaCondicaoDoContato,
+  valorDaCondicaoNaTela,
+} from "@/app/app/webhooks/_components/CondicaoDoContato";
+import { CURATED_FIELDS, OP_LABELS, type CuratedField, type Op } from "@/app/app/webhooks/_components/RuleEditor";
+import {
+  ACTION_LABELS,
+  TRIGGER_LABELS,
+  gatilhoOferecido,
+  type ActionType,
+  type TriggerEvent,
+} from "@/app/app/webhooks/_components/labels";
 
 import { VISUAL_DAS_CONDICOES, VISUAL_DO_GATILHO, visualDaAcao, type VisualDaCaixa } from "./visual";
 
 const QUALQUER_FONTE = "__qualquer_fonte__";
+/** O formulário em gaveta vive na aba de automações — o "editar pelo formulário". */
+const VOLTAR = "/app/webhooks?aba=automacoes";
 
 function Cabecalho({ visual, titulo, etapa }: { visual: VisualDaCaixa; titulo: string; etapa?: string }) {
   const Icone = visual.icon;
@@ -79,6 +103,7 @@ export function PainelDoGatilho({
   onTela: (tela: TelaDoGatilho) => void;
 }) {
   const t = useT();
+  const capacidadesLigadas = useCapacidadesLigadas();
   const { data: funisRes } = usePipelines();
   const { data: fontesRes } = useWebhookSources();
   const funis = funisRes?.data ?? [];
@@ -99,7 +124,7 @@ export function PainelDoGatilho({
             <SelectValue placeholder={t("Escolha o gatilho")} />
           </SelectTrigger>
           <SelectContent>
-            {TRIGGER_EVENTS.map((ev) => (
+            {TRIGGER_EVENTS.filter((ev) => gatilhoOferecido(ev, capacidadesLigadas, evento)).map((ev) => (
               <SelectItem key={ev} value={ev}>
                 {t(TRIGGER_LABELS[ev])}
               </SelectItem>
@@ -290,10 +315,68 @@ export function PainelDasCondicoes({
   const padrao = funisRes?.data?.find((p) => p.is_default) ?? funisRes?.data?.[0] ?? null;
   const { data: quadro } = usePipelineStages(padrao?.id ?? null);
   const etapas = quadro?.data?.stages ?? [];
-  const campos = evento ? (CURATED_FIELDS[evento as TriggerEvent] ?? []) : [];
+  // As condições do contato (#3814) valem em qualquer gatilho: entram depois
+  // das do evento, e não na tabela de cada um.
+  const campos: CuratedField[] = evento
+    ? [...(CURATED_FIELDS[evento as TriggerEvent] ?? []), ...CONDICOES_DO_CONTATO]
+    : [];
   const linhas = dados.linhas;
+  const grupoPreservado = dados.grupoPreservado;
   const mudar = (i: number, patch: Partial<LinhaDeCondicao>) =>
     onLinhas(linhas.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+
+  /**
+   * #2727 — o desenho NÃO edita a regra que não sabe representar.
+   *
+   * A caixa de condições é uma fila combinada por E. Quando a regra gravada
+   * combina por "qualquer uma" (um grupo `{any}`), achatá-la aqui trocaria a
+   * regra inteira: quem disparava para alguns passaria a disparar para todos.
+   * Em vez de achar que o operador edita e gravar outra coisa, o painel MOSTRA o
+   * grupo, explica e manda para o formulário — e o salvar do desenho grava o
+   * grupo como está (`corpoDoDesenho`).
+   */
+  if (grupoPreservado) {
+    return (
+      <div className="space-y-4" data-testid="condicoes-preservadas">
+        <Cabecalho visual={VISUAL_DAS_CONDICOES} titulo={t("Condições")} etapa={etapa} />
+        <Problemas lista={dados.problemas} />
+        <p role="note" className="rounded-md border border-border bg-muted p-3 text-sm text-text-muted">
+          {t(
+            "Esta automação combina as condições por um grupo (qualquer uma, ou um grupo dentro de outro). Este desenho não edita esse grupo: ele é gravado como está.",
+          )}
+        </p>
+        <ul className="space-y-1 text-sm">
+          {linhas.map((linha, i) => {
+            // O mesmo rótulo do formulário e do cartão — nunca a chave técnica do campo.
+            const curado = campos.find((c) => c.value === linha.field);
+            const operador = t(curado?.lista && linha.op === "contains" ? "tem a tag" : OP_LABELS[linha.op]);
+            // Condição do contato: o jsonb guarda `sim|7|Manutenção`, e o que a
+            // pessoa lê é `Sim · 7 dias · Manutenção`.
+            const valor =
+              curado?.kind === "sim_nao"
+                ? valorDaCondicaoNaTela(linha.value, t)
+                : linha.op === "campo_alterado"
+                  ? t(rotuloDoCampoAlterado(linha.value))
+                  : linha.value;
+            return (
+              <li key={i} className="rounded-md border border-border px-3 py-2 text-text" data-testid={`condicao-${i}`}>
+                <span className="font-medium">{curado ? t(curado.label) : linha.field}</span>
+                <span className="text-text-muted">
+                  {` ${operador} ${OPERADORES_SEM_VALOR.has(linha.op) ? "" : valor}`.trimEnd()}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+        <p className="text-xs text-text-muted">
+          {`${contarCondicoes(grupoPreservado)} ${contarCondicoes(grupoPreservado) === 1 ? t("condição") : t("condições")}`}
+        </p>
+        <Button asChild type="button" variant="secondary" size="sm">
+          <Link href={VOLTAR}>{t("Editar pelo formulário")}</Link>
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -334,7 +417,16 @@ export function PainelDasCondicoes({
             ) : (
               <Select
                 value={linha.field}
-                onValueChange={(v) => mudar(i, { field: v, op: campos.find((c) => c.value === v)?.op ?? "eq" })}
+                onValueChange={(v) => {
+                  // A condição do contato nasce com um valor aceito pela porta
+                  // ("sim"); sem isso a linha nova já seria recusada ao salvar.
+                  const padrao = valorPadraoDoCampo(v, linha.value);
+                  mudar(i, {
+                    field: v,
+                    op: campos.find((c) => c.value === v)?.op ?? "eq",
+                    ...(padrao === null ? {} : { value: padrao }),
+                  });
+                }}
               >
                 <SelectTrigger aria-label={t("Campo")}>
                   <SelectValue placeholder={t("Campo")} />
@@ -354,14 +446,19 @@ export function PainelDasCondicoes({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {(Object.keys(OP_LABELS) as Op[]).map((op) => (
-                    <SelectItem key={op} value={op}>
-                      {t(curado?.lista && op === "contains" ? "tem a tag" : OP_LABELS[op])}
-                    </SelectItem>
-                  ))}
+                  {(Object.keys(OP_LABELS) as Op[])
+                    .filter((op) => operadorCabeNoCampo(op, linha.field))
+                    .map((op) => (
+                      <SelectItem key={op} value={op}>
+                        {t(curado?.lista && op === "contains" ? "tem a tag" : OP_LABELS[op])}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
-              {curado?.kind === "stage" && !avancado ? (
+              {/* `esta vazio`/`esta preenchido` perguntam pelo CAMPO, não por um
+                  texto: sem valor a pedir, o campo de valor não é desenhado — a
+                  mesma decisão do formulário em `RuleEditor` (#2727). */}
+              {OPERADORES_SEM_VALOR.has(linha.op) ? null : curado?.kind === "stage" && !avancado ? (
                 <Select value={linha.value} onValueChange={(v) => mudar(i, { value: v })}>
                   <SelectTrigger className="flex-1" aria-label={t("Etapa")}>
                     <SelectValue placeholder={t("Etapa")} />
@@ -370,6 +467,25 @@ export function PainelDasCondicoes({
                     {etapas.map((s) => (
                       <SelectItem key={s.id} value={s.id}>
                         {s.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : curado?.kind === "sim_nao" && !avancado ? (
+                <ValorDaCondicaoDoContato
+                  campo={linha.field}
+                  valor={linha.value}
+                  onChange={(v) => mudar(i, { value: v })}
+                />
+              ) : linha.op === "campo_alterado" ? (
+                <Select value={linha.value} onValueChange={(v) => mudar(i, { value: v })}>
+                  <SelectTrigger className="flex-1" aria-label={t("Campo do negócio")}>
+                    <SelectValue placeholder={t("Escolha o campo")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.keys(CAMPOS_ALTERAVEIS_DO_NEGOCIO).map((nome) => (
+                      <SelectItem key={nome} value={nome}>
+                        {t(rotuloDoCampoAlterado(nome))}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -404,7 +520,7 @@ export function PainelDasCondicoes({
         <Plus size={14} aria-hidden /> {t("Adicionar condição")}
       </Button>
       <p className="text-xs text-text-muted">
-        {t("Linhas sem campo ou sem valor são descartadas ao salvar, como no editor em lista. No máximo 10.")}
+        {t("Linhas sem campo, ou sem valor quando o operador pede um, são descartadas ao salvar. No máximo 10.")}
       </p>
     </div>
   );
@@ -525,10 +641,17 @@ export function ResumoDaAutomacao({
   tituloDaAcao: (acao: AcaoDaRegra) => string;
 }) {
   const t = useT();
-  const condicoes =
-    percurso.condicoes?.data.kind === "condicoes"
-      ? percurso.condicoes.data.linhas.filter((l) => l.field.trim() && l.value.trim()).length
-      : 0;
+  const caixaDeCondicoes = percurso.condicoes?.data.kind === "condicoes" ? percurso.condicoes.data : null;
+  // A contagem tem de espelhar o que salva: `is_empty`/`is_not_empty` não pedem
+  // valor (contá-los por `value.trim()` devolvia 0 para uma regra que tem
+  // condição), e um grupo preservado conta as folhas dele.
+  const condicoes = caixaDeCondicoes
+    ? caixaDeCondicoes.grupoPreservado
+      ? contarCondicoes(caixaDeCondicoes.grupoPreservado)
+      : caixaDeCondicoes.linhas.filter((l) => l.field.trim() && (OPERADORES_SEM_VALOR.has(l.op) || l.value.trim()))
+          .length
+    : 0;
+  const emGrupo = Boolean(caixaDeCondicoes?.grupoPreservado);
   return (
     <div className="space-y-4">
       <h2 className="text-base font-semibold text-text">{t("Como esta automação roda")}</h2>
@@ -543,7 +666,9 @@ export function ResumoDaAutomacao({
           <dd className="text-text">
             {condicoes === 0
               ? t("Sem condições: roda em todo evento.")
-              : `${condicoes} ${condicoes === 1 ? t("condição") : t("condições")}, ${t("todas precisam valer")}`}
+              : emGrupo
+                ? `${condicoes} ${condicoes === 1 ? t("condição") : t("condições")}, ${t("definidas por um grupo que este desenho não edita")}`
+                : `${condicoes} ${condicoes === 1 ? t("condição") : t("condições")}, ${t("todas precisam valer")}`}
           </dd>
         </div>
         <div>

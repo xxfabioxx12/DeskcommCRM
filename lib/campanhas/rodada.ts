@@ -38,17 +38,30 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
-import { decidePacing, dayStartInTz } from "@/lib/agent-engine/pacing/engine";
-import { loadChannelKnobs, loadPacingState, recordSend } from "@/lib/agent-engine/pacing/store";
+import { dayStartInTz } from "@/lib/agent-engine/pacing/engine";
+import { loadChannelKnobs, recordSend } from "@/lib/agent-engine/pacing/store";
 import { beginServiceAtOrigin } from "@/lib/atendimento/origem";
+import { linhaDoEspelho } from "@/lib/channels/linha-do-espelho";
 import { logger } from "@/lib/logger";
 import { OrgNaoOperanteError, STATUS_OPERANTE, ehOperante, statusDaOrgEmbutida } from "@/lib/organizacao/operante";
 
 import { motivoParaExcluir, recusouMarketing, statusDaSaida } from "./elegibilidade";
+import { COLUNAS_DO_MODELO, type LinhaDoModelo } from "./conferir-template";
+import {
+  falhaDoEnvioParaACampanha,
+  montarEnvioDoTemplate,
+  pausarACampanha,
+  type EnvioDoTemplate,
+} from "./envio-por-template";
 import { hashDoEndereco } from "./exclusoes";
 import { renderizar } from "./renderizador";
 import { escolherNumero, poolDaCampanha, type NumeroDisponivel } from "./rodizio";
+import { lerNumero, type KnobsDoNumero } from "./numero-disponivel";
 import { podeMandarAgora, proximaTentativa, type RitmoDaCampanha } from "./ritmo";
+import {
+  lerValoresPreparados,
+  limparMapaDeSlots,
+} from "./template-da-campanha";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { TEXTO_DA_EXCLUSAO } from "./tipos";
 
@@ -73,7 +86,61 @@ const VAZIA: ResultadoDaRodada = {
 };
 
 /** Teto de números atendidos por rodada — a rodada é de um minuto, não de um dia. */
-const NUMEROS_POR_RODADA = 10;
+export const NUMEROS_POR_RODADA = 10;
+
+/**
+ * Campanhas por PÁGINA da varredura — o mesmo 3× o teto de números que a janela
+ * única lia de uma vez. O que muda (#4495) é que a página deixou de ser a
+ * varredura inteira: quem não ocupa número não pode consumir a vez de quem vem
+ * depois.
+ */
+export const CAMPANHAS_POR_PAGINA = NUMEROS_POR_RODADA * 3;
+
+/**
+ * Orçamento de varredura: páginas lidas por rodada, no máximo, quando as
+ * anteriores não preenchem o teto de números. Cada campanha lida custa as
+ * leituras dela (ritmo, fila) — sem este teto, uma instalação com centenas de
+ * campanhas paradas no próprio ritmo transformaria o tique de um minuto numa
+ * varredura sem fim, e o custo cairia justamente em quem tem fila grande.
+ *
+ * 10 × 30 = 300 campanhas por tique. Saúde normal nem chega à segunda página
+ * (a primeira preenche os 10 números e a rodada sai); quem chega ao teto ganha
+ * `varredura:orcamento` no detalhe, para o operador saber que a fila foi lida
+ * até o limite — e não que acabou.
+ */
+export const PAGINAS_POR_RODADA = 10;
+
+/**
+ * O CURSOR ENTRE TIQUES (#4495, a segunda metade).
+ *
+ * O orçamento de páginas é o custo máximo de UM tique; sem memória, ele também
+ * é o fim da fila para quem está depois dele: a varredura recomeçava sempre na
+ * campanha mais antiga, então a 301ª (com 300 paradas no próprio ritmo) não era
+ * lida em tique nenhum — o mesmo defeito da janela de 30, só 10× mais longe.
+ *
+ * Quem para no orçamento grava aqui o cursor `(started_at, id)` da última linha
+ * lida, e o tique seguinte continua dali. Quem para por qualquer outro motivo —
+ * fim da lista (página vazia), teto de números preenchido — APAGA o cursor, e o
+ * tique seguinte volta a começar pela mais antiga: a antiguidade manda sempre
+ * que há número para atender, e a rotação só existe enquanto a janela inteira
+ * está parada no ritmo dela. A volta completa em `ceil(campanhas / 300)` tiques.
+ *
+ * A tabela é a `watchdog_cursors` — cursor durável de plataforma, par
+ * (`timestamptz`, `uuid`), RLS sem policy (só service role), que este repo já
+ * tem e nenhum TS consumia. Duas colunas de cursor não pagam uma tabela nova; a
+ * chave `consumer` é que separa quem escreve. Falha de leitura ou de escrita é
+ * ABERTA: a varredura recomeça pela mais antiga (o comportamento anterior) em
+ * vez de a rodada inteira cair.
+ */
+const CONSUMIDOR_DO_CURSOR = "campanha:rodada";
+/** `epoch` + uuid zero = "começa do início": é o default da tabela e o que se grava ao fechar a volta. */
+const CURSOR_DO_COMECO = "1970-01-01T00:00:00.000Z";
+const ID_DO_COMECO = "00000000-0000-0000-0000-000000000000";
+
+interface CursorDaVarredura {
+  startedAt: string;
+  id: string;
+}
 
 /** Teto de agendadas promovidas por rodada: a sobra vira `running` no minuto seguinte. */
 const PROMOVIDAS_POR_RODADA = 100;
@@ -86,16 +153,28 @@ interface CampanhaRow {
   name: string;
   message_body: string | null;
   content_version: number;
+  /** Migration 9001: `template` manda a definição aprovada em vez do texto. */
+  message_mode: string;
+  template_name: string | null;
+  template_language: string | null;
+  template_contract_hash: string | null;
+  template_slot_map: unknown;
   intervalo_segundos: number | null;
   janela_inicio_hora: number | null;
   janela_fim_hora: number | null;
   teto_diario: number | null;
   teto_horario: number | null;
+  /** Início (ou última retomada): o disjuntor de falhas seguidas só conta daqui em diante. */
+  started_at: string | null;
 }
 
 const COLUNAS_DA_CAMPANHA =
   "id, organization_id, channel_session_id, name, message_body, content_version, " +
-  "intervalo_segundos, janela_inicio_hora, janela_fim_hora, teto_diario, teto_horario";
+  "message_mode, template_name, template_language, template_contract_hash, template_slot_map, " +
+  "intervalo_segundos, janela_inicio_hora, janela_fim_hora, teto_diario, teto_horario, started_at";
+
+/** Falhas seguidas que pausam a campanha num número que exige template. */
+export const FALHAS_SEGUIDAS_QUE_PAUSAM = 5;
 
 /**
  * O status da organização embutido com `!inner` no `select`, e filtrado na
@@ -106,6 +185,49 @@ const COLUNAS_DA_CAMPANHA =
  * teto e corta em `max_rows` sem aviso (issue #2015).
  */
 const COLUNAS_DA_CAMPANHA_COM_EMBED = `${COLUNAS_DA_CAMPANHA}, organizations:organization_id!inner(status)`;
+
+/** De onde a varredura deste tique começa. `null` = da campanha mais antiga. */
+async function lerCursorDaVarredura(admin: SupabaseClient): Promise<CursorDaVarredura | null> {
+  const { data, error } = await admin
+    .from("watchdog_cursors")
+    .select("last_created_at, last_event_id")
+    .eq("consumer", CONSUMIDOR_DO_CURSOR)
+    .maybeSingle();
+  if (error) {
+    logger.warn("[campanha] cursor da varredura não pôde ser lido; varrendo desde a mais antiga", {
+      motivo: error.message,
+    });
+    return null;
+  }
+  const linha = data as { last_created_at?: string | null; last_event_id?: string | null } | null;
+  if (!linha?.last_created_at || !linha.last_event_id) return null;
+  // `epoch` é o "começa do início": default da coluna e o que se grava ao fechar
+  // a volta. Comparar por data, e não por string: o PostgREST devolve o fuso
+  // como `+00:00` e o default do schema pode vir sem o `.000`.
+  if (new Date(linha.last_created_at).getTime() <= 0) return null;
+  return { startedAt: linha.last_created_at, id: linha.last_event_id };
+}
+
+/** Grava (ou apaga, com `null`) o cursor entre tiques. Nunca lança: é memória, não efeito. */
+async function gravarCursorDaVarredura(
+  admin: SupabaseClient,
+  cursor: CursorDaVarredura | null,
+): Promise<void> {
+  const { error } = await admin.from("watchdog_cursors").upsert(
+    {
+      consumer: CONSUMIDOR_DO_CURSOR,
+      last_created_at: cursor?.startedAt ?? CURSOR_DO_COMECO,
+      last_event_id: cursor?.id ?? ID_DO_COMECO,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "consumer" },
+  );
+  if (error) {
+    logger.warn("[campanha] cursor da varredura não pôde ser gravado; o próximo tique recomeça do início", {
+      motivo: error.message,
+    });
+  }
+}
 
 export async function rodarUmaRodadaDeCampanha(
   admin: SupabaseClient,
@@ -120,62 +242,147 @@ export async function rodarUmaRodadaDeCampanha(
   // fila é `fn_suspender_organizacao`, que falha os jobs pendentes.
   const promovidas = await promoverAgendadas(admin, agora);
 
-  const { data: campanhas, error: falhaDaBusca } = await admin
-    .from("campaigns")
-    .select(COLUNAS_DA_CAMPANHA_COM_EMBED)
-    .eq("status", "running")
-    .eq("organizations.status", STATUS_OPERANTE)
-    .order("started_at", { ascending: true })
-    .limit(NUMEROS_POR_RODADA * 3);
-  if (falhaDaBusca) {
-    // Sem isto a falha virava "nada_a_fazer": indistinguível de rodada vazia.
-    logger.warn("[campanha] busca das campanhas em andamento falhou", { motivo: falhaDaBusca.message });
-    return { ...VAZIA, promovidas, detalhe: "busca_falhou" };
-  }
-  // `as unknown as`: a lista de colunas é montada por concatenação, e o tipo
-  // gerado do PostgREST só sabe inferir literal — o mesmo caminho que
-  // `lib/asaas/*` já usa para tabela que ainda não está em `database.types.ts`.
-  // ponytail: o `ehOperante` aqui é cinto — o banco já cortou; ele só segura o
-  // dia em que alguém tirar o filtro da consulta.
-  const emExecucao = ((campanhas ?? []) as unknown as Array<
-    CampanhaRow & { organizations?: { status?: string | null } | Array<{ status?: string | null }> | null }
-  >).filter((campanha) => ehOperante(statusDaOrgEmbutida(campanha.organizations)));
-  if (emExecucao.length === 0) {
-    return promovidas > 0 ? { ...VAZIA, promovidas, detalhe: "promovidas" } : VAZIA;
-  }
-
-  const numerosAtendidos = new Set<string>();
+  // ─── A varredura: PÁGINAS, e não uma janela única (#4495) ───
+  //
+  // A leitura era `order(started_at asc).limit(30)`, e a decisão `ocupaONumero`
+  // vinha DEPOIS do corte. Trinta campanhas paradas no próprio ritmo (teto
+  // diário, janela, intervalo) não ocupam número nenhum — mas consumiam a janela
+  // inteira, e a 31ª não era lida em tique nenhum: nem para despachar, nem para
+  // revalidar o contato que pediu bloqueio.
+  //
+  // A paginação é por CURSOR `(started_at, id)`, não por `range()`: campanha que
+  // conclui ou é pausada sai do conjunto DURANTE a varredura, e um deslocamento
+  // numérico deslizaria e pularia a seguinte. A varredura para em três lugares:
+  // no teto de números (o anti-ban de sempre), na página VAZIA (fim provado) e
+  // no orçamento de páginas, que é o custo máximo por tique.
+  //
+  // O cursor atravessa o TIQUE (ver `CONSUMIDOR_DO_CURSOR`): quem para no
+  // orçamento deixa gravado onde parou, e o tique seguinte continua dali em vez
+  // de reler as mesmas 300 e nunca chegar à 301ª. Quem para no teto de números
+  // ou no fim da lista apaga o cursor, e a próxima rodada volta a começar pela
+  // campanha mais antiga.
+  const principaisOcupados = new Set<string>();
   const total: ResultadoDaRodada = { ...VAZIA, promovidas, detalhe: "" };
   const detalhes: string[] = [];
 
-  for (const campanha of emExecucao) {
-    // Um número, uma mensagem por rodada. A campanha mais antiga do número ganha
-    // a vez: sem isso, a última criada poderia monopolizar a fila para sempre.
-    if (numerosAtendidos.has(campanha.channel_session_id)) continue;
-    if (numerosAtendidos.size >= NUMEROS_POR_RODADA) break;
+  const cursorLido = await lerCursorDaVarredura(admin);
+  let cursor: CursorDaVarredura | null = cursorLido;
+  let paginas = 0;
+  let ultimaPaginaCheia = false;
 
-    try {
-      const r = await rodarUmaCampanha(admin, campanha, agora);
-      total.enviadas += r.enviadas;
-      total.pulados += r.pulados;
-      total.concluidas += r.concluidas;
-      detalhes.push(`${campanha.id.slice(0, 8)}:${r.detalhe}`);
-      // Só ocupa o número quem de fato enviou: campanha parada por ritmo não
-      // pode impedir a campanha seguinte do mesmo número de ser avaliada... mas
-      // se o veto foi do CANAL, a seguinte receberia o mesmo veto. Ocupar em
-      // ambos os casos economiza a consulta; o que não pode é ocupar quando a
-      // campanha só CONCLUIU (aí o número está livre de verdade).
-      if (r.concluidas === 0) numerosAtendidos.add(campanha.channel_session_id);
-    } catch (err) {
-      const motivo = err instanceof Error ? err.message : String(err);
-      logger.warn("[campanha] rodada falhou", { campanha: campanha.id, motivo });
-      detalhes.push(`${campanha.id.slice(0, 8)}:erro`);
-      numerosAtendidos.add(campanha.channel_session_id);
+  while (paginas < PAGINAS_POR_RODADA) {
+    let consulta = admin
+      .from("campaigns")
+      .select(COLUNAS_DA_CAMPANHA_COM_EMBED)
+      .eq("status", "running")
+      .eq("organizations.status", STATUS_OPERANTE)
+      .order("started_at", { ascending: true })
+      .order("id", { ascending: true })
+      .limit(CAMPANHAS_POR_PAGINA);
+    if (cursor) {
+      consulta = consulta.or(
+        `started_at.gt.${cursor.startedAt},and(started_at.eq.${cursor.startedAt},id.gt.${cursor.id})`,
+      );
     }
+    const { data: campanhas, error: falhaDaBusca } = await consulta;
+    if (falhaDaBusca) {
+      // Sem isto a falha virava "nada_a_fazer": indistinguível de rodada vazia.
+      logger.warn("[campanha] busca das campanhas em andamento falhou", { motivo: falhaDaBusca.message });
+      return { ...VAZIA, promovidas, detalhe: "busca_falhou" };
+    }
+    // `as unknown as`: a lista de colunas é montada por concatenação, e o tipo
+    // gerado do PostgREST só sabe inferir literal — o mesmo caminho que
+    // `lib/asaas/*` já usa para tabela que ainda não está em `database.types.ts`.
+    const linhas = (campanhas ?? []) as unknown as Array<
+      CampanhaRow & { organizations?: { status?: string | null } | Array<{ status?: string | null }> | null }
+    >;
+    if (linhas.length === 0) {
+      // Fim provado por página VAZIA — o mesmo critério de `lib/supabase/pagina.ts`.
+      // Página curta não serve: se `max_rows` for menor que a página, ela vem
+      // curta sem que a tabela tenha acabado.
+      ultimaPaginaCheia = false;
+      break;
+    }
+    paginas += 1;
+    ultimaPaginaCheia = linhas.length === CAMPANHAS_POR_PAGINA;
+    const ultimaDaLinha = linhas[linhas.length - 1];
+    cursor = ultimaDaLinha?.started_at ? { startedAt: ultimaDaLinha.started_at, id: ultimaDaLinha.id } : null;
+
+    // ponytail: o `ehOperante` aqui é cinto — o banco já cortou; ele só segura o
+    // dia em que alguém tirar o filtro da consulta.
+    const emExecucao = linhas.filter((campanha) => ehOperante(statusDaOrgEmbutida(campanha.organizations)));
+
+    for (const campanha of emExecucao) {
+      // Um número, uma mensagem por rodada. A campanha mais antiga do número ganha
+      // a vez: sem isso, a última criada poderia monopolizar a fila para sempre.
+      if (principaisOcupados.has(campanha.channel_session_id)) continue;
+      if (principaisOcupados.size >= NUMEROS_POR_RODADA) break;
+
+      try {
+        const r = await rodarUmaCampanha(admin, campanha, agora);
+        total.enviadas += r.enviadas;
+        total.pulados += r.pulados;
+        total.concluidas += r.concluidas;
+        detalhes.push(`${campanha.id.slice(0, 8)}:${r.detalhe}`);
+        // Só ocupa o número quem usou o número ou foi vetado pelo CANAL (#3102,
+        // `ocupaONumero`): parar no próprio ritmo ou concluir deixa o número livre.
+        if (ocupaONumero(r)) principaisOcupados.add(campanha.channel_session_id);
+      } catch (err) {
+        const motivo = err instanceof Error ? err.message : String(err);
+        logger.warn("[campanha] rodada falhou", { campanha: campanha.id, motivo });
+        detalhes.push(`${campanha.id.slice(0, 8)}:erro`);
+        principaisOcupados.add(campanha.channel_session_id);
+      }
+    }
+
+    if (principaisOcupados.size >= NUMEROS_POR_RODADA) break;
+    // Sem `started_at` não há chave para a página seguinte: o cursor não anda, e
+    // insistir devolveria as mesmas linhas.
+    if (!cursor) break;
   }
 
-  total.detalhe = detalhes.join(" ") || "nada_a_fazer";
+  const parouNoOrcamento =
+    paginas >= PAGINAS_POR_RODADA && ultimaPaginaCheia && principaisOcupados.size < NUMEROS_POR_RODADA;
+
+  if (parouNoOrcamento) {
+    // A fila foi lida até o limite do tique, e não até o fim. Dizer isso é o que
+    // impede o operador de concluir que não havia mais campanha.
+    logger.warn("[campanha] varredura parou no orçamento de páginas", { paginas, campanhas: detalhes.length });
+    detalhes.push("varredura:orcamento");
+  }
+
+  // Quem continua de onde parou: só quem parou no orçamento E tem chave para a
+  // próxima página. Qualquer outro desfecho (teto de números, fim da lista,
+  // última linha sem `started_at`) devolve a varredura à campanha mais antiga no
+  // tique seguinte — é assim que a antiguidade volta a mandar.
+  const proximoCursor = parouNoOrcamento && cursor ? cursor : null;
+  if (proximoCursor?.startedAt !== cursorLido?.startedAt || proximoCursor?.id !== cursorLido?.id) {
+    await gravarCursorDaVarredura(admin, proximoCursor);
+  }
+
+  total.detalhe = detalhes.join(" ") || (promovidas > 0 ? "promovidas" : "nada_a_fazer");
   return total;
+}
+
+/**
+ * A campanha avaliada nesta rodada ocupa o número para as seguintes?
+ *
+ * Só ocupa quem usou o número (enviou, ou pulou um destinatário no caminho) ou
+ * foi vetado pelo CANAL: a seguinte do mesmo número receberia o mesmo veto, e
+ * ocupar economiza a consulta. NÃO ocupa quem parou pelo ritmo DELA (`ritmo:*`
+ * — teto diário/horário, intervalo, janela da campanha), quem só está
+ * esperando `next_attempt_at` (`aguardando`) nem quem concluiu: nesses casos o
+ * número segue livre, e a campanha seguinte tem o próprio ritmo.
+ *
+ * Até a #3102 a regra era `concluidas === 0`, e o comentário já dizia isto:
+ * a campanha mais antiga batia o teto do dia às 9h37 e a seguinte do mesmo
+ * número não mandava nada até a primeira terminar — dias depois.
+ */
+export function ocupaONumero(r: { concluidas: number; detalhe: string }): boolean {
+  if (r.concluidas > 0) return false;
+  if (r.detalhe.startsWith("ritmo:")) return false;
+  if (r.detalhe === "aguardando" || r.detalhe === "ja_concluida") return false;
+  return true;
 }
 
 /**
@@ -223,6 +430,8 @@ interface DestinatarioRow {
   contact_id: string;
   recipient_address: string | null;
   rendered_body: string | null;
+  /** `{ nome, template_values }` em template (preparação); `{ nome }` em texto. */
+  variables: unknown;
   contacts: {
     id: string;
     name: string | null;
@@ -243,7 +452,7 @@ async function rodarUmaCampanha(
   const { data: fila } = await admin
     .from("campaign_recipients")
     .select(
-      "id, contact_id, recipient_address, rendered_body, " +
+      "id, contact_id, recipient_address, rendered_body, variables, " +
         "contacts(id, name, display_name, phone_number, is_blocked, is_personal, is_anonymized, consent)",
     )
     .eq("campaign_id", campanha.id)
@@ -370,45 +579,25 @@ async function rodarUmaCampanha(
 
   // ─── O RODÍZIO: qual número fala com esta pessoa ───
   const disponiveis: NumeroDisponivel[] = [];
-  const knobsPorNumero = new Map<string, Awaited<ReturnType<typeof loadChannelKnobs>>>();
+  const knobsPorNumero = new Map<string, KnobsDoNumero>();
+  const exigeTemplatePorNumero = new Map<string, boolean>();
   for (const sessionId of numeros) {
-    const k =
-      sessionId === campanha.channel_session_id
-        ? knobsDoPrincipal
-        : await loadChannelKnobs(pool, campanha.organization_id, sessionId);
-    knobsPorNumero.set(sessionId, k);
-
-    const { data: canal } = await admin
-      .from("channel_sessions")
-      .select("daily_message_limit, status")
-      .eq("organization_id", campanha.organization_id)
-      .eq("id", sessionId)
-      .maybeSingle();
-    const linha = canal as { daily_message_limit: number | null; status: string } | null;
+    // A leitura de cada número mora em `numero-disponivel.ts`: a entrada das
+    // vendas (Parte 2 §4) escolhe o número de saída pela MESMA régua.
+    const leitura = await lerNumero(
+      admin,
+      pool,
+      campanha.organization_id,
+      sessionId,
+      agora,
+      sessionId === campanha.channel_session_id ? knobsDoPrincipal : undefined,
+    );
     // Número fora do ar não entra no rodízio: mandar por ele seria fabricar uma
     // mensagem presa em `sending` que o recovery depois marca como falha.
-    if (!linha || linha.status !== "WORKING") continue;
-
-    const estadoDoNumero = await loadPacingState(pool, campanha.organization_id, sessionId, {
-      now: agora,
-      timezone: k.knobs.timezone,
-      numberActivatedAt: k.numberActivatedAt,
-    });
-    const decisao = decidePacing({
-      now: agora,
-      knobs: k.knobs,
-      state: estadoDoNumero,
-      crmDailyLimit: linha.daily_message_limit ?? null,
-    });
-    disponiveis.push({
-      sessionId,
-      folgaDoDia:
-        linha.daily_message_limit === null
-          ? null
-          : Math.max(0, linha.daily_message_limit - estadoDoNumero.sentToday),
-      podeAgora: decisao.allow,
-      ultimoEnvio: estadoDoNumero.lastSentAt,
-    });
+    if (!leitura) continue;
+    knobsPorNumero.set(sessionId, leitura.knobs);
+    exigeTemplatePorNumero.set(sessionId, leitura.exigeTemplate);
+    disponiveis.push(leitura.numero);
   }
 
   const escolha = escolherNumero(disponiveis, await numeroDoHistorico(admin, campanha, alvo.contact_id));
@@ -419,6 +608,67 @@ async function rodarUmaCampanha(
   }
   const sessionEscolhida = escolha.sessionId;
   const knobs = knobsPorNumero.get(sessionEscolhida)!.knobs;
+
+  // ─── O disjuntor, num número que exige template ───
+  // Template, ou texto de campanha antiga num número oficial. Cinco falhas
+  // seguidas (síncronas ou vindas do webhook, qualquer código) dizem que o
+  // problema não é da pessoa: seguir só queima a lista. Número por QR Code não
+  // entra — o comportamento dele não muda.
+  const exigeTemplate = campanha.message_mode === "template" || exigeTemplatePorNumero.get(sessionEscolhida) === true;
+  if (exigeTemplate && (await ultimasFalharamTodas(admin, campanha))) {
+    await pausarACampanha(
+      admin,
+      campanha.id,
+      "falhas_seguidas",
+      `as últimas ${FALHAS_SEGUIDAS_QUE_PAUSAM} mensagens falharam`,
+      agora,
+    );
+    return { enviadas: 0, pulados: 0, concluidas: 0, detalhe: "pausada:falhas_seguidas" };
+  }
+
+  // ─── Campanha por template: a definição é conferida ANTES de reservar ───
+  // No número ESCOLHIDO (cada número do rodízio tem o seu espelho). Sumiu,
+  // pausou ou mudou: a campanha pausa com o motivo e a pessoa fica na fila — sem
+  // isso cada rodada queimaria mais um destinatário com a mesma recusa.
+  let envioDoTemplate: EnvioDoTemplate | null = null;
+  if (campanha.message_mode === "template") {
+    const { data: modelo, error: erroDoModelo } = await linhaDoEspelho<LinhaDoModelo>(admin, COLUNAS_DO_MODELO, {
+      organizationId: campanha.organization_id,
+      name: campanha.template_name ?? "",
+      language: campanha.template_language ?? "",
+      channelSessionId: sessionEscolhida,
+    });
+    if (erroDoModelo) {
+      return { enviadas: 0, pulados: 0, concluidas: 0, detalhe: `erro_no_modelo:${erroDoModelo.message.slice(0, 40)}` };
+    }
+    const montagem = montarEnvioDoTemplate({
+      campanha: {
+        templateName: campanha.template_name,
+        templateLanguage: campanha.template_language,
+        templateContractHash: campanha.template_contract_hash,
+        slotMap: limparMapaDeSlots(campanha.template_slot_map),
+      },
+      linha: modelo,
+      preparados: lerValoresPreparados(alvo.variables),
+      nome: nomeDoContato(contato),
+      quando: { agora, fuso: knobs.timezone },
+    });
+    if (!montagem.ok && montagem.alcance === "pessoa") {
+      // Só ESTA pessoa ficou sem valor: ela falha sem ser reservada (nada sai com
+      // o slot em branco) e sai da fila — a campanha segue com a próxima.
+      await admin
+        .from("campaign_recipients")
+        .update({ status: "failed", last_error_code: "valores_faltando", last_error_detail: montagem.detalhe })
+        .eq("id", alvo.id)
+        .eq("status", "pending");
+      return { enviadas: 0, pulados: 0, concluidas: 0, detalhe: "falhou:valores_faltando" };
+    }
+    if (!montagem.ok) {
+      await pausarACampanha(admin, campanha.id, montagem.falha, montagem.detalhe, agora);
+      return { enviadas: 0, pulados: 0, concluidas: 0, detalhe: `pausada:${montagem.falha}` };
+    }
+    envioDoTemplate = montagem.envio;
+  }
 
   // ─── O envio ───
   // O id da mensagem nasce AQUI, e não do insert: com ele, o destinatário já
@@ -441,11 +691,20 @@ async function rodarUmaCampanha(
   // preparação produziria "bom dia" numa mensagem enviada à tarde — foi o
   // defeito do primeiro piloto.
   const congelado = alvo.rendered_body ?? campanha.message_body ?? "";
-  const corpo = renderizar(
-    congelado,
-    { nome: nomeDoContato(contato) },
-    { agora, fuso: knobs.timezone },
-  ).texto;
+  const corpo = envioDoTemplate
+    ? envioDoTemplate.body
+    : renderizar(
+        congelado,
+        { nome: nomeDoContato(contato) },
+        { agora, fuso: knobs.timezone },
+      ).texto;
+  const metadata = {
+    source: "campaign",
+    campaign_id: campanha.id,
+    campaign_recipient_id: alvo.id,
+    campaign_content_version: campanha.content_version,
+    idempotency_key: `campaign:${alvo.id}`,
+  };
 
   try {
     const boundary = await beginServiceAtOrigin(
@@ -469,18 +728,11 @@ async function rodarUmaCampanha(
         requestId: `campaign:${campanha.id}:${alvo.id}`,
         internalMessageId: messageId,
       } as Parameters<typeof sendMessageHandler>[1],
-      {
-        conversation_id: boundary.conversation_id,
-        type: "text",
-        body: corpo,
-        metadata: {
-          source: "campaign",
-          campaign_id: campanha.id,
-          campaign_recipient_id: alvo.id,
-          campaign_content_version: campanha.content_version,
-          idempotency_key: `campaign:${alvo.id}`,
-        },
-      } as Parameters<typeof sendMessageHandler>[2],
+      (envioDoTemplate
+        ? { conversation_id: boundary.conversation_id, ...envioDoTemplate, metadata }
+        : { conversation_id: boundary.conversation_id, type: "text", body: corpo, metadata }) as Parameters<
+        typeof sendMessageHandler
+      >[2],
     );
     await recordSend(pool, campanha.organization_id, sessionEscolhida, agora);
 
@@ -488,6 +740,33 @@ async function rodarUmaCampanha(
     // handler marca `failed` e devolve normalmente.
     const status = (mensagem as { status?: string }).status;
     const falhou = status === "failed";
+    const erroDoEnvio = mensagem as { error_code?: string | null; error_message?: string | null };
+
+    // Template parado ou desatualizado, ou a CONTA do número com problema
+    // (bloqueio, pagamento, spam — também no texto de campanha antiga num número
+    // oficial), na hora do envio: a campanha PAUSA, em vez de falhar cliente por
+    // cliente pelo resto da lista — e esta pessoa VOLTA à fila (`pending`),
+    // porque o problema não era dela: na retomada ela recebe. A mensagem que
+    // falhou não fica ligada a ela; o reenvio nasce com outro id.
+    const falhaDaCampanha =
+      falhou && exigeTemplate
+        ? falhaDoEnvioParaACampanha(erroDoEnvio.error_code ?? null, erroDoEnvio.error_message ?? null)
+        : null;
+    if (falhaDaCampanha) {
+      await pausarACampanha(admin, campanha.id, falhaDaCampanha, erroDoEnvio.error_message ?? falhaDaCampanha, agora);
+      await admin
+        .from("campaign_recipients")
+        .update({
+          status: "pending",
+          sending_at: null,
+          last_error_code: "send_failed",
+          last_error_detail: (erroDoEnvio.error_message ?? falhaDaCampanha).slice(0, 300),
+        })
+        .eq("id", alvo.id)
+        .eq("status", "sending");
+      return { enviadas: 0, pulados: 0, concluidas: 0, detalhe: `pausada:${falhaDaCampanha}` };
+    }
+
     // `.eq("status","sending")` porque o ack pode ter chegado ANTES desta linha:
     // o trigger já teria avançado o destinatário para `sent`/`delivered`, e
     // escrever por cima o rebaixaria.
@@ -497,6 +776,9 @@ async function rodarUmaCampanha(
         status: falhou ? "failed" : "sent",
         sent_at: falhou ? null : agora.toISOString(),
         last_error_code: falhou ? "send_failed" : null,
+        // O texto da recusa vai junto: é dele que a tela tira o código da
+        // plataforma e a frase em português (`erros-para-operador.ts`).
+        last_error_detail: falhou && erroDoEnvio.error_message ? erroDoEnvio.error_message.slice(0, 300) : null,
         // O `message_id` só pode ser gravado AQUI: a coluna tem FK para
         // `messages`, e a linha da mensagem só existe depois do envio. Gravá-lo
         // antes — que era o desenho original, para o trigger de ack sempre achar
@@ -591,6 +873,32 @@ export async function reservarDestinatario(
     return { reservado: false, erro: error.message };
   }
   return { reservado: (data ?? []).length > 0 };
+}
+
+/**
+ * As últimas `FALHAS_SEGUIDAS_QUE_PAUSAM` pessoas processadas (pela hora da
+ * reserva) desde o início ou a última retomada falharam TODAS? Uma consulta só,
+ * no índice `idx_campaign_recipients_ultimos_processados`. Quem nunca foi
+ * reservado (valor que faltava só para a pessoa) não conta: não houve envio.
+ * Erro do banco não pausa: na dúvida, segue.
+ */
+async function ultimasFalharamTodas(admin: SupabaseClient, campanha: CampanhaRow): Promise<boolean> {
+  let consulta = admin
+    .from("campaign_recipients")
+    .select("status")
+    .eq("organization_id", campanha.organization_id)
+    .eq("campaign_id", campanha.id)
+    .not("sending_at", "is", null);
+  if (campanha.started_at) consulta = consulta.gte("sending_at", campanha.started_at);
+  const { data, error } = await consulta
+    .order("sending_at", { ascending: false })
+    .limit(FALHAS_SEGUIDAS_QUE_PAUSAM);
+  if (error) {
+    logger.warn("[campanha] conferência de falhas seguidas falhou", { campanha: campanha.id, motivo: error.message });
+    return false;
+  }
+  const ultimas = (data ?? []) as Array<{ status: string }>;
+  return ultimas.length >= FALHAS_SEGUIDAS_QUE_PAUSAM && ultimas.every((l) => l.status === "failed");
 }
 
 /**

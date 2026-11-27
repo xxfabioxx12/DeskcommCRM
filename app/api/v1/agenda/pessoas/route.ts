@@ -5,7 +5,8 @@
  * mesmo espírito de `/api/v1/team/assignable`: o Atendente precisa escolher de
  * quem é a agenda que ele está marcando, e sem a lista o filtro de pessoas
  * ficava invisível (issue 896, item 1). O que sai daqui é o mínimo irredutível
- * — id, papel e nome. Sem e-mail, sem `last_sign_in_at`.
+ * — id, papel, nome e rótulo. O rótulo usa e-mail somente se faltar nome;
+ * sem campo de e-mail separado, metadata integral ou `last_sign_in_at`.
  *
  * A RLS de `user_organizations` só mostra o próprio membership a um agent, por
  * isso o client admin com filtro EXPLÍCITO de `organization_id` vindo do cookie
@@ -14,12 +15,13 @@
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import { isServiceRoleConfigured } from "@/lib/audit";
 import { PAPEL_MINIMO_DA_LISTA } from "@/lib/agenda/lista-de-pessoas";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
+import { rotulosDosResponsaveisDaAgenda } from "@/lib/agenda/rotulos-dos-responsaveis";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
@@ -27,18 +29,22 @@ export interface PessoaDaAgenda {
   user_id: string;
   role: string;
   full_name: string | null;
+  display_label: string;
 }
 
-export async function GET(_req: NextRequest): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole(PAPEL_MINIMO_DA_LISTA, {
+  const authz = await resolveAuthDual(req, {
     requestId,
     resource: "agenda",
+    role: PAPEL_MINIMO_DA_LISTA,
+    scope: "mcp:read",
   });
   if (!authz.ok) return authz.response;
-  const orgId = authz.org.orgId; // fonte confiável (cookie validado)
+  const teto = await tetoDeEscritaDoToken(authz, "agenda_pessoas", requestId); if (teto) return teto;
+  const orgId = authz.organizationId; // fonte confiável (cookie validado ou linha do token)
 
-  const client = isServiceRoleConfigured() ? createAdminClient() : await createClient();
+  const client = isServiceRoleConfigured() ? createAdminClient() : authz.supabase;
   const { data: rows, error } = await client
     .from("user_organizations")
     .select("user_id, role")
@@ -54,21 +60,14 @@ export async function GET(_req: NextRequest): Promise<Response> {
 
   const membros = (rows ?? []) as Array<{ user_id: string; role: string }>;
 
-  if (!isServiceRoleConfigured() || membros.length === 0) {
-    const degradado: PessoaDaAgenda[] = membros.map((m) => ({ ...m, full_name: null }));
-    return ok(degradado, { requestId });
-  }
-
-  const admin = createAdminClient();
-  const pessoas: PessoaDaAgenda[] = await Promise.all(
-    membros.map(async (m) => {
-      const { data: userRes } = await admin.auth.admin.getUserById(m.user_id);
-      return {
-        ...m,
-        full_name: (userRes?.user?.user_metadata?.full_name as string | undefined) ?? null,
-      };
-    }),
+  const identidades = await rotulosDosResponsaveisDaAgenda(
+    membros.map((m) => m.user_id),
+    (texto) => traduzir(texto, authz.idioma ?? "pt-BR"),
   );
-
+  const pessoas: PessoaDaAgenda[] = membros.map((m) => ({
+    ...m,
+    full_name: identidades.get(m.user_id)!.full_name,
+    display_label: identidades.get(m.user_id)!.display_label,
+  }));
   return ok(pessoas, { requestId });
 }

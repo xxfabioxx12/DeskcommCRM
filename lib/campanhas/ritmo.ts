@@ -126,3 +126,14 @@ export function proximaTentativa(veto: VetoDeRitmo, agora: Date): Date | null {
       return new Date(ms + 30 * 60_000);
   }
 }
+
+/**
+ * O intervalo que a PLATAFORMA impõe (`minIntervalMs` da capacidade do canal; 6 s
+ * no oficial) foi cumprido por este número? É hetero-restrição (a plataforma
+ * recusa), irmã — não substituta — do intervalo da campanha e do pacing do
+ * número. `null` = o canal não impõe.
+ */
+export function intervaloDoCanalCumprido(ultimoEnvio: Date | null, minimoMs: number | null, agora: Date): boolean {
+  if (minimoMs === null || minimoMs <= 0 || !ultimoEnvio) return true;
+  return agora.getTime() - ultimoEnvio.getTime() >= minimoMs;
+}

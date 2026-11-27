@@ -174,7 +174,7 @@ const req = (method?: string, body?: unknown) =>
 /** A saída LITERAL da rota, para o registro da medição no PR. */
 async function medir(papel: Role): Promise<{ status: number; corpo: string }> {
   session(papel);
-  const res = await GET();
+  const res = await GET(req());
   return { status: res.status, corpo: await res.text() };
 }
 

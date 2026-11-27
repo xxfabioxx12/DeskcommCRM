@@ -238,7 +238,7 @@ describe("ConditionForm — a regra nasce e muda sem decidir sozinha", () => {
     const gravados = renderizar(POR_REGRA);
 
     await user.click(screen.getAllByRole("combobox", { name: "Campo" })[1]!);
-    await user.click(await screen.findByRole("option", { name: "Etiqueta do contato" }));
+    await user.click(await screen.findByRole("option", { name: "Etiqueta do card" }));
 
     expect(gravados.at(-1)!.checks[1]).toMatchObject({ id: "regra-2", field: "tag", value: "" });
   });

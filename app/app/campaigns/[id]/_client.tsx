@@ -38,7 +38,11 @@ import { useContactList } from "@/hooks/contacts/useContactList";
 import { useT } from "@/hooks/i18n/useT";
 import { ArrowBendUpLeft } from "@/lib/ui/icons";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
-import { TEXTO_DA_EXCLUSAO } from "@/lib/campanhas/tipos";
+import {
+  TEXTO_DA_EXCLUSAO,
+  TEXTO_DA_FALHA_DA_CAMPANHA,
+  ehFalhaQuePausaACampanha,
+} from "@/lib/campanhas/tipos";
 
 export function DetalheDaCampanha({ id }: { id: string }) {
   const t = useT();
@@ -87,6 +91,11 @@ export function DetalheDaCampanha({ id }: { id: string }) {
   if (c.status === "running") disponiveis.push("pausar", "cancelar");
   if (c.status === "scheduled") disponiveis.push("pausar", "cancelar");
   if (c.status === "paused") disponiveis.push("retomar", "cancelar");
+  // Cancelada com gente ainda na fila: o fechamento dos destinatários falhou
+  // depois de a campanha ser gravada. Repetir o cancelamento termina o serviço.
+  if (c.status === "cancelled" && (m?.contagem.pendentes ?? 0) + (m?.contagem.naFila ?? 0) > 0) {
+    disponiveis.push("cancelar");
+  }
   disponiveis.push("duplicar");
 
   return (
@@ -109,7 +118,10 @@ export function DetalheDaCampanha({ id }: { id: string }) {
           </div>
           {c.failure_code && (
             <p className="mt-1 text-sm text-warning-fg">
-              {t("Último problema")}: {c.failure_code}
+              {t("Último problema")}:{" "}
+              {ehFalhaQuePausaACampanha(c.failure_code)
+                ? t(TEXTO_DA_FALHA_DA_CAMPANHA[c.failure_code])
+                : c.failure_code}
             </p>
           )}
         </div>
@@ -254,10 +266,13 @@ export function DetalheDaCampanha({ id }: { id: string }) {
                 <span className="min-w-0 truncate">
                   {rotuloDoContato(d.contacts, t)}
                 </span>
-                <span className="shrink-0 text-muted-foreground">
+                <span className="shrink-0 text-right text-muted-foreground">
                   {d.eligibility_status === "excluded"
                     ? t(d.legenda_da_exclusao ?? rotuloDoMotivo(d.exclusion_reason))
                     : t(ROTULO_DO_DESTINATARIO[d.status] ?? d.status)}
+                  {d.status === "failed" && d.motivo_da_falha && (
+                    <span className="block text-xs text-warning-fg">{d.motivo_da_falha}</span>
+                  )}
                 </span>
               </div>
             ))}

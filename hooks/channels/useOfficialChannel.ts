@@ -11,11 +11,25 @@ export interface OfficialChannelState {
   hasToken: boolean;
   phoneNumberId: string | null;
   wabaId: string | null;
+  contaDeMensagensId?: string | null;
   /** Base pública da API — usada no painel "Para integrar". */
   endpoint: string | null;
   displayName: string | null;
   phoneNumber: string | null;
   status: string | null;
+  /** "Recebe, mas não tem autorização para mandar" (caminho 1): o último erro e quando. */
+  semAutorizacao?: { detalhe: string; em: string } | null;
+  /**
+   * DE ONDE veio a conexão (#4074): `embedded_signup` = janela da Meta com o app
+   * da instalação; `token_manual` = credencial colada na aba. `inferida` marca
+   * as linhas anteriores à migration 9328, que só podiam ser manuais. `null` =
+   * coluna ausente ou valor desconhecido — a tela não inventa rótulo.
+   */
+  origem?: {
+    valor: "embedded_signup" | "token_manual";
+    rotulo: string;
+    inferida: boolean;
+  } | null;
   webhook: {
     callbackUrl: string;
     verifyToken: string | null;
@@ -49,6 +63,7 @@ export interface ConnectInput {
   phone_number_id: string;
   waba_id: string;
   token: string;
+  messaging_account_id?: string;
 }
 
 export interface RegistroDoWebhook {

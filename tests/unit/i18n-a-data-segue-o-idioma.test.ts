@@ -79,6 +79,8 @@ const FORA_DE_INTERFACE: Record<string, string> = {
   "lib/email/templates/invite.ts": "e-mail: renderizado fora do React; quem recebe convite ainda não tem conta",
   "lib/lgpd/email-delivery.ts": "e-mail de LGPD: mesma fronteira do convite",
   "lib/lgpd/sla-alarm.ts": "alarme por e-mail: mesma fronteira",
+  "lib/lgpd/avisos-do-artigo-12.ts":
+    "e-mail do art. 12.º: mesma fronteira — a data segue o país do titular (BR/PT), não a interface",
 
   // ─── O PDF de LGPD é documento LEGAL, e fica em português por decisão ───
   //
@@ -88,6 +90,8 @@ const FORA_DE_INTERFACE: Record<string, string> = {
   // da interface faria um documento de conformidade mudar de forma conforme
   // quem apertou o botão.
   "lib/lgpd/pdf-renderer.tsx": "documento legal brasileiro: a data acompanha a lei, não a interface",
+  // Fork: o Painel da barbearia é nosso e só pt-BR (mesma exceção do i18n-espanhol-cobre-a-tela).
+  "lib/barbearia/dados.ts": "fork: dados do painel da barbearia, só pt-BR",
 };
 
 function arquivos(dir: string, acc: string[] = []): string[] {
@@ -142,7 +146,17 @@ function varrerDatasNoAst(): string[] {
       const fonte = ts.createSourceFile(arq, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
       const visita = (no: ts.Node): void => {
         if (ts.isStringLiteral(no) && no.text === "pt-BR") {
-          const pai = no.parent;
+          // Sobe pelo ramo de um ternário: `idioma === "es" ? "es" : "pt-BR"`
+          // também fixa o português para todo idioma que não seja o espanhol.
+          let pai = no.parent;
+          let filho: ts.Node = no;
+          while (
+            ts.isParenthesizedExpression(pai) ||
+            (ts.isConditionalExpression(pai) && pai.condition !== filho)
+          ) {
+            filho = pai;
+            pai = pai.parent;
+          }
           let ehData = false;
           if (ts.isNewExpression(pai) && /DateTimeFormat$/.test(pai.expression.getText(fonte))) {
             ehData = true;

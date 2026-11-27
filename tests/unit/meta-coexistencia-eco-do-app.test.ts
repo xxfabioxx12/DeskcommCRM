@@ -236,7 +236,13 @@ describe("ingestão do eco", () => {
       expect.objectContaining({ conversationId: "conversation-1", direction: "outbound" }),
     ]);
     expect(estado.pausas).toEqual([
-      { organizationId: "org-1", conversationId: "conversation-1", canal: "meta" },
+      {
+        organizationId: "org-1",
+        conversationId: "conversation-1",
+        canal: "meta",
+        // #534: o chamador TEM de entregar o aviso da pausa não gravada.
+        avisar: expect.any(Function),
+      },
     ]);
     expect(estado.auditorias).toEqual([
       expect.objectContaining({ action: "message.sent", organizationId: "org-1" }),
@@ -291,7 +297,9 @@ describe("a rota do webhook oficial entrega o eco à ingestão", () => {
     vi.stubEnv("META_APP_SECRET", segredo);
     const ecosIngeridos: unknown[] = [];
 
-    vi.doMock("@/lib/channels/meta/session", () => ({
+    vi.doMock("@/lib/channels/meta/session", async (orig) => ({
+  // Mantém o resto do módulo real (eventoDaSessao, campoDaContaDeMensagens).
+  ...(await orig<Record<string, unknown>>()),
       metaSessionByWebhookToken: async () => ({ id: "sess-1", organizationId: "org-1", wabaId: "waba-1" }),
     }));
     vi.doMock("@/lib/channels/meta/app", () => ({

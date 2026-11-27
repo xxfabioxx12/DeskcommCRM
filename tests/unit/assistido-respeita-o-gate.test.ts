@@ -32,6 +32,9 @@ vi.mock('@/lib/agent-engine/agent/agent-config', async (importOriginal) => ({
   ...await importOriginal<Record<string, unknown>>(),
   loadPublishedAgentConfigById: mocks.byId, loadPublishedAgentConfig: mocks.bySession,
   loadConversationAgentConfig: mocks.conversationAgent,
+  // #3722: a escolha do agente do número passa por aqui; o dublê deriva do
+  // `bySession` acima, sem público.
+  escolherAgenteDoNumero: async (...a: unknown[]) => ({ config: await (mocks.bySession as (...x: unknown[]) => unknown)(...a), motivo: 'primeiro_da_fila' }),
 }));
 vi.mock('@/lib/agent-engine/agent/reply-drafts', () => ({ generateReplyDraft: mocks.draft }));
 vi.mock('@/lib/atendimento/fronteira-server', () => ({
@@ -40,6 +43,10 @@ vi.mock('@/lib/atendimento/fronteira-server', () => ({
 }));
 vi.mock('@/lib/agent-engine/agent/human-handoff', async importOriginal => ({
   ...await importOriginal<Record<string, unknown>>(), isLeadInHandoff: mocks.handoff,
+}));
+// A restrição comercial (#2877) fica fora do que este arquivo mede: desligada.
+vi.mock('@/lib/escalacao/assunto-comercial', async importOriginal => ({
+  ...await importOriginal<Record<string, unknown>>(), comercialExigeHumano: vi.fn(async () => false),
 }));
 vi.mock('@/lib/agent-engine/guardrails/camadas-da-org', () => ({
   lerCamadasDaOrg: vi.fn(async () => ({})), camadaLigada: vi.fn(() => false),
@@ -129,5 +136,27 @@ describe('o assistido não rascunha em conversa que já tem dono', () => {
     const p = pool();
     await createInboundTurnHandler(deps)(job as never, p as never, { workerId: 'worker' });
     expect(mocks.draft).toHaveBeenCalledOnce();
+  });
+
+  // F2 (fork 9005): o interruptor "Responder automaticamente por este número"
+  // barra só o que sai SOZINHO. O rascunho não sai — quem manda é a pessoa que
+  // aprova —, então o assistido continua rascunhando com ele desligado.
+  it('interruptor desligado → o rascunho do assistido SAI', async () => {
+    mocks.elegibilidade.mockResolvedValue({ permite: false, motivo: 'resposta_automatica_desligada' });
+    const p = pool();
+    await createInboundTurnHandler(deps)(job as never, p as never, { workerId: 'worker' });
+    expect(mocks.draft).toHaveBeenCalledOnce();
+  });
+
+  it('interruptor desligado com agente AUTOMÁTICO → turno pulado, sem rascunho', async () => {
+    mocks.elegibilidade.mockResolvedValue({ permite: false, motivo: 'resposta_automatica_desligada' });
+    const p = pool();
+    const automatico = { ...assistido, operationMode: 'automatic' } as PublishedAgentConfig;
+    mocks.byId.mockResolvedValue(automatico);
+    mocks.bySession.mockResolvedValue(automatico);
+    mocks.conversationAgent.mockResolvedValue(automatico);
+    await createInboundTurnHandler(deps)(job as never, p as never, { workerId: 'worker' });
+    expect(mocks.draft).not.toHaveBeenCalled();
+    expect(mocks.elegibilidade, 'pula antes de runAgentTurn').toHaveBeenCalledOnce();
   });
 });

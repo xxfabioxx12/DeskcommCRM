@@ -14,7 +14,13 @@ import {
   type TemplateSlotView,
   type TemplateView,
 } from "@/hooks/channels/useTemplates";
+import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useT } from "@/hooks/i18n/useT";
+import { podeAdministrarEmpresa } from "@/lib/auth/pode-administrar-empresa";
+import { ROTULO_DO_ESTADO_DO_MODELO, ehEstadoConhecido } from "@/lib/channels/criacao-de-modelo";
+import { MOTIVOS_DA_RECUSA, ehMotivoDaRecusaConhecido } from "@/lib/channels/meta/erros-para-operador";
+
+import { AcoesDoModeloOficial, FormularioDoModeloOficial, type ModeloEmEdicao } from "./ModeloOficial";
 
 /** Só APPROVED pode ser disparado — o resto é informação, não opção. */
 function statusTone(status: string): "default" | "secondary" | "destructive" | "outline" {
@@ -142,9 +148,17 @@ export function TemplatesClient() {
   const t = useT();
   const { data, isPending } = useTemplates();
   const sync = useSyncTemplates();
+  const { user, activeOrg } = useAuth();
+  // `null` = formulário fechado; `{ editando: null }` = criando.
+  const [formulario, setFormulario] = useState<{ editando: ModeloEmEdicao | null } | null>(null);
 
   const waba = data?.data.waba ?? null;
   const templates = data?.data.templates ?? null;
+  // A capacidade do canal é decidida NO SERVIDOR (`canManageTemplates`); o papel é
+  // a mesma regra da rota POST (`requireRole("admin")`): quem não pode gravar nem
+  // vê os botões, em vez de levar um 403 depois de preencher o formulário.
+  const podeGerenciar =
+    data?.data.podeGerenciar === true && activeOrg !== null && podeAdministrarEmpresa(user, activeOrg);
 
   async function sincronizar() {
     const res = await sync.mutateAsync();
@@ -174,15 +188,34 @@ export function TemplatesClient() {
 
   return (
     <div className="flex flex-col gap-4" data-testid="templates-root">
-      <div className="flex items-center justify-between gap-4">
-        <p className="text-sm text-muted-foreground">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <p className="min-w-0 break-words text-sm text-muted-foreground">
           {t("Espelho da conta")} <span className="font-mono text-xs">{waba}</span> ·{" "}
           {templates.length} {t("template(s)")}
         </p>
-        <Button onClick={sincronizar} disabled={sync.isPending} data-testid="btn-sync">
-          {sync.isPending ? t("Sincronizando…") : t("Sincronizar com a Meta")}
-        </Button>
+        <div className="flex gap-2">
+          {podeGerenciar && (
+            <Button
+              variant="outline"
+              onClick={() => setFormulario(formulario ? null : { editando: null })}
+              data-testid="btn-criar-template"
+            >
+              {formulario ? t("Cancelar") : t("Criar template")}
+            </Button>
+          )}
+          <Button onClick={sincronizar} disabled={sync.isPending} data-testid="btn-sync">
+            {sync.isPending ? t("Sincronizando…") : t("Sincronizar com a Meta")}
+          </Button>
+        </div>
       </div>
+
+      {formulario && podeGerenciar && (
+        <FormularioDoModeloOficial
+          key={formulario.editando ? `${formulario.editando.name}:${formulario.editando.language}` : "novo"}
+          editando={formulario.editando}
+          onFechar={() => setFormulario(null)}
+        />
+      )}
 
       {templates.length === 0 ? (
         <Card className="p-6">
@@ -202,7 +235,9 @@ export function TemplatesClient() {
                 <Badge variant="outline" className="font-mono text-xs">
                   {tpl.language}
                 </Badge>
-                <Badge variant={statusTone(tpl.status)}>{tpl.status}</Badge>
+                <Badge variant={statusTone(tpl.status)}>
+                  {ehEstadoConhecido(tpl.status) ? t(ROTULO_DO_ESTADO_DO_MODELO[tpl.status]) : tpl.status}
+                </Badge>
                 {tpl.category ? (
                   <Badge variant="outline" className="text-xs">
                     {tpl.category}
@@ -217,7 +252,10 @@ export function TemplatesClient() {
 
               {tpl.rejectedReason ? (
                 <p className="mt-2 text-sm text-destructive">
-                  {t("Recusado:")} {tpl.rejectedReason}
+                  {t("Recusado:")}{" "}
+                  {ehMotivoDaRecusaConhecido(tpl.rejectedReason)
+                    ? t(MOTIVOS_DA_RECUSA[tpl.rejectedReason])
+                    : tpl.rejectedReason}
                 </p>
               ) : null}
 
@@ -254,6 +292,19 @@ export function TemplatesClient() {
                     )}
                 </div>
               ) : null}
+
+              {/* Só no modelo DESTA conta oficial: o do parceiro também está no
+                  espelho, e editar/apagar aqui miraria a WABA oficial pelo nome. */}
+              {podeGerenciar && tpl.daConexao && (
+                <AcoesDoModeloOficial
+                  modelo={{ name: tpl.name, language: tpl.language, components: tpl.components ?? [] }}
+                  onEditar={() =>
+                    setFormulario({
+                      editando: { name: tpl.name, language: tpl.language, components: tpl.components ?? [] },
+                    })
+                  }
+                />
+              )}
             </Card>
           ))}
         </div>

@@ -1,0 +1,74 @@
+{
+    "event_id": "9f6f6a0e-1b2c-4d5e-8f90-a1b2c3d4e5f6",
+    "evento": "venda.aprovada",
+    "version": "1",
+    "timestamp": "2026-07-28T18:00:00+00:00",
+    "data": {
+        "venda": {
+            "id": 4821,
+            "codigo_venda": "A1B2C3-D4E5F6",
+            "status": "pago",
+            "metodo_pagamento": "pix",
+            "parcelas": 1,
+            "valor_produto": 197.0,
+            "valor_final": 197.0,
+            "valor_juros": 0,
+            "valor_total_com_juros": 197.0,
+            "valor_pago": 197.0,
+            "tipo_venda": "principal",
+            "recusa": null,
+            "data_pagamento": "2026-07-28T17:59:30+00:00",
+            "completada_em": null,
+            "created_at": "2026-07-28T17:58:00+00:00"
+        },
+        "produto": {
+            "id": 12,
+            "nome": "Curso X",
+            "slug": "curso-x"
+        },
+        "oferta": {
+            "id": "12_0",
+            "codigo": "AB3X9KMQ",
+            "nome": "Oferta Padrão"
+        },
+        "cliente": {
+            "external_id": "88",
+            "nome": "Maria Da Silva",
+            "email": "maria@example.com",
+            "cpf": "12345678909",
+            "telefone": "+5511999998888",
+            "endereco": {
+                "cep": "01310-100",
+                "logradouro": "Avenida Paulista",
+                "numero": "1000",
+                "complemento": null,
+                "bairro": "Bela Vista",
+                "cidade": "São Paulo",
+                "estado": "SP",
+                "pais": "BR"
+            }
+        },
+        "afiliado": null,
+        "comissoes": {
+            "valor_pago": "197.00",
+            "valor_produto_base": "197.00",
+            "taxa_plataforma": "17.73",
+            "taxa_plataforma_percentual": "8.99",
+            "taxa_plataforma_fixa": "0.00",
+            "moeda": "BRL",
+            "comissao_produtor": "179.27",
+            "comissao_afiliado": "0.00",
+            "comissao_coprodutor": "0.00",
+            "beneficiarios": []
+        },
+        "tracking": {
+            "utm_source": "facebook",
+            "utm_medium": "cpc",
+            "utm_campaign": "lancamento"
+        },
+        "desconto": null,
+        "assinatura": null,
+        "coproducao": [],
+        "acesso": null
+    }
+}

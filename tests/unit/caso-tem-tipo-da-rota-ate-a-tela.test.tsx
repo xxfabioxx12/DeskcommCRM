@@ -39,6 +39,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { listarChamados, type ChamadoDaLista } from "@/lib/escalacao/chamados";
 
+vi.mock("@/hooks/channels/useChannelSessions", () => ({ useChannelSessions: () => ({ data: [] }), channelLabel: () => "" }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (s: string) => s }));
 vi.mock("@/hooks/i18n/useLocaleDeData", () => ({ useLocaleDeData: () => undefined }));
 vi.mock("@/app/app/ai/cases/_components/CaseDetail", () => ({

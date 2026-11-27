@@ -100,8 +100,8 @@ export async function listarTenants(
       suspended_at,
       suspended_kind,
       created_at,
-      user_count:user_organizations(count),
-      conversations_count:conversations(count)
+      user_count:user_organizations!user_organizations_organization_id_fkey(count),
+      conversations_count:conversations!conversations_organization_id_fkey(count)
     `,
     )
     .order("created_at", { ascending: false })

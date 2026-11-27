@@ -1,5 +1,8 @@
+import type { VariaveisDoModelo } from "@/lib/channels/meta/variaveis-do-fluxo";
 import type { JobClaim } from "@/lib/agent-engine/queue/claim";
 import { assertAgendaEffectSupabase } from "@/lib/agenda/efeito";
+import { AgendaPuladoError } from "@/lib/agenda/escolha-no-envio";
+import { escolhaDoFluxo } from "@/lib/agenda/escolha-no-envio-leitura";
 import { AgendaDeferredError } from "@/lib/agenda/protecao-followup";
 import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
 import { isFollowupCasRecusado, StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
@@ -18,10 +21,15 @@ import { assertServiceBoundarySupabase } from "@/lib/atendimento/origem";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { idsDoContatoEGemeos } from "@/lib/channels/contato-por-telefone";
+import { portaDaAplicacao } from "@/lib/db";
 import { logger } from "@/lib/logger";
+import { traduzir } from "@/lib/i18n/dicionario";
+import { idiomaDoAviso, preencher } from "@/lib/i18n/idioma-do-aviso";
+import { IDIOMA_PADRAO, normalizarIdioma, type Idioma } from "@/lib/i18n/idiomas";
 
-import { flowGraphSchema, type FlowGraph, type FlowNode, type ReplySaveTo } from "./graph-schema";
+import { flowGraphSchema, type FlowGraph, type FlowNode, type MensagemDoPasso, type ReplySaveTo } from "./graph-schema";
 import { TETO_DE_PASSOS_DO_MOTOR } from "./custo-no-motor";
+import { enviosJaFeitos, redacoesDoPasso, redacoesNaOrdemDaVez } from "./variacoes-do-passo";
 import {
   ACTION_RECHECK_MS,
   BACKOFF_MS,
@@ -53,6 +61,7 @@ import {
 import { interpolarDestino, persistirRespostaFollowupSupabase } from "./persistir-resposta";
 import { funilUnicoDasEtapas, idsDeEtapaCitados } from "./etapas-citadas";
 import { desvioAntesDoEnvio } from "./condicao-antes-do-envio";
+import { etiquetasDoLead } from "./etiquetas-do-lead";
 import { criarTarefaInterna as criarTarefaNoCrm } from "@/lib/tarefas/criar-tarefa";
 import { moveLeadHandler } from "@/app/api/v1/leads/_handler";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
@@ -61,6 +70,10 @@ import { getAction } from "@/lib/automation/actions";
 // Efeito de import: registra a ação `add_tag` no MESMO mapa que o motor de
 // automação usa. A tag do follow-up é a tag da automação — não uma segunda.
 import "@/lib/automation/actions/add-tag";
+// Parte 1 do motor de fluxo: o fluxo tira etiqueta e grava campo pelas MESMAS
+// ações das regras (`remove_tag`, `set_field`), não por um segundo caminho.
+import "@/lib/automation/actions/remove-tag";
+import "@/lib/automation/actions/set-field";
 import { renderizarTextoDeFollowup } from "@/lib/automation/texto-do-followup";
 import type { EventRow } from "@/lib/event-log/dispatcher";
 import { quandoDoRetornoVivo, reavaliarDepoisDoRetorno } from "./retorno-segura-o-fluxo";
@@ -110,7 +123,15 @@ export interface FollowupJobRequest {
     /** action (mode 'text') — corpo pronto; o turno envia sem chamar o modelo. */
     fixed_body?: string;
     /**
-     * action (mode 'text') — #2734: mídia OPCIONAL (imagem ou PDF) por URL. Presente,
+     * action (mode 'text') — #4429: as redações do MESMO passo, na ordem da vez
+     * (a preferida primeiro, que é o `fixed_body`). O turno escolhe entre elas
+     * com a janela de repetição na mão, na hora do envio. Ausente = uma redação
+     * só (o passo de hoje e todo job já enfileirado), e aí nada muda.
+     */
+    fixed_variacoes?: string[];
+    /**
+     * action (mode 'text') — #2734/#2972: mídia OPCIONAL (imagem, vídeo, áudio ou
+     * documento) por URL. Presente,
      * o `fixed_body` vira a LEGENDA. O envio reusa o caminho de mídia do Inbox e das
      * campanhas (`sendMessageHandler`), nos dois caminhos que mandam o texto fixo.
      */
@@ -121,6 +142,16 @@ export interface FollowupJobRequest {
      * fechada). O turno resolve qual dos dois é e envia sem modelo de IA.
      */
     template_id?: string;
+    /**
+     * action (mode 'mensagem') — Parte 1 do motor de fluxo: as DUAS versões
+     * (template do número oficial, texto do número comum). Vai SEM `fixed_body`
+     * de propósito: quem escolhe a versão e resolve as variáveis é o worker
+     * (`followup-turn.ts`), que sabe o número da conversa; e sem `fixed_body` o
+     * atalho inline (`enviar-texto-fixo.ts`) não pega este job.
+     */
+    mensagem?: MensagemDoPasso;
+    /** action mode `template` — de onde sai cada variável do modelo aprovado. */
+    template_values?: VariaveisDoModelo;
     volta_index?: number;
     volta_total?: number;
     /** ai_classify — Task 5.1: classes possíveis + dica opcional pro classificador. */
@@ -152,7 +183,14 @@ export interface AdminClient {
    */
   loadLeadFacts(orgId: string, contactId: string, pipelineId?: string | null): Promise<{
     lead_stage: string | null;
+    /**
+     * As duas caixas de marcador, unidas — ver `etiquetas-do-lead.ts` (#4586).
+     * A condição «Etiqueta do contato» pergunta à etiqueta do NEGÓCIO e à do
+     * CONTATO, porque a campanha de prospecção só grava a do contato.
+     */
     tags: string[];
+    /** Etiquetas do CONTATO (`contacts.tags`) — condição `contact_tag`. Ausente = não lidas. */
+    contact_tags?: string[];
     contact_name?: string | null;
     custom_fields?: Record<string, unknown>;
   }>;
@@ -198,6 +236,12 @@ export interface AdminClient {
   applyEnrollmentStep?(id:string,orgId:string,patch:EnrollmentPatch,event:{job_claim?:JobClaim;job_id?:string;node_id:string;event_type:string;payload:Record<string,unknown>;idempotency_key:string}):Promise<void>;
   updateEnrollment(id: string, orgId: string, patch: EnrollmentPatch): Promise<void>;
   loadFlowPointerName(orgId: string, pointerId: string): Promise<string | null>;
+  /**
+   * O `organizations.locale` cru, para o aviso da Central nascer no idioma da
+   * organização (a Central mostra o texto como foi gravado). Opcional: sem ele,
+   * ou se falhar, o aviso sai em português — exatamente o texto de antes.
+   */
+  loadOrgLocale?(orgId: string): Promise<string | null>;
   insertDeadInboxItem(item: { organization_id: string; title: string; body: string; ref_id: string }): Promise<void>;
   /**
    * Nó `internal_task` (#1540): grava a tarefa no CRM para o contato da
@@ -236,6 +280,16 @@ export interface AdminClient {
     config: Extract<FlowNode, { type: "edit_lead_tag" }>["config"];
   }): Promise<void>;
   /**
+   * Nó `gravar_campo` (Parte 1 do motor de fluxo): a MESMA ação `set_field`
+   * das regras. Opcional pelas mesmas razões de `editarTagDoLead`.
+   */
+  gravarCampo?(item: {
+    organization_id: string;
+    contact_id: string;
+    enrollment_id: string;
+    config: Extract<FlowNode, { type: "gravar_campo" }>["config"];
+  }): Promise<void>;
+  /**
    * Régua de recuperação de falta esgotada sem resposta — abre um item na
    * Central referenciando o COMPROMISSO. Opcional: só a produção precisa; os
    * adaptadores de teste que não exercitam no-show podem omitir. Ver
@@ -268,6 +322,59 @@ export interface TickSummary {
   failed: number;
   dead: number;
 }
+
+/**
+ * O contato já tem OUTRA inscrição viva: o patch que levaria esta a um status
+ * que ocupa vaga foi recusado por `idx_followup_enrollments_one_live`.
+ *
+ * Tipado para não cair no caminho de falha genérico. O caso que o motiva: a
+ * espera `immune_to_reply` põe a inscrição em `dormente`, que por construção NÃO
+ * ocupa a vaga — então outro fluxo pode, legitimamente, entrar no contato
+ * enquanto ela dorme (medido: a etapa mudou 43 min depois e o "respondeu e
+ * sumiu" inscreveu). No despertar, o `advance` grava `status: 'active'`, o
+ * índice recusa, e o genérico repetia com backoff até `dead`, com o aviso de
+ * INCIDENTE "Um fluxo de follow-up parou de tentar … duplicate key" na Central —
+ * para um estado que o próprio desenho do `dormente` produz.
+ *
+ * O tipo existe para o motor poder ADIAR em vez de falhar: enquanto a inscrição
+ * dorme, a vaga do contato é de quem chegou primeiro — e voltar depois é
+ * direito dela, não uma falha.
+ */
+export class VagaDoContatoOcupadaError extends Error {
+  constructor() {
+    super("vaga_do_contato_ocupada");
+    this.name = "VagaDoContatoOcupadaError";
+  }
+}
+
+/**
+ * Converte o erro do `fn_followup_patch` no erro que o motor sabe tratar.
+ * Só o 23505 do índice de vaga vira `VagaDoContatoOcupadaError`: outro 23505
+ * (outro índice único) continua erro comum, porque cada índice guarda uma regra
+ * diferente e não há razão para supor que todos se resolvam adiando.
+ */
+export function erroDoPatch(error: { code?: string; message: string }): Error {
+  if (error.code === "23505" && error.message.includes("idx_followup_enrollments_one_live")) {
+    return new VagaDoContatoOcupadaError();
+  }
+  return new Error(error.message);
+}
+
+/**
+ * De quanto em quanto a dormente volta a tentar enquanto a vaga do contato está
+ * ocupada por outro acompanhamento: 1 hora.
+ */
+export const INTERVALO_DA_VAGA_OCUPADA_MS = 60 * 60 * 1000;
+
+/**
+ * Até quando a dormente espera a vaga: 7 dias. Passado o limite a inscrição
+ * desiste — COM aviso na Central, porque um cancelamento calado é a forma mais
+ * cara de perder um retorno.
+ */
+export const LIMITE_DA_VAGA_OCUPADA_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** O motivo gravado quando a espera pela vaga estoura o limite. */
+export const MOTIVO_DA_VAGA_OCUPADA_DEMAIS = "Outro acompanhamento ocupou o contato por 7 dias";
 
 function errorMessage(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
@@ -365,6 +472,8 @@ function turnPayloadExtras(
   smartWaits: EsperaAdaptativa[],
   events: EnrollmentEventRef[] = [],
   contexto?: Record<string, unknown> | null,
+  /** #4429 — o contato, semente estável do ponto de partida da rotação. */
+  semente?: string,
 ): Partial<FollowupJobRequest["payload"]> {
   if (node.type === "action" && node.config.mode === "ai_message") {
     return {
@@ -373,8 +482,24 @@ function turnPayloadExtras(
     };
   }
   if (node.type === "action" && node.config.mode === "text") {
+    // #4429 — QUAL REDAÇÃO SAI, ESCOLHIDO AQUI. O texto do passo deixou de ser
+    // um só: `variacoes` guarda outras redações do MESMO passo e a rotação anda
+    // um passo por mensagem já enviada nesta inscrição (`enviosJaFeitos`), com
+    // ponto de partida no hash do contato. Passo com uma redação só — o de
+    // hoje, e todo grafo já publicado — cai em `redacoes[0]`, que é o `body`:
+    // nenhuma diferença byte a byte no que sai.
+    const redacoes = redacoesDoPasso(node.config);
+    // A LISTA inteira vai no job, na ordem da vez (a preferida primeiro). O
+    // turno escolhe com a JANELA na mão — ela só está fresca na hora do envio, e
+    // é lá que vive o gate que mede (#4429, segunda metade). A escolha daqui
+    // segue sendo a da rotação: `ordem[0]` é, byte a byte, o `fixed_body` de
+    // antes, e é ele que sai quando a janela não pressiona nenhuma redação.
+    const ordem = redacoesNaOrdemDaVez(redacoes, semente ?? "", enviosJaFeitos(events));
     return {
-      fixed_body: interpolarVolta(node.config.body, events, contexto),
+      fixed_body: interpolarVolta(ordem[0]!, events, contexto),
+      ...(ordem.length > 1
+        ? { fixed_variacoes: ordem.map((redacao) => interpolarVolta(redacao, events, contexto)) }
+        : {}),
       ...(node.config.media_url ? { fixed_media_url: node.config.media_url } : {}),
     };
   }
@@ -382,7 +507,16 @@ function turnPayloadExtras(
     const volta = latestRepeatIndex(events);
     return {
       template_id: node.config.template_id,
+      ...(node.config.template_values ? { template_values: node.config.template_values } : {}),
       ...(volta ? { volta_index: volta.index, volta_total: volta.total } : {}),
+    };
+  }
+  if (node.type === "action" && node.config.mode === "mensagem") {
+    return {
+      mensagem: {
+        ...(node.config.modelo ? { modelo: node.config.modelo } : {}),
+        ...(node.config.texto ? { texto: node.config.texto } : {}),
+      },
     };
   }
   if (node.type === "ai_classify") {
@@ -394,6 +528,64 @@ function turnPayloadExtras(
     return { waits: smartWaits };
   }
   return {};
+}
+
+/** Frase do `skipped` de uma ação de escrita, para o rastro da inscrição (o dossiê mostra crua). */
+const MOTIVO_DO_PULO: Record<string, string> = {
+  no_contact: "O contato não foi encontrado.",
+  no_lead: "O contato não tem card neste momento.",
+  no_target: "Sem card nem contato para gravar.",
+  no_tags: "Sem etiqueta para gravar.",
+  missing_config: "A caixa está sem campo ou sem valor.",
+};
+
+function motivoDoPulo(detail: Record<string, unknown> | undefined): string {
+  const motivo = typeof detail?.reason === "string" ? detail.reason : "";
+  return MOTIVO_DO_PULO[motivo] ?? "A escrita foi ignorada.";
+}
+
+/**
+ * Parte 1 do motor de fluxo — a escrita que falha deixa RASTRO na inscrição,
+ * como o `move_lead_failed`: o fluxo segue (a trava é o evento do passo, já
+ * gravado), e quem montou o fluxo vê no dossiê que a etiqueta/campo não foi
+ * gravado. Chave própria (`:falha`) para o replay não duplicar; o registro tem
+ * o próprio try/catch para nunca derrubar o tick.
+ */
+async function registrarFalhaDaEscrita(
+  db: AdminClient,
+  enrollment: EnrollmentRow,
+  nodeId: string,
+  idemKey: string,
+  eventType: "edit_lead_tag_failed" | "gravar_campo_failed",
+  err: unknown,
+): Promise<void> {
+  try {
+    await db.insertEnrollmentEvent({
+      organization_id: enrollment.organization_id,
+      enrollment_id: enrollment.id,
+      node_id: nodeId,
+      event_type: eventType,
+      payload: { error: err instanceof Error ? err.message : String(err) },
+      idempotency_key: `${idemKey}:falha`,
+    });
+  } catch (registroErr) {
+    logger.warn("followup_falha_da_escrita_nao_registrada", {
+      organization_id: enrollment.organization_id,
+      enrollment_id: enrollment.id,
+      node_id: nodeId,
+      error: registroErr instanceof Error ? registroErr.message : String(registroErr),
+    });
+  }
+}
+
+/** O idioma do aviso da Central. Nunca lança: aviso em português é melhor que aviso nenhum. */
+async function idiomaDoAvisoDoFluxo(db: AdminClient, orgId: string): Promise<Idioma> {
+  if (!db.loadOrgLocale) return IDIOMA_PADRAO;
+  try {
+    return normalizarIdioma(await db.loadOrgLocale(orgId));
+  } catch {
+    return IDIOMA_PADRAO;
+  }
 }
 
 async function markDead(
@@ -413,10 +605,15 @@ async function markDead(
   // status='dead' gravado e o aviso NUNCA sair — enrollment morto em
   // silêncio. Duplicata visível > perda silenciosa.
   const flowName = (await db.loadFlowPointerName(enrollment.organization_id, enrollment.pointer_id)) ?? enrollment.pointer_id;
+  const idioma = await idiomaDoAvisoDoFluxo(db, enrollment.organization_id);
   await db.insertDeadInboxItem({
     organization_id: enrollment.organization_id,
-    title: "Um fluxo de follow-up parou de tentar",
-    body: `O fluxo "${flowName}" (enrollment ${enrollment.id}) foi marcado como "dead": ${sanitized}`,
+    title: traduzir("Um fluxo de follow-up parou de tentar", idioma),
+    body: preencher(traduzir('O fluxo "{fluxo}" (enrollment {enrollment}) foi marcado como "dead": {motivo}', idioma), {
+      fluxo: flowName,
+      enrollment: enrollment.id,
+      motivo: sanitized,
+    }),
     ref_id: enrollment.id,
   });
 
@@ -455,6 +652,114 @@ async function applyHandlerFailure(
     next_eval_at: new Date(clock().getTime() + backoffMs).toISOString(),
     claimed_until: null,
     updated_at: clock().toISOString(),
+  });
+}
+
+/**
+ * O instante em que a espera pela vaga começou.
+ *
+ * Quem sabe é o EVENTO: o `desde` do primeiro adiamento é o começo da espera.
+ * Evento sem `desde` legível (ou evento que sumiu) é tratado como espera
+ * começando AGORA — assim um registro malformado adia em vez de desistir.
+ */
+function isoDoAdiamento(evento: EnrollmentEventRef | undefined, agora: Date): string {
+  const desde = evento?.payload?.desde;
+  if (typeof desde === "string" && !Number.isNaN(Date.parse(desde))) return desde;
+  return agora.toISOString();
+}
+
+/**
+ * A dormente acordou e outra inscrição já ocupa a vaga do contato: ela ADIA.
+ *
+ * Ceder a vaga seria jogar fora o retorno exatamente no caso para o qual a
+ * espera "imune à resposta" tirou a inscrição da vaga: a cliente fala com o
+ * estúdio várias vezes no período, e o retorno é para depois — "falar não é
+ * motivo para antecipar nem para desistir do retorno". Adiar custa uma hora de
+ * espera e devolve a chance.
+ *
+ * A inscrição CONTINUA `dormente`: não gasta tentativa, não mexe no
+ * `last_error` e não abre item na Central — nada quebrou, e o aviso de
+ * incidente é exatamente o ruído que isto elimina. Um evento na trilha conta a
+ * espera (só o primeiro: a chave é a trava, e o insert repetido é ignorado).
+ *
+ * O limite de 7 dias é o anti-morte: se o outro acompanhamento nunca terminar
+ * (pausado à mão, por exemplo), a espera não vira silêncio — a inscrição
+ * desiste COM aviso na Central, no mesmo padrão da fronteira vencida.
+ */
+async function adiarPelaVagaOcupada(
+  deps: Pick<TickDeps, "db" | "clock">,
+  enrollment: EnrollmentRow,
+): Promise<void> {
+  const { db, clock } = deps;
+  const agora = clock();
+  const chave = `${enrollment.current_node_id}:${enrollment.steps_taken}:vaga_ocupada`;
+  const reavaliarEm = new Date(agora.getTime() + INTERVALO_DA_VAGA_OCUPADA_MS);
+
+  // O `desde` mora no EVENTO, não no banco: quem mede a espera é a trilha, e
+  // ela é a única que sabe desde quando a espera começou.
+  const eventos = await db.loadEnrollmentEvents(enrollment.id);
+  const anterior = eventos.find(
+    (e) => e.node_id === enrollment.current_node_id && e.idempotency_key === chave,
+  );
+  const desdeISO = isoDoAdiamento(anterior, agora);
+  const esperouMs = agora.getTime() - Date.parse(desdeISO);
+
+  if (esperouMs >= LIMITE_DA_VAGA_OCUPADA_MS) {
+    // ⚠️ A ESPERA LONGA MORRE AQUI, E NÃO PODE MORRER CALADA.
+    //
+    // Mesma doutrina da fronteira vencida (`processEnrollment`): a dormente
+    // que espera a vaga além do limite é uma espera que NINGUÉM vai fechar, e
+    // um cancelamento sem aviso é a forma mais cara de perder um retorno.
+    const nome =
+      (await db.loadFlowPointerName(enrollment.organization_id, enrollment.pointer_id)) ??
+      enrollment.pointer_id;
+    const idioma = await idiomaDoAvisoDoFluxo(db, enrollment.organization_id);
+    await db.insertDeadInboxItem({
+      organization_id: enrollment.organization_id,
+      title: traduzir("Um retorno programado não pôde ser enviado", idioma),
+      body: preencher(
+        traduzir(
+          'O fluxo "{fluxo}" esperou 7 dias o outro acompanhamento deste contato terminar, e o envio foi cancelado (enrollment {enrollment}). Fale com o contato por outro caminho se ainda fizer sentido.',
+          idioma,
+        ),
+        { fluxo: nome, enrollment: enrollment.id },
+      ),
+      ref_id: enrollment.id,
+    });
+    await db.insertEnrollmentEvent({
+      organization_id: enrollment.organization_id,
+      enrollment_id: enrollment.id,
+      node_id: enrollment.current_node_id,
+      event_type: "gave_up_taken_slot",
+      payload: { desde: desdeISO, reavaliar_em: reavaliarEm.toISOString() },
+      idempotency_key: `${chave}:desistiu`,
+    });
+    await db.updateEnrollment(enrollment.id, enrollment.organization_id, {
+      status: "cancelled",
+      cancel_reason: MOTIVO_DA_VAGA_OCUPADA_DEMAIS,
+      next_eval_at: null,
+      claimed_until: null,
+      completed_at: agora.toISOString(),
+      updated_at: agora.toISOString(),
+    });
+    return;
+  }
+
+  // O evento é o ÚNICO registro da espera. A chave é a trava: o insert repetido
+  // é ignorado, então o segundo adiamento não repete a linha — e o `desde` que
+  // ela carrega é o começo da espera, não a hora do último adiamento.
+  await db.insertEnrollmentEvent({
+    organization_id: enrollment.organization_id,
+    enrollment_id: enrollment.id,
+    node_id: enrollment.current_node_id,
+    event_type: "waiting_for_taken_slot",
+    payload: { desde: desdeISO, reavaliar_em: reavaliarEm.toISOString() },
+    idempotency_key: chave,
+  });
+  await db.updateEnrollment(enrollment.id, enrollment.organization_id, {
+    next_eval_at: reavaliarEm.toISOString(),
+    claimed_until: null,
+    updated_at: agora.toISOString(),
   });
 }
 
@@ -595,6 +900,25 @@ async function applyResult(
         node_id: node.id,
         error: err instanceof Error ? err.message : String(err),
       });
+      await registrarFalhaDaEscrita(db, enrollment, node.id, idemKey, "edit_lead_tag_failed", err);
+    }
+  }
+  if (result.kind === "advance" && !isReplay && node.type === "gravar_campo") {
+    try {
+      await db.gravarCampo?.({
+        organization_id: enrollment.organization_id,
+        contact_id: enrollment.contact_id,
+        enrollment_id: enrollment.id,
+        config: node.config,
+      });
+    } catch (err) {
+      logger.warn("followup_gravar_campo_failed", {
+        organization_id: enrollment.organization_id,
+        enrollment_id: enrollment.id,
+        node_id: node.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      await registrarFalhaDaEscrita(db, enrollment, node.id, idemKey, "gravar_campo_failed", err);
     }
   }
 
@@ -674,7 +998,7 @@ async function applyResult(
             node_id: node.id,
             source_step_key: idemKey,
             purpose: result.purpose,
-            ...turnPayloadExtras(node, smartWaits, events, contexto),
+            ...turnPayloadExtras(node, smartWaits, events, contexto, enrollment.contact_id),
             ...(result.fixed_body ? { fixed_body: result.fixed_body } : {}),
           },
         });
@@ -793,7 +1117,19 @@ async function processEnrollment(
     await db.assertServiceBoundary?.(enrollment);
     if (enrollment.status !== "dormente") {
       guarda = "agenda";
-      await db.assertAgenda?.(enrollment);
+      try {
+        await db.assertAgenda?.(enrollment);
+      } catch (agendaErr) {
+        // #3813 — escolha do FLUXO em `nao_enviar`: a agenda não segura o PASSO.
+        // Quem pula é o ENVIO, que registra `skipped` com o motivo lá na frente
+        // (`followup-turn.ts`). Reagendar aqui (como o `adiar` faz) mandaria a
+        // mensagem depois do compromisso — o oposto do que a escolha pediu — e
+        // tratar como fronteira vencida cancelaria o acompanhamento inteiro.
+        // A guarda de MOEDA (`fn_appointment_enrollment_current`) não é escolha
+        // e continua valendo: só o pulo por compromisso chega como
+        // `AgendaPuladoError`.
+        if (!(agendaErr instanceof AgendaPuladoError)) throw agendaErr;
+      }
     }
   } catch (error) {
     if(error instanceof AgendaDeferredError){
@@ -824,13 +1160,17 @@ async function processEnrollment(
       const nome =
         (await db.loadFlowPointerName(enrollment.organization_id, enrollment.pointer_id)) ??
         enrollment.pointer_id;
+      const idioma = await idiomaDoAvisoDoFluxo(db, enrollment.organization_id);
       await db.insertDeadInboxItem({
         organization_id: enrollment.organization_id,
-        title: "Um retorno programado não pôde ser enviado",
-        body:
-          `O fluxo "${nome}" esperava a data do retorno, mas ${causa.explica} ` +
-          `no meio da espera, e o envio foi cancelado ` +
-          `(enrollment ${enrollment.id}). Fale com o contato por outro caminho se ainda fizer sentido.`,
+        title: traduzir("Um retorno programado não pôde ser enviado", idioma),
+        body: preencher(
+          traduzir(
+            'O fluxo "{fluxo}" esperava a data do retorno, mas {causa} no meio da espera, e o envio foi cancelado (enrollment {enrollment}). Fale com o contato por outro caminho se ainda fizer sentido.',
+            idioma,
+          ),
+          { fluxo: nome, causa: traduzir(causa.explica, idioma), enrollment: enrollment.id },
+        ),
         ref_id: enrollment.id,
       });
     }
@@ -895,8 +1235,14 @@ async function processEnrollment(
   const temRegraDeData = graph.nodes.some(
     (n) => n.type === "condition" && n.config.checks.some((c) => c.field === "lead_date"),
   );
+  // A espera com horário (`ate_o_horario`) também pergunta pelo relógio da
+  // organização: "9h às 18h" sem fuso seria 9h às 18h em UTC — 6h às 15h em
+  // São Paulo, e o toque sairia cedo demais, que é o que o horário impede.
+  const temEsperaComHorario = graph.nodes.some(
+    (n) => n.type === "wait" && n.config.mode === "fixed" && n.config.ate_o_horario !== undefined,
+  );
   const fusoDaOrg =
-    temRegraDeData && db.loadFusoDaOrganizacao
+    (temRegraDeData || temEsperaComHorario) && db.loadFusoDaOrganizacao
       ? await db.loadFusoDaOrganizacao(enrollment.organization_id)
       : null;
 
@@ -904,6 +1250,7 @@ async function processEnrollment(
     fuso: fusoDaOrg,
     lead_stage: leadRow.lead_stage,
     tags: leadRow.tags,
+    contact_tags: leadRow.contact_tags,
     steps_taken: enrollment.steps_taken,
     // Preenchido LOGO ABAIXO, depois que os eventos forem lidos: o desfecho do
     // passo anterior é dado que mora nos eventos, não na linha do lead.
@@ -1112,6 +1459,13 @@ export async function runFollowupTick(deps: TickDeps, opts?: { limit?: number })
       await processEnrollment(deps, enrollment, summary);
     } catch (err) {
       try {
+        // A dormente que acorda com a vaga tomada não FALHOU: ADIA (ver
+        // `adiarPelaVagaOcupada`). Só ela — a mesma recusa numa inscrição que já
+        // estava viva é corrida de verdade e segue o caminho de falha.
+        if (err instanceof VagaDoContatoOcupadaError && enrollment.status === "dormente") {
+          await adiarPelaVagaOcupada(deps, enrollment);
+          continue;
+        }
         // Nunca deixa uma falha de UM enrollment derrubar o tick inteiro.
         await applyHandlerFailure(deps, enrollment, errorMessage(err), summary);
       } catch {
@@ -1128,6 +1482,26 @@ export async function runFollowupTick(deps: TickDeps, opts?: { limit?: number })
 /** Production adapter: `AdminClient` backed by the real Supabase service-role client. */
 export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
   const revisions=new Map<string,number>();
+  /** `{ contact, lead }` em linhas INTEIRAS — o render das mensagens e o `set_field` leem o mesmo. */
+  async function lerContextoCompleto(orgId: string, contactId: string): Promise<Record<string, unknown>> {
+    const [{ data: lead, error: leadErr }, { data: contact, error: contactErr }] = await Promise.all([
+      admin
+        .from("crm_leads")
+        .select("*")
+        .eq("organization_id", orgId)
+        .eq("contact_id", contactId)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      admin.from("contacts").select("*").eq("organization_id", orgId).eq("id", contactId).maybeSingle(),
+    ]);
+    if (leadErr) throw new Error(leadErr.message);
+    if (contactErr) throw new Error(contactErr.message);
+    const contexto: Record<string, unknown> = {};
+    if (contact) contexto.contact = contact;
+    if (lead) contexto.lead = lead;
+    return contexto;
+  }
   return {
     async assertServiceBoundary(enrollment) { if(!revisions.has(enrollment.id) && enrollment.revision!==undefined) revisions.set(enrollment.id,enrollment.revision); await assertServiceBoundarySupabase(admin, enrollment.service_boundary ?? null); },
     async retornoQueSeguraOFluxo(enrollment) {
@@ -1142,9 +1516,18 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
       if (error) throw new Error(`pointer_query_failed: ${error.message}`);
       const gatilho = triggerConfigSchema.safeParse((data as { trigger_config?: unknown } | null)?.trigger_config);
       if (!gatilho.success || gatilho.data.kind !== "silence") return null;
-      return reavaliarDepoisDoRetorno(quando);
+      return reavaliarDepoisDoRetorno(quando, gatilho.data.params.threshold_minutes);
     },
-    async assertAgenda(enrollment){await assertAgendaEffectSupabase(admin,{organizationId:enrollment.organization_id,contactId:enrollment.contact_id,enrollmentId:enrollment.id,nodeId:enrollment.current_node_id});},
+    async assertAgenda(enrollment){
+      // #3813 — A ESCOLHA DO FLUXO VALE TAMBÉM NO TICK. Sem esta leitura o
+      // motor usava o padrão (`adiar`) e segurava TODO passo de quem tem
+      // horário marcado: um fluxo publicado em `enviar` nunca enviava, e um em
+      // `nao_enviar` só voltava a andar depois do compromisso (mandando, no
+      // fim, a mensagem que a escolha mandou não mandar). A guarda de moeda
+      // continua dentro de `assertAgendaEffectSupabase`.
+      const escolha = await escolhaDoFluxo(admin, enrollment.organization_id, enrollment.id);
+      await assertAgendaEffectSupabase(admin,{organizationId:enrollment.organization_id,contactId:enrollment.contact_id,enrollmentId:enrollment.id,nodeId:enrollment.current_node_id,escolhaNoEnvio:escolha});
+    },
     async claimDueEnrollments(limit, leaseSeconds) {
       const { data, error } = await admin.rpc("fn_claim_due_followup_enrollments", {
         p_limit: limit,
@@ -1206,7 +1589,7 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
           .order("updated_at", { ascending: false })
           .limit(1)
           .maybeSingle(),
-        admin.from("contacts").select("name").eq("organization_id", orgId).eq("id", contactId).maybeSingle(),
+        admin.from("contacts").select("name, tags").eq("organization_id", orgId).eq("id", contactId).maybeSingle(),
       ]);
       if (leadErr) throw new Error(leadErr.message);
       if (contactErr) throw new Error(contactErr.message);
@@ -1216,7 +1599,12 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
           : {};
       return {
         lead_stage: lead?.stage_id ?? null,
-        tags: lead?.tags ?? [],
+        // #4586 — as duas caixas. A campanha de prospecção grava a etiqueta do
+        // nicho no CONTATO; o #4606 passou a copiá-la para o card, mas só no
+        // nascimento (card antigo, e etiqueta posta no Inbox/ficha, ficam sem).
+        // Ler só `crm_leads.tags` fazia a condição responder «não tem».
+        tags: etiquetasDoLead(lead?.tags, contact?.tags),
+        contact_tags: Array.isArray(contact?.tags) ? (contact.tags as string[]) : [],
         contact_name: contact?.name ?? null,
         custom_fields: custom,
       };
@@ -1228,23 +1616,7 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
      * (`updated_at desc`), senão dois caminhos dariam dados diferentes.
      */
     async loadRenderContext(orgId, contactId) {
-      const [{ data: lead, error: leadErr }, { data: contact, error: contactErr }] = await Promise.all([
-        admin
-          .from("crm_leads")
-          .select("*")
-          .eq("organization_id", orgId)
-          .eq("contact_id", contactId)
-          .order("updated_at", { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-        admin.from("contacts").select("*").eq("organization_id", orgId).eq("id", contactId).maybeSingle(),
-      ]);
-      if (leadErr) throw new Error(leadErr.message);
-      if (contactErr) throw new Error(contactErr.message);
-      const contexto: Record<string, unknown> = {};
-      if (contact) contexto.contact = contact;
-      if (lead) contexto.lead = lead;
-      return contexto;
+      return lerContextoCompleto(orgId, contactId);
     },
     async loadLastInboundBody(orgId, contactId, conversationId, naoAntesDe) {
       const ids = await idsDoContatoEGemeos(admin, orgId, contactId);
@@ -1299,7 +1671,7 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
       if(revision===undefined) throw new StaleServiceBoundaryError();
       const {data,error}=await admin.rpc("fn_followup_patch",{p_org:orgId,p_id:id,p_revision:revision,p_patch:patch});
       if(isFollowupCasRecusado(error)) throw new StaleServiceBoundaryError();
-      if(error) throw new Error(error.message);
+      if(error) throw erroDoPatch(error);
       revisions.set(id,Number(data));
     },
     async loadFlowPointerName(orgId, pointerId) {
@@ -1311,6 +1683,10 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
         .maybeSingle();
       if (error) throw new Error(error.message);
       return data?.name ?? null;
+    },
+    async loadOrgLocale(orgId) {
+      const { data } = await admin.from("organizations").select("locale").eq("id", orgId).maybeSingle();
+      return (data as { locale?: string | null } | null)?.locale ?? null;
     },
     async insertDeadInboxItem(item) {
       const { error } = await admin.from("agent_inbox_items").insert({
@@ -1340,7 +1716,7 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
         .maybeSingle();
       if (leadErr) throw new Error(leadErr.message);
 
-      const resultado = await criarTarefaNoCrm(admin, {
+      const resultado = await criarTarefaNoCrm(portaDaAplicacao(), {
         organizationId: item.organization_id,
         titulo: item.config.titulo,
         venceEmDias: item.config.vence_em_dias,
@@ -1466,8 +1842,39 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
         if (contato) context.contact = contato;
       }
 
-      const acao = getAction("add_tag");
-      if (!acao) throw new Error("add_tag_nao_registrada");
+      // Parte 1 do motor de fluxo: a OPERAÇÃO escolhe a ação do registro
+      // (`add_tag` ou `remove_tag`) e o DESTINO viaja como na regra. Sem as
+      // chaves (grafo antigo) é `add_tag` sem destino — o comportamento de sempre.
+      const tipo = item.config.operacao === "remover" ? "remove_tag" : "add_tag";
+      const acao = getAction(tipo);
+      if (!acao) throw new Error(`${tipo}_nao_registrada`);
+      const resultado = await acao.execute(
+        {
+          admin,
+          organizationId: item.organization_id,
+          // Follow-up não é regra de automação: não inventamos `ruleId` de regra
+          // (o anti-laço do motor descarta eventos com `caused_by_rule`).
+          ruleId: "",
+          ruleName: "Fluxo de follow-up",
+          event: {} as EventRow,
+          context,
+          requestId: `followup:${item.enrollment_id}`,
+        },
+        { tags: item.config.tags, ...(item.config.destino ? { destino: item.config.destino } : {}) },
+      );
+      if (resultado.status === "failed") throw new Error(resultado.error ?? `${tipo}_failed`);
+      if (resultado.status === "skipped") throw new Error(motivoDoPulo(resultado.detail));
+    },
+    /**
+     * Parte 1 do motor de fluxo — nó `gravar_campo` pela ação `set_field` do
+     * registro. O nome do campo passa por `campoValido` lá dentro (antes de
+     * `anotarCampo`): nome de protótipo, com ponto ou longo vira `skipped` e
+     * aqui vira erro com rastro, nunca escrita.
+     */
+    async gravarCampo(item) {
+      const context = await lerContextoCompleto(item.organization_id, item.contact_id);
+      const acao = getAction("set_field");
+      if (!acao) throw new Error("set_field_nao_registrada");
       const resultado = await acao.execute(
         {
           admin,
@@ -1478,11 +1885,10 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
           context,
           requestId: `followup:${item.enrollment_id}`,
         },
-        { tags: item.config.tags },
+        { destino: item.config.destino, campo: item.config.campo, valor: item.config.valor },
       );
-      if (resultado.status === "failed") {
-        throw new Error(resultado.error ?? "add_tag_failed");
-      }
+      if (resultado.status === "failed") throw new Error(resultado.error ?? "set_field_failed");
+      if (resultado.status === "skipped") throw new Error(motivoDoPulo(resultado.detail));
     },
     async abrirAvisoRecuperacaoEsgotada(item) {
       // ── A GUARDA DE ANONIMIZAÇÃO DESTA PORTA (issue #701) ──
@@ -1529,6 +1935,8 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
         if ((contato as { is_anonymized: boolean | null } | null)?.is_anonymized === true) return;
       }
 
+      // A Central mostra o texto como foi gravado: nasce no idioma da organização.
+      const idioma = await idiomaDoAviso(admin, item.organization_id);
       const { error } = await admin.from("agent_inbox_items").insert({
         organization_id: item.organization_id,
         // Reusa o kind da 0224 (mesma família: "a recuperação desta falta
@@ -1536,10 +1944,11 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
         // Central já sabe renderizar `ref_kind='appointment'`.
         kind: "appointment_recovery_review",
         severity: "warn",
-        title: "Cliente faltou e não respondeu à recuperação",
-        body:
-          "As mensagens de reengajamento pós-falta foram enviadas e o cliente não respondeu. " +
-          "Decida o próximo passo e mova o card no funil.",
+        title: traduzir("Cliente faltou e não respondeu à recuperação", idioma),
+        body: traduzir(
+          "As mensagens de reengajamento pós-falta foram enviadas e o cliente não respondeu. Decida o próximo passo e mova o card no funil.",
+          idioma,
+        ),
         ref_kind: "appointment",
         ref_id: item.appointment_id,
         appointment_revision: item.appointment_revision,

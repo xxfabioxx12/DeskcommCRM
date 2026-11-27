@@ -89,7 +89,7 @@ describe("onde o modelo está em uso", () => {
       ai_agents: [{ name: "Vendedor", published_version_id: "a1" }],
       ai_agent_versions: [{ id: "a1", system_prompt: "usá recordatorio_oferta si la ventana cerró" }],
     });
-    const usos = await usosDoModelo(cliente, "org", { name: "recordatorio_oferta", ids: ["tpl-1"] });
+    const usos = await usosDoModelo(cliente, "org", { name: "recordatorio_oferta", language: "es", ids: ["tpl-1"] });
     expect(usos).toEqual([
       { tipo: "fluxo", nome: "Remarketing" },
       { tipo: "agente", nome: "Vendedor" },

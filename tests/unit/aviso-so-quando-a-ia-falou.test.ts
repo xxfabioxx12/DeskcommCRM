@@ -53,6 +53,7 @@ let filtros: [string, unknown][] = [];
 function banco(falas: Fala[] | { erro: string }) {
   filtros = [];
   return {
+    rpc: async () => ({ data: "caso-confirmado", error: null }),
     from(tabela: string) {
       if (tabela === "messages") {
         const cadeia: Record<string, unknown> = {

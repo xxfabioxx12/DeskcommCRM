@@ -7,6 +7,8 @@ export interface SessaoDeNumero {
   status: string;
   phone_number: string | null;
   display_name: string | null;
+  /** Cópia NODZ: número de outro setor nunca é saída para responder. */
+  fora_do_setor?: boolean;
 }
 
 export type OutroNumero<S extends SessaoDeNumero = SessaoDeNumero> = S & { conectado: boolean };
@@ -30,7 +32,7 @@ export function outrosNumerosDoContato<S extends SessaoDeNumero>(
   sessaoAtualId: string,
 ): OutroNumero<S>[] {
   return (sessoes ?? [])
-    .filter((s) => s.id !== sessaoAtualId && !!s.phone_number && transportaMensagem(s.provider))
+    .filter((s) => s.id !== sessaoAtualId && !s.fora_do_setor && !!s.phone_number && transportaMensagem(s.provider))
     .map((s) => ({ ...s, conectado: s.status === CONECTADO }));
 }
 

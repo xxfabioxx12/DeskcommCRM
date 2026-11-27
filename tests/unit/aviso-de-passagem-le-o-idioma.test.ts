@@ -57,7 +57,7 @@ function poolComIdioma(locale: string | null | Error) {
         if (locale instanceof Error) throw locale;
         return { rows: [{ locale }] };
       }
-      return { rows: [] };
+      return { rows: sql.includes("fn_nodz_garantir_caso_humano") ? [{ id: "caso-confirmado" }] : [] };
     }),
   };
 }
@@ -84,6 +84,7 @@ function avisaPeloMotor(pool: ReturnType<typeof poolComIdioma>) {
  */
 function adminComIdioma(locale: string | null | Error) {
   return {
+    rpc: async () => ({ data: "caso-confirmado", error: null }),
     from: (tabela: string) => {
       if (tabela === "messages") {
         const falas = { data: [{ metadata: null, created_at: new Date().toISOString() }], error: null };

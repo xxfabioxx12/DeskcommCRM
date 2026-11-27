@@ -1,0 +1,13 @@
+{
+    "id": "hm-cart-0001",
+    "creation_date": 1785300000000,
+    "event": "PURCHASE_OUT_OF_SHOPPING_CART",
+    "version": "2.0.0",
+    "data": {
+        "affiliate": false,
+        "product": {"id": 4455, "name": "Curso Hotmart"},
+        "buyer": {"name": "Maria Lead", "email": "maria.lead@email.com", "phone": "5531988887777"},
+        "offer": {"code": "of123"},
+        "checkout_country": {"name": "Brasil", "iso": "BR"}
+    }
+}

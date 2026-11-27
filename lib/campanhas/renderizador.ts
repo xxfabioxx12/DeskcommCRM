@@ -44,6 +44,9 @@
  * PRÓPRIA do jsonb do banco — `{{lead.__proto__}}` não atravessa protótipo.
  */
 
+import { CAMPOS_DA_VENDA } from "@/lib/vendas/eventos";
+import { lerCaminho } from "@/lib/vendas/valores";
+
 import { horaNoFuso } from "./relogio";
 
 /** As variáveis que existem. Oferecer uma que não resolve é prometer dado que não há. */
@@ -71,14 +74,34 @@ export interface ValoresDoDestinatario {
   lead?: CamposPersonalizados | null;
   /** `{{contato.x}}` — campos do contato. */
   contato?: CamposPersonalizados | null;
+  /**
+   * `{{venda.x}}` — os dados da venda do gatilho `sale.received` (Parte 2), com
+   * `extra` e `payload` dentro. AUSENTE (`undefined`) = fora do gatilho de venda:
+   * aí `{{venda.x}}` fica desconhecida, como toda raiz que não existe.
+   */
+  venda?: CamposPersonalizados | null;
 }
 
 /**
- * O token aceita ponto — `{{lead.gancho}}`. Só palavra e ponto: um caminho com
- * espaço ou símbolo não casa e vira literal, que é o destino de todo token que
- * este módulo não conhece.
+ * O token aceita ponto — `{{lead.gancho}}` — e, opcionalmente, um TEXTO DE
+ * RESERVA entre aspas: `{{primeiro_nome|"aluno"}}` (Parte 3, como o ManyChat).
+ * Aspas retas ou tipográficas (o ManyChat copia “assim”). A reserva tem 1 a 100
+ * caracteres depois de aparada e não aceita `{`, `}` nem aspas: é texto, nunca
+ * variável, e não reabre expressão. Fora disso não casa e vira chave solta.
+ * Só palavra e ponto no caminho: o resto vira literal.
  */
-const TOKEN = /\{\{\s*([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*)\s*\}\}/g;
+const TOKEN =
+  /\{\{\s*([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*)\s*(?:\|\s*["“]\s*([^"“”{}\s](?:[^"“”{}]{0,98}[^"“”{}\s])?)\s*["”]\s*)?\}\}/g;
+
+/**
+ * Sobrou `{{` ou `}}` depois de tirar todo token que o renderizador casa? Então
+ * há uma variável escrita errado (`{{nome completo}}`, `{{primeiro-nome}}`,
+ * `{{saudação}}`) que sairia literal para o cliente. Não muda a renderização.
+ */
+export function temChaveSolta(texto: string): boolean {
+  const resto = texto.replace(new RegExp(TOKEN.source, "g"), "");
+  return resto.includes("{{") || resto.includes("}}");
+}
 
 /**
  * Nomes que um jsonb pode trazer gravados e que NÃO são campo nenhum: são
@@ -104,33 +127,48 @@ export function renderizar(
   const faltando = new Set<string>();
   const desconhecidas = new Set<string>();
 
-  const texto = template.replace(TOKEN, (literal, bruto: string) => {
+  const texto = template.replace(TOKEN, (literal, bruto: string, reserva: string | undefined) => {
     const chave = bruto.toLowerCase();
+    // Sem o dado: a reserva, se quem escreveu deu uma; senão FALTA, como sempre.
+    // Só aqui — variável desconhecida não ganha a reserva (continua literal).
+    const faltou = (variavel: string) =>
+      reserva !== undefined ? blindar(reserva) : marcarFalta(faltando, variavel, literal);
     switch (chave) {
       case "nome": {
-        if (nome === "") return marcarFalta(faltando, "nome", literal);
+        if (nome === "") return faltou("nome");
         return blindar(nome);
       }
       case "primeiro_nome": {
         const primeiro = nome.split(/\s+/)[0] ?? "";
-        if (primeiro === "") return marcarFalta(faltando, "primeiro_nome", literal);
+        if (primeiro === "") return faltou("primeiro_nome");
         return blindar(primeiro);
       }
       case "saudacao": {
         // Sem instante, a saudação fica literal: quem renderiza a PRÉVIA não
         // sabe a hora do envio, e cravar uma ali ensinaria o operador a esperar
-        // aquela. A prévia mostra `{{saudacao}}`; o envio resolve.
+        // aquela. A prévia mostra `{{saudacao}}`; o envio resolve. A reserva
+        // nunca é usada: saudação não falta.
         if (!quando) return literal;
         return saudacaoDaHora(quando.agora, quando.fuso);
       }
       default: {
+        if (valores.venda !== undefined && /^venda\./i.test(bruto)) {
+          const valor = valorDaVenda(valores.venda, bruto.slice("venda.".length));
+          if (valor === DESCONHECIDA) {
+            desconhecidas.add(bruto);
+            return literal;
+          }
+          // Sem valor = FALTA, como `{{nome}}` sem nome: o set_field falha com "falta o dado".
+          if (valor === null) return faltou(chave);
+          return blindar(valor);
+        }
         const raiz = raizDeCampo(bruto);
         if (raiz) {
           const mapa = raiz === "lead" ? valores.lead : valores.contato;
           const valor = lerCampo(mapa, nomeDoCampo(bruto));
           // Sem valor = FALTA, igual a `{{nome}}` sem nome: o literal fica
           // visível na prévia e quem chama tira a pessoa da lista.
-          if (valor === null) return marcarFalta(faltando, chave, literal);
+          if (valor === null) return faltou(chave);
           return blindar(valor);
         }
         desconhecidas.add(bruto);
@@ -160,6 +198,15 @@ const CHAVE_BLINDADA = "{\u2060";
 
 function blindar(valor: string): string {
   return valor.replaceAll("{", CHAVE_BLINDADA);
+}
+
+/**
+ * O texto SEM a blindagem, para exibir. Só para a TELA (a prévia mostra o valor
+ * preparado de uma pessoa): o caminho do envio tira a blindagem pela renderização
+ * final, com instante, e não por aqui.
+ */
+export function semBlindagem(texto: string): string {
+  return texto.replaceAll(CHAVE_BLINDADA, "{");
 }
 
 function marcarFalta(destino: Set<string>, variavel: string, literal: string): string {
@@ -218,6 +265,30 @@ function textoDeCampo(valor: unknown): string {
   return String(valor);
 }
 
+const DESCONHECIDA = Symbol("desconhecida");
+
+/**
+ * `venda.produto`, `venda.extra.link`, `venda.payload.data.buyer.email`. Campo fixo
+ * fora de `CAMPOS_DA_VENDA` (ou `extra`/`payload` sem caminho) é DESCONHECIDO —
+ * erro de digitação, que a tela recusa ao salvar. Só propriedade própria.
+ */
+function valorDaVenda(venda: CamposPersonalizados | null, caminho: string): string | null | typeof DESCONHECIDA {
+  const [primeiro = "", ...resto] = caminho.split(".");
+  const raiz = primeiro.toLowerCase();
+  if (raiz === "extra" || raiz === "payload") {
+    if (resto.length === 0) return DESCONHECIDA;
+    const origem = venda && Object.hasOwn(venda, raiz) ? venda[raiz] : undefined;
+    return textoDoCaminho(origem, resto.join("."));
+  }
+  if (resto.length > 0 || !(CAMPOS_DA_VENDA as readonly string[]).includes(raiz)) return DESCONHECIDA;
+  return lerCampo(venda, raiz);
+}
+
+function textoDoCaminho(origem: unknown, caminho: string): string | null {
+  const texto = textoDeCampo(lerCaminho(origem, caminho));
+  return texto.trim() === "" ? null : texto;
+}
+
 /**
  * Quais variáveis um texto usa — para a tela avisar antes, não depois.
  * Inclui os campos personalizados no caminho que o texto escreveu (`lead.gancho`).
@@ -262,4 +333,27 @@ export function saudacaoDaHora(agora: Date, fuso: string): string {
   if (hora < 12) return "Bom dia";
   if (hora < 18) return "Boa tarde";
   return "Boa noite";
+}
+
+/** O que pode estar errado numa expressão com variáveis — a mesma régua na campanha, no fluxo e nas regras. */
+export type ProblemaDaExpressao = "variavel_mal_escrita" | "variavel_desconhecida";
+
+/**
+ * A primeira expressão com variável que sairia LITERAL para o cliente: chave
+ * sobrando (`{{nome completo}}`) ou token que o renderizador não conhece
+ * (`{{sobrenome}}`). `null` = todas resolvem. Fonte única da regra P17 da
+ * campanha (`conferir-template.ts`), agora também do fluxo e das regras.
+ */
+export function problemaDasExpressoes(
+  expressoes: Iterable<string>,
+  opcoes: { venda?: boolean } = {},
+): ProblemaDaExpressao | null {
+  for (const expressao of expressoes) {
+    if (temChaveSolta(expressao)) return "variavel_mal_escrita";
+    // `venda: {}` faz `{{venda.x}}` conhecida (sem valor = falta, não problema); sem ela, desconhecida.
+    if (renderizar(expressao, { nome: "x", venda: opcoes.venda ? {} : undefined }).desconhecidas.length > 0) {
+      return "variavel_desconhecida";
+    }
+  }
+  return null;
 }

@@ -23,24 +23,32 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { respondeSozinho } from "@/lib/channels/responde-sozinho";
+
 import {
   decidirElegibilidade,
   montarEstadoDeElegibilidade,
-  type DecisaoDeElegibilidade,
+  type DecisaoDaConversa,
 } from "./gate";
 
 interface ConversaEmbed {
   bot_silenced_until: string | null;
   assignee_kind: string | null;
+  /** `conversations.metadata` — o modo "IA com o dono" (#3967) mora aqui. */
+  metadata: unknown;
   contacts: {
     force_human: boolean | null;
     /** A marca permanente "sempre atendimento humano" (issue 2379). */
     ai_opt_out: boolean | null;
     ai_authorized_at: string | null;
     phone_number: string | null;
+    /** `contacts.social_identity` — o testador de Instagram/Facebook casa por aqui. */
+    social_identity: string | null;
+    /** `contacts.tags` — a régua de contato interno (#2353) e a da equipe (#3534). */
+    tags: string[] | null;
   } | null;
-  channel_sessions: { metadata: Record<string, unknown> | null } | null;
-  organizations: { status: string | null } | null;
+  channel_sessions: { metadata: Record<string, unknown> | null; provider?: string | null; responde_sozinho?: boolean | null } | null;
+  organizations: { status: string | null; settings?: unknown } | null;
 }
 
 /**
@@ -48,13 +56,15 @@ interface ConversaEmbed {
  * banco — o chamador (caminho secundário) trata como "não responder".
  */
 export async function decidirElegibilidadeDaConversaViaSupabase(
-  admin: SupabaseClient,
+  admin: Pick<SupabaseClient, "from">,
   input: { organizationId: string; conversationId: string; agora: Date; ttlMs: number },
-): Promise<DecisaoDeElegibilidade | null> {
+): Promise<DecisaoDaConversa | null> {
+  // Embed `(*)` e não o nome do interruptor: num banco sem a 9005 o PostgREST recusaria
+  // a consulta inteira e derrubaria também os números por QR Code.
   const { data, error } = await admin
     .from("conversations")
     .select(
-      "bot_silenced_until, assignee_kind, organizations:organization_id(status), contacts:contact_id(force_human, ai_opt_out, ai_authorized_at, phone_number), channel_sessions:channel_session_id(metadata)",
+      "bot_silenced_until, assignee_kind, metadata, organizations:organization_id(status, settings), contacts:contact_id(force_human, ai_opt_out, ai_authorized_at, phone_number, social_identity, tags), channel_sessions:channel_session_id(*)",
     )
     .eq("organization_id", input.organizationId)
     .eq("id", input.conversationId)
@@ -66,21 +76,30 @@ export async function decidirElegibilidadeDaConversaViaSupabase(
   if (data == null) return null;
 
   const row = data as unknown as ConversaEmbed;
-  return decidirElegibilidade(
-    montarEstadoDeElegibilidade({
-      orgStatus: row.organizations?.status ?? null,
-      canalDesativado: row.channel_sessions?.metadata?.["disabled"] ?? null,
-      aiGate: row.channel_sessions?.metadata?.["ai_gate"] ?? null,
-      aiGateMode: row.channel_sessions?.metadata?.["ai_gate_mode"] ?? null,
-      aiTestPhoneNumbers: row.channel_sessions?.metadata?.["ai_test_phone_numbers"] ?? null,
-      contactPhoneNumber: row.contacts?.phone_number ?? null,
-      forceHuman: row.contacts?.force_human ?? false,
-      aiOptOut: row.contacts?.ai_opt_out ?? false,
-      assigneeKind: row.assignee_kind,
-      botSilencedUntil: row.bot_silenced_until,
-      aiAuthorizedAt: row.contacts?.ai_authorized_at ?? null,
-      agora: input.agora,
-      ttlMs: input.ttlMs,
-    }),
-  );
+  const estado = montarEstadoDeElegibilidade({
+    orgStatus: row.organizations?.status ?? null,
+    canalDesativado: row.channel_sessions?.metadata?.["disabled"] ?? null,
+    respondeSozinho: respondeSozinho(row.channel_sessions?.provider ?? null, row.channel_sessions?.responde_sozinho ?? null),
+    aiGate: row.channel_sessions?.metadata?.["ai_gate"] ?? null,
+    aiGateMode: row.channel_sessions?.metadata?.["ai_gate_mode"] ?? null,
+    aiTestPhoneNumbers: row.channel_sessions?.metadata?.["ai_test_phone_numbers"] ?? null,
+    contactPhoneNumber: row.contacts?.phone_number ?? null,
+    aiTestSocialIdentities: row.channel_sessions?.metadata?.["ai_test_social_identities"] ?? null,
+    contactSocialIdentity: row.contacts?.social_identity ?? null,
+    forceHuman: row.contacts?.force_human ?? false,
+    contactTags: row.contacts?.tags ?? null,
+    orgSettings: row.organizations?.settings,
+    aiOptOut: row.contacts?.ai_opt_out ?? false,
+    assigneeKind: row.assignee_kind,
+    metadataDaConversa: row.metadata,
+    botSilencedUntil: row.bot_silenced_until,
+    aiAuthorizedAt: row.contacts?.ai_authorized_at ?? null,
+    agora: input.agora,
+    ttlMs: input.ttlMs,
+  });
+  // #3534: `contatoDaEquipe` viaja com a decisão. `contacts.tags` e
+  // `organizations.settings` já vêm no embed desta query, então a régua da
+  // equipe não custa leitura nova — e o medidor de clima, chamador daqui, passa
+  // a saber que a conversa é atendida E que não pode ser passada por clima.
+  return { ...decidirElegibilidade(estado), contatoDaEquipe: estado.contatoDaEquipe };
 }

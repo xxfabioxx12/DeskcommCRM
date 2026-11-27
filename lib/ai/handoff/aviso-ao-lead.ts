@@ -1,3 +1,4 @@
+import { assertServiceBoundarySupabase } from "@/lib/atendimento/origem";
 import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
 /**
  * O ENVIO do aviso de escalação — lado do CRM (`supabase-js`).
@@ -49,6 +50,7 @@ import {
   type MotivoDoAviso as MotivoDaFrase,
 } from "@/lib/escalacao/aviso-ao-lead";
 import { comecaComPalavraDeSaida } from "@/lib/opt-out/deteccao";
+import { lerFraseDoAvisoConfigurada } from "@/lib/escalacao/frase-do-aviso-configurada";
 import { carregarRosterDeAtendimento, podeAssumirAgora } from "@/lib/escalacao/atendentes";
 // Dois `MotivoDoAviso` no repositório: o de `escalacao/aviso-ao-lead` diz QUE
 // FRASE o cliente lê; este diz POR QUE ele não leu nada. O apelido impede a
@@ -225,7 +227,20 @@ export async function avisarLeadDoCrm(
       await quemPodeAssumir(admin, input.organizationId),
       input.contactId,
       idioma,
+      // #3725 — a frase do tenant, quando ele escreveu uma. Lida aqui porque
+      // este emissor não tem turno: a conversa diz qual agente está ativo, e o
+      // agente diz a frase. Falha de leitura ⇒ `null` ⇒ o padrão do produto;
+      // um aviso de passagem nunca deixa de sair por causa de uma preferência.
+      await fraseDoAgente(admin, input),
     );
+    if (input.serviceBoundary) await assertServiceBoundarySupabase(admin, input.serviceBoundary);
+    const recibo = await admin.rpc("fn_nodz_garantir_caso_humano", {
+      p_org: input.organizationId,
+      p_conversa: input.conversationId,
+      p_titulo: "Atendimento encaminhado para uma pessoa",
+      p_resumo: "A IA solicitou atendimento humano. Conferir o histórico e o briefing da passagem.",
+    });
+    if (recibo.error || !recibo.data) return { avisado: false, porque: "caso_nao_registrado" };
     const mensagem = await sendMessageHandler(
       admin,
       {
@@ -259,7 +274,11 @@ export async function avisarLeadDoCrm(
       };
     }
     const codigo = CODIGO_DO_ERRO[mensagem.error_code ?? ""] ?? "falhou_no_envio";
-    return { avisado: false, porque: mensagem.error_code ?? "falhou_no_envio", motivoCodigo: codigo };
+    return {
+      avisado: false,
+      porque: mensagem.error_code ?? "falhou_no_envio",
+      motivoCodigo: codigo,
+    };
   } catch (err) {
     // PII fora do log: só o motivo da falha.
     const porque = err instanceof Error ? err.name : "erro_desconhecido";
@@ -271,6 +290,38 @@ export async function avisarLeadDoCrm(
   }
 }
 
+/**
+ * A frase própria do tenant (#3725): conversa → agente ativo → `ai_agents.config`.
+ *
+ * Duas leituras, e nenhuma delas pode custar o aviso: qualquer erro, campo
+ * ausente ou agente sem frase devolve `null`, e `textoDoAviso` sai com o padrão
+ * do produto. É a mesma direção de falha do resto do arquivo — o cliente ser
+ * avisado importa mais do que o tom do aviso.
+ */
+async function fraseDoAgente(
+  admin: SupabaseClient,
+  input: AvisoDoCrmInput,
+): Promise<string | null> {
+  try {
+    const { data: conversa } = await admin
+      .from("conversations")
+      .select("active_ai_agent_id")
+      .eq("organization_id", input.organizationId)
+      .eq("id", input.conversationId)
+      .maybeSingle();
+    const agentId = (conversa as { active_ai_agent_id?: string | null } | null)?.active_ai_agent_id;
+    if (!agentId) return null;
+    const { data: agente } = await admin
+      .from("ai_agents")
+      .select("config")
+      .eq("organization_id", input.organizationId)
+      .eq("id", agentId)
+      .maybeSingle();
+    return lerFraseDoAvisoConfigurada((agente as { config?: unknown } | null)?.config);
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Qual frase o cliente lê. Parte do motivo gravado (`last_handoff_reason`) e só

@@ -42,7 +42,7 @@ import { evaluateCondition, selectEdge, type LeadFacts } from "./node-handlers";
 const MAX_SUBIDA = 8;
 
 /** Campos que nem o fluxo nem o relógio mudam entre a condição e o envio. */
-const CAMPOS_REAVALIADOS: ReadonlySet<string> = new Set(["lead_stage", "tag"]);
+const CAMPOS_REAVALIADOS: ReadonlySet<string> = new Set(["lead_stage", "tag", "contact_tag"]);
 
 export interface CondicaoQueGoverna {
   condicao: Extract<FlowNode, { type: "condition" }>;

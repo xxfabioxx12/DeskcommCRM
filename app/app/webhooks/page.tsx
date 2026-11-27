@@ -5,7 +5,7 @@ import { ROLE_RANK } from "@/lib/auth/types";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { WebhooksClient, type AbaDosWebhooks } from "./_components/WebhooksClient";
 
-const ABAS: ReadonlyArray<AbaDosWebhooks> = ["receber", "leads", "automacoes", "atividade"];
+const ABAS: ReadonlyArray<AbaDosWebhooks> = ["receber", "leads", "vendas", "automacoes", "atividade"];
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Webhooks" };

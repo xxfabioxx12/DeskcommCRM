@@ -30,7 +30,7 @@ const estado = vi.hoisted(() => ({
     id: string;
     organization_id: string;
   } | null,
-  contatoExistente: null as { id: string; phone_number: string } | null,
+  contatoExistente: null as { id: string; phone_number: string; is_anonymized?: boolean } | null,
   numeroInterno: false,
   erroContato: null as { code: string; message: string } | null,
   marcacoes: [] as Array<Record<string, unknown>>,
@@ -41,6 +41,7 @@ const estado = vi.hoisted(() => ({
 
 vi.mock("@/lib/channels/contato-por-telefone", () => ({
   encontrarContatoPorTelefone: async () => estado.contatoExistente,
+  encontrarContatoPorTelefoneComAnonimizacao: async () => estado.contatoExistente,
 }));
 vi.mock("@/lib/escalacao/numero-interno-de-aviso", () => ({
   ehNumeroInternoDeAviso: async () => estado.numeroInterno,
@@ -122,6 +123,10 @@ function adminFalso(): SupabaseClient {
     throw new Error(`tabela inesperada: ${table}`);
   };
   const rpc = async (name: string, args: Record<string, unknown>) => {
+    // A pergunta do titular apagado tem teste próprio
+    // (`meta-coexistencia-titular-apagado`) e fica FORA de `estado.rpcs`: os
+    // casos abaixo contam as RPCs do caminho do contato.
+    if (name === "fn_titular_apagado_a_pedido") return { data: false, error: null };
     estado.rpcs.push({ name, args });
     if (name === "fn_upsert_wa_contact") {
       return estado.erroContato
@@ -306,13 +311,20 @@ describe("a rota do webhook oficial entrega o contato do app à ingestão", () =
     vi.stubEnv("META_APP_SECRET", segredo);
     const sincronizados: unknown[] = [];
 
-    vi.doMock("@/lib/channels/meta/session", () => ({
+    vi.doMock("@/lib/channels/meta/session", async (orig) => ({
+  // Mantém o resto do módulo real (eventoDaSessao, campoDaContaDeMensagens).
+  ...(await orig<Record<string, unknown>>()),
       metaSessionByWebhookToken: async () => ({ id: "sess-1", organizationId: "org-1", wabaId: "waba-1" }),
     }));
     vi.doMock("@/lib/channels/meta/app", () => ({
       appDaMeta: async () => ({ appSecret: segredo, verifyToken: null }),
     }));
     vi.doMock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({}) }));
+    vi.doMock("@/lib/channels/meta/titular-apagado", () => ({
+      perguntarTitularesApagadosNoLote: async () => ({ apagados: new Set<string>() }),
+      MOTIVO_TITULAR_APAGADO: "titular_apagado_a_pedido",
+      MOTIVO_CONTATO_ANONIMIZADO: "contato_anonimizado",
+    }));
     vi.doMock("@/lib/channels/meta/ingest", () => ({
       ingestMetaInbound: async () => ({ status: "ingested" }),
       ingestMetaEcho: async () => ({ status: "ingested" }),
@@ -371,13 +383,20 @@ describe("contato do app sem assinatura válida não chega à ingestão", () => 
       vi.resetModules();
       vi.stubEnv("META_APP_SECRET", segredo);
       const sincronizados: unknown[] = [];
-      vi.doMock("@/lib/channels/meta/session", () => ({
+      vi.doMock("@/lib/channels/meta/session", async (orig) => ({
+  // Mantém o resto do módulo real (eventoDaSessao, campoDaContaDeMensagens).
+  ...(await orig<Record<string, unknown>>()),
         metaSessionByWebhookToken: async () => ({ id: "sess-1", organizationId: "org-1", wabaId: "waba-1" }),
       }));
       vi.doMock("@/lib/channels/meta/app", () => ({
         appDaMeta: async () => ({ appSecret: segredo, verifyToken: null }),
       }));
       vi.doMock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({}) }));
+      vi.doMock("@/lib/channels/meta/titular-apagado", () => ({
+        perguntarTitularesApagadosNoLote: async () => ({ apagados: new Set<string>() }),
+        MOTIVO_TITULAR_APAGADO: "titular_apagado_a_pedido",
+        MOTIVO_CONTATO_ANONIMIZADO: "contato_anonimizado",
+      }));
       vi.doMock("@/lib/channels/meta/ingest", () => ({
         ingestMetaInbound: async () => ({ status: "ingested" }),
         ingestMetaEcho: async () => ({ status: "ingested" }),
@@ -415,6 +434,11 @@ describe("canal parceiro: contato do app de OUTRO número não vaza", () => {
     const sincronizados: unknown[] = [];
     vi.doMock("@/lib/channels/graph-parceiro/session", () => ({
       graphPartnerRefsDaSessao: async () => ({ phoneNumberId: "phone-1", wabaId: "waba-1" }),
+    }));
+    vi.doMock("@/lib/channels/meta/titular-apagado", () => ({
+      perguntarTitularesApagadosNoLote: async () => ({ apagados: new Set<string>() }),
+      MOTIVO_TITULAR_APAGADO: "titular_apagado_a_pedido",
+      MOTIVO_CONTATO_ANONIMIZADO: "contato_anonimizado",
     }));
     vi.doMock("@/lib/channels/meta/ingest", () => ({
       ingestMetaInbound: async () => ({ status: "ingested" }),

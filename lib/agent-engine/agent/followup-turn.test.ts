@@ -52,6 +52,17 @@ describe('followupTurnPayloadSchema: só payloads bem formados entram no runner'
       }).success,
     ).toBe(true);
   });
+
+  it('modo `mensagem` (Parte 1): as duas versões atravessam o portão; forma torta é recusada', () => {
+    const mensagem = {
+      modelo: { name: 'acesso', language: 'pt_BR', contract_hash: 'h1', slot_map: { '1': '{{primeiro_nome}}' } },
+      texto: { body: 'Oi {{primeiro_nome}}' },
+    };
+    const lido = followupTurnPayloadSchema.safeParse({ mensagem });
+    expect(lido.success && lido.data.mensagem).toEqual(mensagem);
+    expect(followupTurnPayloadSchema.safeParse({ mensagem: { texto: { body: '' } } }).success).toBe(false);
+    expect(followupTurnPayloadSchema.safeParse({ mensagem: { outra: 1 } }).success).toBe(false);
+  });
 });
 
 describe('buildTemporalBlock: re-entrada conta o tempo sem inventar promessa', () => {

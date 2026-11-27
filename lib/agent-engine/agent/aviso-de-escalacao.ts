@@ -1,3 +1,4 @@
+import { guardServiceEffect } from "@/lib/atendimento/fronteira-server";
 import type {JobClaim} from "../queue/claim";
 /**
  * O ENVIO do aviso de que a IA está saindo de campo — lado do MOTOR (`pg`).
@@ -103,6 +104,12 @@ export interface AvisoDeEscalacaoOpts {
   log: Logger;
   lgpd?: LgpdInput;
   agentId?: string | null;
+  /**
+   * A frase própria do tenant (#3725) — `ai_agents.config.aviso_de_handoff`.
+   * `null`/ausente = o padrão do produto (`textoDoAviso`). Quem lê a config é o
+   * chamador do turno: esta função não faz consulta a mais para uma frase.
+   */
+  fraseConfigurada?: string | null;
   disclosureMode?: 'inject' | 'veto';
   sleep?: (ms: number) => Promise<void>;
   /**
@@ -146,17 +153,32 @@ export async function avisarLeadDaEscalacao(
   }
   try {
     const { quem } = await expectativaDeAtendimento(pool, ids.tenantId, opts.now);
-    body = textoDoAviso(opts.motivo, quem, ids.leadId, idioma);
+    body = textoDoAviso(opts.motivo, quem, ids.leadId, idioma, opts.fraseConfigurada ?? null);
   } catch (err) {
     // `expectativaDeAtendimento` já tem rede própria; se ainda assim quebrar,
     // a frase conservadora (sem prazo) é a certa — nunca a ausência de frase.
     opts.log.warn('aviso de escalação: disponibilidade não lida, usando a frase conservadora', {
       error: err instanceof Error ? err.message.slice(0, 120) : 'erro desconhecido',
     });
-    body = textoDoAviso(opts.motivo, null, ids.leadId, idioma);
+    body = textoDoAviso(opts.motivo, null, ids.leadId, idioma, opts.fraseConfigurada ?? null);
   }
 
   try {
+    if (opts.optedOutThisTurn) return { avisado: false, porque: "opt_out" };
+    await guardServiceEffect();
+    // A promessa só pode sair depois de existir uma tarefa durável para a equipe.
+    if (opts.motivo !== "suspeita_de_opt_out") {
+      const recibo = await pool.query<{ id: string | null }>(
+        "select public.fn_nodz_garantir_caso_humano($1,$2,$3,$4) as id",
+        [
+          ids.tenantId,
+          ids.conversationId,
+          "Atendimento encaminhado para uma pessoa",
+          "A IA solicitou atendimento humano. Conferir o histórico e o briefing da passagem.",
+        ],
+      );
+      if (!recibo.rows[0]?.id) return { avisado: false, porque: "caso_nao_registrado" };
+    }
     const chain = await runBeforeSend({
       pool,
       log: opts.log,
@@ -178,6 +200,10 @@ export async function avisarLeadDaEscalacao(
       // a ser escalada na mesma janela do número receberia silêncio — pelo
       // guardrail. Este é o ÚNICO chamador que o desarma.
       enforceSpinning: false,
+      // Texto fixo deste arquivo, não da IA: a restrição comercial (#2877) não o
+      // julga. Sem o `false`, a cadeia leria a escolha da organização — e o aviso
+      // que a própria passagem comercial manda poderia ser barrado por ela.
+      enforceCommercialRestriction: false,
       // Mesmo débito declarado no caminho do agente e no da re-entrada: o
       // daily_message_limit do CRM ainda não é lido no runtime.
       crmDailyLimit: null,
@@ -205,6 +231,10 @@ export async function avisarLeadDaEscalacao(
       const codigo = CODIGO_DO_VETO[chain.code];
       return {
         avisado: false,
+        // O código REAL do gate: `contato_bloqueado` (opt-out) e
+        // `atendimento_com_humano` (a conversa foi passada para a equipe) são
+        // desfechos diferentes, e este campo é lido por quem diagnostica o
+        // aviso que não saiu (#3310).
         porque: chain.code,
         ...(codigo !== undefined ? { motivoCodigo: codigo } : {}),
       };

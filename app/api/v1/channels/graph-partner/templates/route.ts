@@ -55,7 +55,7 @@ import {
 } from "@/lib/channels";
 import { canalGraphParceiroLigado } from "@/lib/channels/graph-parceiro/credentials";
 import { findGraphPartnerSession } from "@/lib/channels/graph-parceiro/session";
-import { acaoApagarSchema, acaoEditarSchema, executarGestao } from "@/lib/channels/gestao-de-modelos";
+import { acaoApagarSchema, acaoEditarSchema, executarGestao, ROTULO_DO_USO } from "@/lib/channels/gestao-de-modelos";
 import { slotKey } from "@/lib/channels/meta/build-components";
 import { hashContract } from "@/lib/channels/meta/contract-hash";
 import { deriveTemplateContract, describeAddress } from "@/lib/channels/meta/template-contract";
@@ -235,7 +235,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         return fail("template_in_use", t("Este modelo está em uso. Confirme para apagar assim mesmo."), 409, {
           requestId,
           details: {
-            usos: gestao.usos.map((u) => `${u.tipo === "fluxo" ? t("Follow-up") : t("Agente")} «${u.nome}»`),
+            usos: gestao.usos.map((u) => `${t(ROTULO_DO_USO[u.tipo])} «${u.nome}»`),
           },
         });
       }

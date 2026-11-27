@@ -1,7 +1,8 @@
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * GET  /api/v1/channels/templates — o espelho local + o CONTRATO derivado de cada um.
- * POST /api/v1/channels/templates — força um sync com a Graph API.
+ * POST /api/v1/channels/templates — sem corpo (ou sem `acao`): força um sync com a
+ *   Graph API; com `acao` criar/editar/apagar: gerencia o template na conta oficial.
  * PATCH /api/v1/channels/templates — salva (ou esquece) o link da mídia de um modelo.
  *
  * O contrato vai derivado no payload, e não guardado no banco, de propósito: guardar
@@ -13,6 +14,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
@@ -21,9 +23,19 @@ import { metaSessionForOrg } from "@/lib/channels/meta/session";
 import { normalizeRejectedReason } from "@/lib/channels/meta/webhook";
 import { deriveTemplateContract, describeAddress } from "@/lib/channels/meta/template-contract";
 import { slotKey } from "@/lib/channels/meta/build-components";
-import { syncTemplates } from "@/lib/channels/meta/template-sync";
+import { syncTemplates, templatesToRows } from "@/lib/channels/meta/template-sync";
 import { mesclarValoresSalvos } from "@/lib/channels/meta/valores-salvos";
+import { filtrarLinhasDaConexao, wabaDoOficial } from "@/lib/channels/linha-do-espelho";
+import { traduzir } from "@/lib/i18n/dicionario";
+import type { Idioma } from "@/lib/i18n/idiomas";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { audit } from "@/lib/audit";
+import { acaoDoModeloOficialSchema, componentsDoFormulario } from "@/lib/channels/criacao-de-modelo";
+import { executarGestao, linhasDoModeloNaConexao, ROTULO_DO_USO } from "@/lib/channels/gestao-de-modelos";
+import { ehErroDaPlataformaNoModelo, explicarErroDaCriacao } from "@/lib/channels/meta/erros-para-operador";
+import { opsDeModelosDaContaOficial } from "@/lib/channels/modelos-do-canal";
+import { erroDePermissaoDeGestao } from "@/lib/channels/templates-graph";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -68,6 +80,12 @@ export interface TemplateView {
    * `template_values`. O painel da janela fechada pré-preenche com eles.
    */
   savedValues: Record<string, string>;
+  /**
+   * O modelo é DA CONTA OFICIAL desta conexão — o único que esta tela pode
+   * editar ou apagar. O espelho é da organização inteira: o modelo do parceiro
+   * aparece na lista, mas editar/apagar aqui miraria a WABA oficial pelo nome.
+   */
+  daConexao: boolean;
 }
 
 /** Textos com placeholder, achatados (inclui os de dentro de card de carrossel). */
@@ -93,7 +111,8 @@ function textPreviews(components: unknown): Array<{ onde: string; text: string }
 }
 
 type OrgGate =
-  | { autorizado: true; orgId: string }
+  /** `userId` só é usado no audit das ações de escrita (#3635). */
+  | { autorizado: true; orgId: string; userId: string; idioma: Idioma }
   | { autorizado: false; resposta: NextResponse };
 
 /**
@@ -113,20 +132,47 @@ type OrgGate =
 async function orgOrFail(requestId: string, papel: "agent" | "admin"): Promise<OrgGate> {
   const authz = await requireRole(papel, { requestId, resource: "channels_templates" });
   if (!authz.ok) return { autorizado: false, resposta: authz.response };
-  return { autorizado: true, orgId: authz.org.orgId };
+  return { autorizado: true, orgId: authz.org.orgId, userId: authz.user.id, idioma: authz.user.idioma };
 }
 
-export async function GET(): Promise<NextResponse> {
+/** `?channel_session_id=` — opcional. Ausente, a rota responde como sempre. */
+const consultaSchema = z.object({ channel_session_id: z.string().uuid().optional() });
+
+export async function GET(req: NextRequest): Promise<NextResponse> {
   const requestId = randomUUID();
   const r = await orgOrFail(requestId, "agent");
   if (!r.autorizado) return r.resposta;
+  const t = (texto: string) => traduzir(texto, r.idioma);
+
+  const consulta = consultaSchema.safeParse(Object.fromEntries(new URL(req.url).searchParams.entries()));
+  if (!consulta.success) {
+    return fail("validation_failed", t("channel_session_id inválido"), 422, { requestId });
+  }
+  const conexao = consulta.data.channel_session_id ?? null;
 
   const sessao = await metaSessionForOrg(r.orgId);
   const admin = createAdminClient();
+
+  // Os modelos de UM número (a campanha escolhe pelo número que vai enviar): a
+  // mesma regra do envio, `linhaDoEspelho`. A sessão é conferida CONTRA A
+  // ORGANIZAÇÃO — id de outro tenant é 404, nunca a lista dele.
+  let wabaDaConexao: string | null = null;
+  if (conexao) {
+    const { data: s, error: erroDaSessao } = await admin
+      .from("channel_sessions")
+      .select("provider, meta_waba_id")
+      .eq("organization_id", r.orgId)
+      .eq("id", conexao)
+      .maybeSingle();
+    if (erroDaSessao) return fail("internal_error", erroDaSessao.message, 500, { requestId });
+    if (!s) return fail("not_found", t("conexão não encontrada"), 404, { requestId });
+    wabaDaConexao = wabaDoOficial(s as { provider?: string | null; meta_waba_id?: string | null });
+  }
+
   const { data, error } = await admin
     .from("meta_templates")
     .select(
-      "name, language, status, category, rejected_reason, quality_score, parameter_format, contract_hash, components, synced_at, saved_values",
+      "name, language, status, category, rejected_reason, quality_score, parameter_format, contract_hash, components, synced_at, saved_values, channel_session_id, waba_id",
     )
     .eq("organization_id", r.orgId)
     .order("status")
@@ -134,7 +180,11 @@ export async function GET(): Promise<NextResponse> {
 
   if (error) return fail("internal_error", error.message, 500, { requestId });
 
-  const templates: TemplateView[] = (data ?? []).map((row) => {
+  const linhas = conexao
+    ? filtrarLinhasDaConexao(data ?? [], { channelSessionId: conexao, wabaDoOficial: wabaDaConexao })
+    : (data ?? []);
+
+  const templates: TemplateView[] = linhas.map((row) => {
     const contrato = deriveTemplateContract({
       name: row.name,
       language: row.language,
@@ -175,6 +225,9 @@ export async function GET(): Promise<NextResponse> {
         const r = mesclarValoresSalvos(contrato, (row.saved_values ?? {}) as Record<string, unknown>, {});
         return r.ok ? r.valores : {};
       })(),
+      // A mesma régua de `linhasDoModeloNaConexao`: linha oficial = sem conexão
+      // e com a WABA desta sessão.
+      daConexao: !!sessao?.wabaId && row.channel_session_id === null && row.waba_id === sessao.wabaId,
     };
   });
 
@@ -183,17 +236,34 @@ export async function GET(): Promise<NextResponse> {
     // nunca conectou, ou conectou e excluiu —, e a tela precisa distingui-lo de
     // "conectado, porém sem template".
     waba: sessao?.wabaId ?? null,
+    // A tela mostra "Criar template" só quando o canal GERENCIA definições pela
+    // API (capacidade + operações no adapter) e a conexão tem conta e número.
+    podeGerenciar: !!sessao?.wabaId && !!sessao.phoneNumberId && opsDeModelosDaContaOficial() !== null,
     templates,
   });
 }
 
-export async function POST(_req: NextRequest): Promise<NextResponse> {
+export async function POST(req: NextRequest): Promise<NextResponse> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
   const r = await orgOrFail(requestId, "admin");
   if (!r.autorizado) return r.resposta;
+  const t = (texto: string) => traduzir(texto, r.idioma);
+
+  // Corpo ausente (ou sem `acao`) = sincronizar: é o que o botão "Sincronizar com
+  // a Meta" manda, e o que toda integração que já chamava esta rota continua mandando.
+  const bruto = (await req.json().catch(() => null)) as unknown;
+  const comAcao = bruto && typeof bruto === "object" && "acao" in bruto ? bruto : { acao: "sincronizar" };
+  const pedido = acaoDoModeloOficialSchema.safeParse(comAcao);
+  if (!pedido.success) {
+    return fail("validation_failed", t("Confira o formulário do template."), 422, {
+      requestId,
+      details: pedido.error.flatten().fieldErrors as Record<string, unknown>,
+    });
+  }
+  const corpo = pedido.data;
 
   const sessao = await metaSessionForOrg(r.orgId);
   if (!sessao?.wabaId) {
@@ -202,34 +272,178 @@ export async function POST(_req: NextRequest): Promise<NextResponse> {
 
   // A credencial vem da SESSÃO que o operador conectou na tela, com o ambiente só
   // como RESERVA — a mesma porta que `send`, `checkHealth` e `fetchInboundMedia` já
-  // usam. Antes disto este 400 olhava só `META_SYSTEM_USER_TOKEN`: numa instalação que
-  // conectou o número pela TELA, "Sincronizar modelos" respondia
-  // `400 missing_meta_token` a quem tinha credencial salva e visível na própria tela,
-  // e o 2º número oficial da instalação nunca sincronizava um modelo.
-  //
-  // A ORDEM dos desfechos NÃO muda: sem canal oficial a resposta continua
-  // `no_meta_channel`; com canal e sem credencial nenhuma (nem na sessão, nem no
-  // ambiente) continua `missing_meta_token` 400 — o que muda é só de ONDE a
-  // credencial sai quando existe.
+  // usam. (Ver o histórico deste bloco na v1.86.0: a ORDEM dos desfechos não muda —
+  // sem canal oficial `no_meta_channel`; com canal e sem credencial `missing_meta_token`.)
   const creds = await resolveMetaCreds(createAdminClient(), {
     organizationId: r.orgId,
     phoneNumberId: sessao.phoneNumberId ?? "",
   });
   if (!creds) return fail("invalid_request", "missing_meta_token", 400, { requestId });
 
+  if (corpo.acao === "sincronizar") {
+    try {
+      const counts = await syncTemplates({
+        organizationId: r.orgId,
+        wabaId: sessao.wabaId,
+        token: creds.token,
+        graphVersion: creds.graphVersion,
+      });
+      return ok(counts);
+    } catch (err) {
+      // A falha da Graph API vira mensagem legível na tela, não 500 mudo — o
+      // operador precisa saber se é token vencido, WABA errada ou rede.
+      return fail("internal_error", err instanceof Error ? err.message : "sync_failed", 502, {
+        requestId,
+      });
+    }
+  }
+
+  // ─── Criar, editar, apagar: só se o canal GERENCIA definições pela API ───
+  const ops = opsDeModelosDaContaOficial();
+  if (!ops || !sessao.phoneNumberId) {
+    return fail("not_implemented", t("Este canal não gerencia definições."), 501, { requestId });
+  }
+  const admin = createAdminClient();
+  const escopo = {
+    orgId: r.orgId,
+    sessionId: sessao.id,
+    sessionRef: sessao.phoneNumberId,
+    wabaDoOficial: sessao.wabaId,
+  };
+
   try {
-    const counts = await syncTemplates({
+    if (corpo.acao === "criar") {
+      const components = componentsDoFormulario(corpo) as Record<string, unknown>[];
+      const criado = await ops.create({
+        organizationId: r.orgId,
+        sessionRef: escopo.sessionRef,
+        draft: { name: corpo.name, language: corpo.language, category: corpo.category, components },
+      });
+      // O espelho NA HORA, com o estado que a revisão devolveu (PENDING): a tela
+      // mostra "Em análise" sem esperar sincronizar. A linha é a da CONTA (sem
+      // conexão), a mesma que o sync e o webhook de status atualizam depois.
+      const status = criado.status && criado.status !== "UNKNOWN" ? criado.status : "PENDING";
+      const [linha] = templatesToRows(
+        { data: [{ name: corpo.name, language: corpo.language, status, category: corpo.category, components }] },
+        r.orgId,
+        sessao.wabaId,
+      );
+      const agora = new Date().toISOString();
+      const { error: erroDoEspelho } = await admin
+        .from("meta_templates")
+        .upsert({ ...linha, synced_at: agora, updated_at: agora }, { onConflict: "organization_id,waba_id,name,language" });
+      if (erroDoEspelho) {
+        // O template EXISTE na Meta: falhar aqui faria o operador criar de novo
+        // (e levar "nome repetido"). O sync seguinte o espelha.
+        logger.warn("[templates] espelho do template criado falhou", { requestId, detail: erroDoEspelho.message });
+      }
+      await audit({
+        action: "template.created",
+        actorUserId: r.userId,
+        organizationId: r.orgId,
+        resourceType: "channel_session",
+        resourceId: sessao.id,
+        requestId,
+        metadata: { name: corpo.name, language: corpo.language, category: corpo.category },
+      });
+      return ok({ acao: "criar", status }, { requestId, status: 201 });
+    }
+
+    // A Meta acha o modelo pelo NOME dentro da WABA oficial. Um homônimo de outra
+    // conexão (o parceiro) listado no espelho não pode virar edição — ou
+    // apagamento, que é irreversível — na conta oficial.
+    if ((await linhasDoModeloNaConexao(admin, escopo, corpo)).length === 0) {
+      return fail("not_found", t("Este modelo não é da conta oficial desta conexão."), 404, { requestId });
+    }
+
+    const gestao = await executarGestao(
+      ops,
+      admin,
+      escopo,
+      corpo.acao === "editar"
+        ? {
+            acao: "editar",
+            name: corpo.name,
+            language: corpo.language,
+            components: componentsDoFormulario(corpo) as Record<string, unknown>[],
+          }
+        : corpo,
+    );
+    if (!gestao.ok) {
+      // Apagar um modelo em uso faria o passo do follow-up pular e o agente errar
+      // o envio, em silêncio. A tela mostra ONDE e pede a confirmação.
+      return fail("template_in_use", t("Este modelo está em uso. Confirme para apagar assim mesmo."), 409, {
+        requestId,
+        details: { usos: gestao.usos.map((u) => `${t(ROTULO_DO_USO[u.tipo])} «${u.nome}»`) },
+      });
+    }
+    if (gestao.acao === "editar") {
+      // A edição volta o template para revisão na Meta; o sync traz o estado novo.
+      // Falha do sync não desfaz a edição, que já aconteceu.
+      try {
+        await syncTemplates({ organizationId: r.orgId, wabaId: sessao.wabaId, token: creds.token, graphVersion: creds.graphVersion });
+      } catch (err) {
+        logger.warn("[templates] sync depois de editar falhou", { requestId, detail: err instanceof Error ? err.message : String(err) });
+      }
+    }
+    await audit({
+      action: gestao.acao === "editar" ? "template.updated" : "template.deleted",
+      actorUserId: r.userId,
       organizationId: r.orgId,
-      wabaId: sessao.wabaId,
-      token: creds.token,
-      graphVersion: creds.graphVersion,
-    });
-    return ok(counts);
-  } catch (err) {
-    // A falha da Graph API vira mensagem legível na tela, não 500 mudo — o
-    // operador precisa saber se é token vencido, WABA errada ou rede.
-    return fail("internal_error", err instanceof Error ? err.message : "sync_failed", 502, {
+      resourceType: "channel_session",
+      resourceId: sessao.id,
       requestId,
+      metadata: { name: corpo.name, language: corpo.language },
+    });
+    return ok({ acao: gestao.acao }, { requestId });
+  } catch (err) {
+    const mensagem = err instanceof Error ? err.message : String(err);
+    // Falta de `whatsapp_business_management` é ACIONÁVEL (quem administra o app
+    // da Meta dá o escopo) e não pode sair como "não deu".
+    if (erroDePermissaoDeGestao(err) || /^[a-z_]+_template_failed: 403\b/.test(mensagem)) {
+      return fail(
+        "forbidden",
+        t(
+          "A conta do WhatsApp não permite gerenciar modelos por esta conexão. Falta a permissão whatsapp_business_management no app da Meta.",
+        ),
+        403,
+        { requestId },
+      );
+    }
+    // Conexão sem conta/token é PRECONDIÇÃO da nossa configuração: 409 com o
+    // motivo, e não 500 pedindo para tentar de novo.
+    if (/^meta_(modelo_)?sem_waba/.test(mensagem)) {
+      return fail(
+        "failed_precondition",
+        t("Esta conexão oficial não tem conta do WhatsApp (WABA) gravada. Reconecte o número."),
+        409,
+        { requestId },
+      );
+    }
+    if (/^meta_(not_configured|modelo_sem_credencial)/.test(mensagem)) {
+      return fail(
+        "failed_precondition",
+        t("Esta conexão oficial não tem token para gerenciar modelos. Reconecte o número."),
+        409,
+        { requestId },
+      );
+    }
+    if (!ehErroDaPlataformaNoModelo(mensagem)) {
+      // Falha NOSSA (banco do espelho, leitura dos usos, configuração, rede): não
+      // é recusa da Meta, e o texto cru do banco não vai para a tela.
+      logger.error("[templates] falha local ao gerenciar template", { requestId, detail: mensagem });
+      return fail("internal_error", t("Não foi possível concluir a operação com o template. Tente de novo."), 500, {
+        requestId,
+      });
+    }
+    const explicada = explicarErroDaCriacao(mensagem);
+    logger.warn("[templates] a Meta recusou", { requestId, detail: explicada.originalDaMeta ?? explicada.frase });
+    // A frase é a nossa LEITURA do texto da Meta; o original vai junto para a tela
+    // mostrar "<frase> (Meta: <original>)" — uma leitura errada nunca fica
+    // silenciosa. Sem frase conhecida, a mensagem já é o texto da Meta.
+    return fail("upstream_error", explicada.traduzivel ? t(explicada.frase) : explicada.frase, 502, {
+      requestId,
+      ...(explicada.originalDaMeta ? { details: { originalDaMeta: explicada.originalDaMeta } } : {}),
     });
   }
 }

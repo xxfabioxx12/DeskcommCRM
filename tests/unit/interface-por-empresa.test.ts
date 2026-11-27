@@ -55,7 +55,7 @@ describe("portas por empresa (issue #1341)", () => {
   it("sem escolha de nenhum dos lados nada muda: a empresa completa segue completa", () => {
     expect(combinarInterfaces(completa, completa)).toEqual(INTERFACE_COMPLETA);
     expect(combinarInterfaces(undefined, null).destinos).toBeUndefined();
-    expect(hrefs(combinarInterfaces(completa, completa))).toEqual(NAV_CATALOG.map((d) => d.href));
+    expect(hrefs(combinarInterfaces(completa, completa))).toEqual(NAV_CATALOG.filter((d) => !("agenciaOnly" in d && d.agenciaOnly)).map((d) => d.href));
   });
 
   it("o vínculo NÃO abre porta que a empresa não oferece", () => {
@@ -184,10 +184,14 @@ describe("medição da folga (pergunta de aceite da issue #1341)", () => {
    * vínculo. É o número que o issue publica (15 itens: atendimento 4, CRM 3,
    * IA 3, canais 2, análise 3), medido aqui pelo módulo que alimenta o menu.
    */
-  it("hoje: 15 itens no menu lateral, folga 0 (é o teto da dobra a 1280x900)", () => {
-    expect(itensNoMenuLateral(INTERFACE_COMPLETA)).toBe(15);
+  // Fork NODZ (23/10/2026): o "Painel do setor" entrou no Atendimento por pedido do
+  // Fabio e o menu passou a 16 itens (folga -1 a 1280x900). Quem precisa de menu
+  // curto esconde áreas por vínculo em Equipe › Interface.
+  // Fork: +Painel da barbearia (capacidade; sem a lista de capacidades, a porta conta).
+  it("hoje: 17 itens no menu lateral (fork: +Painel do setor, +Painel da barbearia)", () => {
+    expect(itensNoMenuLateral(INTERFACE_COMPLETA)).toBe(17);
     // `undefined` é o caminho de quem não tem escolha nenhuma gravada
-    expect(itensNoMenuLateral(undefined)).toBe(15);
+    expect(itensNoMenuLateral(undefined)).toBe(17);
   });
 
   /**
@@ -195,8 +199,8 @@ describe("medição da folga (pergunta de aceite da issue #1341)", () => {
    * A escolha da empresa é interseção, então o menu só ENCOLHE — a mudança não
    * tem como empurrar o instrumento de tela para o vermelho.
    */
-  it("configuração COMPLETA (ninguém escolheu): 15 itens, folga 0 — igual a hoje", () => {
-    expect(itensNoMenuLateral(combinarInterfaces(completa, completa))).toBe(15);
+  it("configuração COMPLETA (ninguém escolheu): 17 itens — igual a hoje", () => {
+    expect(itensNoMenuLateral(combinarInterfaces(completa, completa))).toBe(17);
   });
 
   it("configuração SIMPLIFICADA (empresa escolhe o preset): 6 itens, folga 9", () => {
@@ -225,5 +229,62 @@ describe("medição da folga (pergunta de aceite da issue #1341)", () => {
         expect(itensNoMenuLateral(combinarInterfaces(daEmpresa, doVinculo))).toBeLessThanOrEqual(15);
       }
     }
+  });
+});
+
+describe("as quatro portas pessoais sobrevivem à interface simplificada (issue #3295)", () => {
+  /**
+   * Perfil, Segurança, Notificações e App no celular são preferências de CADA
+   * UM — moram no `raw_user_meta_data` da própria pessoa, e o administrador não
+   * configura por ela. Escondidas pela interface simplificada, a pessoa que mais
+   * precisa delas (a vendedora com tarefas a prazo, que é `agent`) não tinha
+   * porta nenhuma até a tela: o lembrete de tarefa só existia por URL.
+   *
+   * O caso mede os hrefs, e não a lista: quem trocar o href de uma das telas
+   * tem de trocar aqui junto — a porta e a tela andam juntas ou o teste reprova.
+   */
+  const PESSOAIS = [
+    "/app/settings/profile",
+    "/app/settings/security",
+    "/app/settings/notifications",
+    "/app/settings/aplicativo",
+  ] as const;
+
+  it("no preset simplificado e como `agent`, o hub de Configurações lista as QUATRO", () => {
+    const visiveis = hrefs({ preset: "simplificada" }, "agent");
+    for (const porta of PESSOAIS) {
+      expect(visiveis, `${porta} sumiu para o agent na interface simplificada`).toContain(porta);
+    }
+  });
+
+  it("e continuam de pé mesmo contra um vínculo HOSTIL (a garantia vale para todo vínculo)", () => {
+    // Escolha mínima da empresa e do vínculo: sobra o essencial. As duas novas
+    // portas têm de estar lá como as vizinhas pessoais, senão a garantia é da
+    // lista e não do comportamento.
+    const hostil = combinarInterfaces(
+      { preset: "completa", destinos: ["/app/inbox"] },
+      { preset: "completa", destinos: ["/app/inbox"] },
+    );
+    const visiveis = hrefs(hostil, "agent");
+    for (const porta of PESSOAIS) {
+      expect(visiveis, `${porta} sumiu sob a escolha mínima`).toContain(porta);
+    }
+  });
+
+  it("ser pessoal NÃO as torna porta de administração: o papel continua decidindo por cima", () => {
+    // Controle negativo: quem não tem o papel que a porta exige continua sem
+    // vê-la. As duas novas são pessoais (`essencial` vale para todo vínculo) e
+    // por isso NÃO entram em `ESSENCIAIS_DE_ADMIN` — se entrassem, a garantia
+    // pessoal viraria porta de admin.
+    const visiveis = hrefs({ preset: "simplificada" }, "agent");
+    for (const porta of PESSOAIS) {
+      const d = NAV_CATALOG.find((item) => item.href === porta)!;
+      expect(d, `${porta} está nas pessoais e não existe no catálogo`).toBeDefined();
+      expect(essencial(d, "agent"), `${porta} deixou de valer para todo vínculo`).toBe(true);
+      expect(essencial(d, "admin"), `${porta} deixou de valer para todo vínculo`).toBe(true);
+    }
+    // as portas que EXIGEM o vínculo de administração seguem fora do alcance
+    expect(visiveis).not.toContain("/app/settings/tenant");
+    expect(visiveis).not.toContain("/app/team");
   });
 });

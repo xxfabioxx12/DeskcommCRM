@@ -14,9 +14,10 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { avisoVisivelPara, resolverDestinosDosAvisos } from "@/lib/ai/inbox-destino";
+import { avisoVisivelPara, PAPEL_MINIMO_DA_CENTRAL, resolverDestinosDosAvisos } from "@/lib/ai/inbox-destino";
 import { anexarLinkDePagamento } from "@/lib/cobranca/central";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { avisosDoSetor } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +31,7 @@ const querySchema = z.object({
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "agent_inbox_items" });
+  const authz = await requireRole(PAPEL_MINIMO_DA_CENTRAL, { requestId, resource: "agent_inbox_items" });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { org } = authz;
@@ -49,6 +50,39 @@ export async function GET(req: NextRequest): Promise<Response> {
   const { status, limit } = parsed.data;
 
   const admin = createAdminClient();
+  // Cópia NODZ: aviso de outro setor não aparece na lista nem no sino. O atendente
+  // com setor passa por aqui; `null` = sem recorte, o caminho de sempre abaixo.
+  const colunas = "id, kind, severity, title, body, ref_kind, ref_id, status, created_at, para_user_id";
+  type LinhaDoAviso = {
+    id: string;
+    ref_kind: string | null;
+    ref_id: string | null;
+    para_user_id?: string | null;
+    severity: string;
+  };
+  const doSetor = await avisosDoSetor<LinhaDoAviso>(admin, org.orgId, authz.user.id, {
+    visivel,
+    colunas,
+    status: status === "all" ? undefined : status,
+  });
+  if (doSetor) {
+    const ordenados =
+      status === "open"
+        ? GRAVIDADES.flatMap((g) => doSetor.filter((a) => a.severity === g))
+        : doSetor;
+    const abertos =
+      status === "open"
+        ? doSetor
+        : await avisosDoSetor<LinhaDoAviso>(admin, org.orgId, authz.user.id, { visivel, colunas, status: "open" });
+    const comDestino = await resolverDestinosDosAvisos(
+      await createClient(),
+      org.orgId,
+      org.role,
+      ordenados.slice(0, limit) as never,
+    );
+    const itens = await anexarLinkDePagamento(admin, org.orgId, org.role, comDestino);
+    return ok({ items: itens, open_count: abertos?.length ?? 0 }, { requestId });
+  }
   const buscar = (severity?: (typeof GRAVIDADES)[number]) => {
     let query = admin
       .from("agent_inbox_items")

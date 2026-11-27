@@ -1,4 +1,5 @@
 "use client";
+import { format } from "date-fns";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -14,8 +15,10 @@ import {
   useRegistrarWebhookOficial,
 } from "@/hooks/channels/useOfficialChannel";
 import { copyToClipboard } from "@/lib/clipboard";
+import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
 import { ChannelAiAccess } from "./ChannelAiAccess";
+import { RespostaAutomatica } from "./RespostaAutomatica";
 import { ParaIntegrar } from "./ParaIntegrar";
 
 /** Campo somente-leitura com botão de copiar — o que o operador cola na Meta. */
@@ -64,16 +67,30 @@ function ParaColar({
 
 export function CanalOficialClient() {
   const t = useT();
+  const localeDaData = useLocaleDeData();
   const { data, isPending } = useOfficialChannel();
   const conectar = useConnectOfficialChannel();
   const registrarWebhook = useRegistrarWebhookOficial();
-  const [form, setForm] = useState({ phone_number_id: "", waba_id: "", token: "" });
+  // `messaging_account_id` nulo = intocado: o campo mostra (e reenvia) a conta salva,
+  // para trocar só o token não a apagar. Derivado, sem efeito que copie o estado.
+  const [form, setForm] = useState({
+    phone_number_id: "",
+    waba_id: "",
+    messaging_account_id: null as string | null,
+    token: "",
+  });
 
   const estado = data?.data;
+  const contaDoForm = form.messaging_account_id ?? estado?.contaDeMensagensId ?? "";
 
   async function enviar(e: React.FormEvent) {
     e.preventDefault();
-    const r = await conectar.mutateAsync(form);
+    // Só manda a conta se o campo foi mexido: ausente = o servidor mantém a salva
+    // (com o GET falho, `contaDoForm` seria "" e apagaria a conta).
+    const { messaging_account_id, ...resto } = form;
+    const r = await conectar.mutateAsync(
+      messaging_account_id === null ? resto : { ...resto, messaging_account_id },
+    );
     toast.success(`${t("Conectado:")} ${r.data.displayName} ${r.data.phoneNumber ?? ""}`.trim());
     // O token some do formulário assim que grava — deixá-lo na tela seria mantê-lo
     // em memória do navegador sem motivo, e ele não volta em nenhum GET.
@@ -93,19 +110,45 @@ export function CanalOficialClient() {
                 {estado.phoneNumber}
               </Badge>
             ) : null}
-            <Badge>{estado.status ?? "—"}</Badge>
+            {estado.semAutorizacao ? (
+              <Badge variant="destructive">{t("Recebe, mas não tem autorização para mandar")}</Badge>
+            ) : (
+              <Badge>{estado.status ?? "—"}</Badge>
+            )}
             {/* Mostra que o token EXISTE, nunca qual é. */}
             <Badge variant={estado.hasToken ? "outline" : "destructive"}>
               {estado.hasToken ? t("credencial guardada") : t("sem credencial")}
             </Badge>
+            {/* De onde a conexão nasceu (#4074) — token colado à mão vs Embedded
+                Signup. `inferida` é dito na tela: procedência anterior à coluna
+                não foi registrada por ninguém, e afirmá-la seria mentir. */}
+            {estado.origem ? (
+              <Badge variant="outline" data-testid="origem-da-conexao">
+                {t("conectado por")} {t(estado.origem.rotulo)}
+                {estado.origem.inferida ? ` ${t("(anterior ao registro)")}` : ""}
+              </Badge>
+            ) : null}
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
             WABA <span className="font-mono">{estado.wabaId}</span> · {t("número")}{" "}
             <span className="font-mono">{estado.phoneNumberId}</span>
+            {estado.contaDeMensagensId ? (
+              <>
+                {" "}
+                · {t("conta de mensagens")} <span className="font-mono">{estado.contaDeMensagensId}</span>
+              </>
+            ) : null}
           </p>
+          {estado.semAutorizacao ? (
+            <p className="mt-2 text-xs text-destructive" data-testid="sem-autorizacao">
+              {t("Último erro da Meta")} ({format(new Date(estado.semAutorizacao.em), "Pp", { locale: localeDaData })}):{" "}
+              <span className="font-mono">{estado.semAutorizacao.detalhe}</span>
+            </p>
+          ) : null}
         </Card>
       ) : null}
       {estado?.channel_session_id && <ChannelAiAccess channelId={estado.channel_session_id} />}
+      {estado?.channel_session_id && <RespostaAutomatica channelId={estado.channel_session_id} />}
 
       {estado?.webhook ? (
         <Card className="flex flex-col gap-3 p-4">
@@ -241,7 +284,7 @@ export function CanalOficialClient() {
           {estado?.connected ? t("Trocar credencial") : t("Conectar canal oficial")}
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          {t("Os três valores vêm do seu app na Meta (")}
+          {t("Os valores vêm do seu app na Meta (")}
           <strong>WhatsApp → {t("Configuração da API")}</strong>
           {t("). A credencial é")} <strong>{t("validada com a Meta antes de ser gravada")}</strong>
           {t(" — se o número não responder, nada é salvo.")}
@@ -267,6 +310,19 @@ export function CanalOficialClient() {
               placeholder="2434045433735175"
               required
             />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="conta-de-mensagens">{t("ID da conta de mensagens (opcional)")}</Label>
+            <Input
+              id="conta-de-mensagens"
+              inputMode="numeric"
+              value={contaDoForm}
+              onChange={(e) => setForm((f) => ({ ...f, messaging_account_id: e.target.value }))}
+              placeholder="1234567890123456"
+            />
+            <span className="text-xs text-muted-foreground">
+              {t("A conta que paga os envios deste número. Vazio: a Meta escolhe, como hoje.")}
+            </span>
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="tok">{t("Token de acesso")}</Label>

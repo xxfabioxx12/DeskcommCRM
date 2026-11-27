@@ -30,18 +30,20 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { respondeSozinho } from "@/lib/channels/responde-sozinho";
 import {
-  CHANNEL_SESSION_REF_COLUMNS,
   DEFAULT_CHANNEL_PROVIDER,
   getAdapter,
   resolveSessionRef,
   type ChannelSessionRef,
 } from "@/lib/channels";
+import { enderecoDaUltimaRecebida } from "@/lib/channels/endereco-da-ultima-recebida";
 
 /** Único estado em que o canal pode falar agora — mesmo critério do handler de envio. */
 const SESSAO_SAUDAVEL = "WORKING";
 
 interface ConversaParaPresenca {
+  contact_id: string | null;
   is_group: boolean;
   group_chat_id: string | null;
   contacts: {
@@ -49,7 +51,7 @@ interface ConversaParaPresenca {
     wa_identity: string | null;
     wa_lid: string | null;
   } | null;
-  channel_sessions: (ChannelSessionRef & { status: string }) | null;
+  channel_sessions: (ChannelSessionRef & { status: string; responde_sozinho?: boolean | null }) | null;
 }
 
 export interface SinalizarDigitandoInput {
@@ -70,8 +72,9 @@ export async function sinalizarDigitando(
   const { data } = await supabase
     .from("conversations")
     .select(
-      `is_group, group_chat_id, contacts:contact_id(phone_number, wa_identity, wa_lid), ` +
-        `channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS}, status)`,
+      `contact_id, is_group, group_chat_id, contacts:contact_id(phone_number, wa_identity, wa_lid), ` +
+        // `(*)`: pedir o interruptor pelo nome quebra a leitura num banco sem a 9005.
+        `channel_sessions:channel_session_id(*)`,
     )
     .eq("id", input.conversationId)
     .eq("organization_id", input.organizationId)
@@ -84,18 +87,31 @@ export async function sinalizarDigitando(
   // Sessão fora do ar: o canal recusaria de qualquer forma, e perguntar custa
   // uma ida à rede dentro do caminho de resposta ao cliente.
   if (!sessao || sessao.status !== SESSAO_SAUDAVEL) return;
+  // O "digitando…" é sempre do turno automático — e no oficial ele também marca a
+  // mensagem como LIDA no aparelho do cliente. Interruptor desligado: nada (fork 9005).
+  if (!respondeSozinho(sessao.provider, sessao.responde_sozinho)) return;
 
   const adapter = getAdapter(sessao.provider ?? DEFAULT_CHANNEL_PROVIDER);
   // Testa a presença do método — nunca pergunta QUAL provider é (invariante 1
   // da doutrina de restrição de canal).
   if (!adapter.signalTyping) return;
 
+  // Ficha com telefone extra: o "digitando…" sai pelo número que a pessoa escreveu,
+  // o mesmo endereço da resposta. A porta de canal decide quem tem isso.
+  const ultimoRecebidoChatId = await enderecoDaUltimaRecebida(supabase, {
+    provider: sessao.provider,
+    isGroup: conversa.is_group,
+    organizationId: input.organizationId,
+    conversationId: input.conversationId,
+    contactId: conversa.contact_id ?? null,
+  });
   const recipient = adapter.resolveRecipient({
     isGroup: conversa.is_group,
     groupChatId: conversa.group_chat_id,
     phoneNumber: conversa.contacts?.phone_number,
     waIdentity: conversa.contacts?.wa_identity,
     waLid: conversa.contacts?.wa_lid,
+    ultimoRecebidoChatId,
   });
   if (!recipient) return;
 

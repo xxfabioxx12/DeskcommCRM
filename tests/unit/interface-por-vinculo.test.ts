@@ -12,16 +12,23 @@ import { signInviteToken, verifyInviteToken } from "@/lib/auth/invite-token";
 const complete = { preset: "completa" } as const;
 const simplified = { preset: "simplificada" } as const;
 const granular = { preset: "completa", destinos: ["/app/products"] } as const;
-const hrefs = (settings: unknown, role: "agent" | "admin" = "admin", platform = false) =>
+const hrefs = (settings: unknown, role: "viewer" | "agent" | "admin" = "admin", platform = false) =>
   destinosDaInterface(settings, platform, role).map((d) => d.href);
 describe("interface por vínculo é apresentação", () => {
   it("legado completa acompanha catálogo e não duplica IDs", () => {
-    expect(hrefs(null)).toEqual(NAV_CATALOG.map((d) => d.href));
+    expect(hrefs(null)).toEqual(NAV_CATALOG.filter((d) => !("agenciaOnly" in d && d.agenciaOnly)).map((d) => d.href));
     expect(new Set(NAV_CATALOG.map((d) => d.href)).size).toBe(NAV_CATALOG.length);
+  });
+  it("o catálogo registra agência sem conceder a porta aos vínculos comuns", () => {
+    expect(NAV_CATALOG.some((d) => d.href === "/app/settings/organizacoes")).toBe(true);
+    expect(hrefs(complete)).not.toContain("/app/settings/organizacoes");
+    expect(hrefs(complete, "admin", true)).not.toContain("/app/settings/organizacoes");
   });
   it("simplificada tem operação e Conexões somente quando papel permite", () => {
     expect(hrefs(simplified)).toContain("/app/connections");
-    expect(hrefs(simplified, "agent")).not.toContain("/app/connections");
+    // Cópia NODZ: o atendente vê Conexões (a página confere o setor dele).
+    expect(hrefs(simplified, "agent")).toContain("/app/connections");
+    expect(hrefs(simplified, "viewer")).not.toContain("/app/connections");
     expect(hrefs(simplified)).not.toContain("/app/ai/credentials");
     expect(hrefs(simplified)).toEqual(
       expect.arrayContaining([

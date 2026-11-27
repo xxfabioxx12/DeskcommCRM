@@ -1,5 +1,7 @@
 import { z } from 'zod';
+import { variaveisDoModeloSchema } from '@/lib/channels/meta/variaveis-do-fluxo';
 
+import { MENSAGEM_ETIQUETA_LONGA_DO_CONTATO, etiquetaLongaDoContato } from '@/lib/automation/etiquetas-e-campos';
 import { PRIORIDADES_DA_TAREFA } from '@/lib/tarefas/tipos';
 import { ehOpDeData, OPS_DE_DATA } from './condicao-por-data';
 
@@ -29,6 +31,9 @@ export const NODE_TYPES = [
   // fora desta fatia e é o passo seguinte da issue.
   'move_lead',
   'edit_lead_tag',
+  // Parte 1 do motor de fluxo: grava UM campo do contato ou do card (a mesma
+  // ação `set_field` das regras). Não fala com o cliente.
+  'gravar_campo',
   'end',
 ] as const;
 export type NodeType = (typeof NODE_TYPES)[number];
@@ -94,6 +99,22 @@ export const edgeBranchIdSchema = z
   });
 
 /**
+ * O horário em que uma espera fixa pode terminar (`wait.ate_o_horario`).
+ *
+ * ⚠️ FROUXO AQUI DE PROPÓSITO, como `lead_date.key` mais abaixo: o rascunho é
+ * validado só estruturalmente e o painel grava a cada clique. Exigir aqui "fim
+ * depois do início" faria o painel recusar o estado intermediário (quem troca
+ * 08:00 por 18:00 passa por um horário torto) e a tela mostraria um valor que
+ * não foi gravado. Quem exige um horário que dá para obedecer é o publish
+ * (`horario_da_espera_invalido` em `validate-publish.ts`).
+ */
+export const horarioDaEsperaSchema = z.strictObject({
+  start: z.string().max(5),
+  end: z.string().max(5),
+  weekdays: z.array(z.number().int().min(0).max(6)).max(7),
+});
+
+/**
  * Wait node configuration schema.
  * Supports two modes:
  * - fixed: absolute wait duration in milliseconds (5 min to 90 days)
@@ -123,6 +144,16 @@ export const waitConfigSchema = z
        * do alcance da reatividade e libera o slot único anti-spam.
        */
       immune_to_reply: z.boolean().optional(),
+      /**
+       * A espera só TERMINA dentro deste horário (dias + horas, no fuso da
+       * organização). Se a duração vencer fora dele — de noite, no domingo —, a
+       * espera continua até a próxima abertura. Ver `espera-no-horario.ts`.
+       *
+       * Opcional: os grafos publicados não têm a chave e seguem válidos byte a
+       * byte. Só em `fixed`, como `immune_to_reply`: a espera adaptativa é a IA
+       * escolhendo dentro de uma faixa, e o `strictObject` dela recusa a chave.
+       */
+      ate_o_horario: horarioDaEsperaSchema.optional(),
     }),
     z.strictObject({
       mode: z.literal('smart'),
@@ -239,17 +270,71 @@ export const aiClassifyConfigSchema = z
   );
 
 /**
+ * Parte 1 do motor de fluxo — o passo "Mensagem" com DUAS versões, e o worker
+ * escolhe pela capacidade do número da conversa (`requiresTemplates`):
+ *
+ * - `modelo`: template APROVADO (nome + idioma), o carimbo do contrato no momento
+ *   da escolha (contrato diferente no envio = recusa, como na campanha) e o mapa
+ *   lacuna → expressão com as variáveis da campanha;
+ * - `texto`: texto livre com as mesmas variáveis, para o número comum.
+ *
+ * As duas são opcionais no RASCUNHO (o painel grava a cada tecla); o publish
+ * exige pelo menos uma (`mensagem_sem_versao`).
+ */
+export const modeloDaMensagemSchema = z.strictObject({
+  name: z.string().min(1).max(512),
+  language: z.string().min(1).max(20),
+  contract_hash: z.string().min(1).max(200),
+  slot_map: z.record(z.string().min(1).max(64), z.string().max(1000)),
+});
+
+export const textoDaMensagemSchema = z.strictObject({
+  body: z.string().min(1).max(4000),
+});
+
+export const mensagemDoPassoSchema = z.strictObject({
+  modelo: modeloDaMensagemSchema.optional(),
+  texto: textoDaMensagemSchema.optional(),
+});
+
+export type MensagemDoPasso = z.infer<typeof mensagemDoPassoSchema>;
+
+/**
+ * #4429 — quantas redações EXTRAS um passo de texto aceita (além do `body`).
+ * Teto de configuração, e não de motor: a tela usa o mesmo número para parar de
+ * oferecer "adicionar". Mora aqui (e não em `variacoes-do-passo.ts`, que
+ * importa `node:crypto`) porque o formulário é componente de cliente.
+ */
+export const MAX_VARIACOES_DO_PASSO = 5;
+
+/**
  * Action node configuration schema.
  * - text: send this body as-is (no model)
  * - ai_message: generate a message using AI with a prompt hint
  * - template: send a canned message from Ajustes → Modelos
+ * - mensagem: template no número oficial, texto no comum
  */
 export const actionConfigSchema = z.discriminatedUnion('mode', [
   z.strictObject({
     mode: z.literal('text'),
     body: z.string().min(1).max(4000),
     /**
-     * #2734 — MÍDIA OPCIONAL (imagem ou PDF) por URL. Presente, o `body` vira a
+     * #4429 — OUTRAS REDAÇÕES DO MESMO PASSO.
+     *
+     * O `body` continua sendo a PRIMEIRA redação (é o que todo leitor antigo — a
+     * tela, o cartão do nó, a prévia do fluxo — mostra, e o que um grafo já
+     * publicado tem). `variacoes` são redações ADICIONAIS, e o motor alterna
+     * entre `[body, ...variacoes]` a cada envio (`lib/followup/engine.ts` →
+     * `redacaoDaVez` em `lib/followup/variacoes-do-passo.ts`).
+     *
+     * Opcional de propósito: um passo de texto único — o de hoje — não tem a
+     * chave e continua válido byte a byte, sem migration e sem reescrita do
+     * grafo. Ausente ou vazia = comportamento de sempre.
+     */
+    variacoes: z.array(z.string().trim().min(1).max(4000)).max(MAX_VARIACOES_DO_PASSO).optional(),
+    /**
+     * #2734 — MÍDIA OPCIONAL (imagem, vídeo, áudio ou documento, #2972) por URL.
+     * Presente, o `body` vira a
      * LEGENDA. Opcional de propósito: os grafos publicados não têm a chave e
      * continuam válidos byte a byte (o `strictObject` só recusa o que ELE não
      * conhece; um campo novo e opcional é aceito pelos antigos).
@@ -264,6 +349,17 @@ export const actionConfigSchema = z.discriminatedUnion('mode', [
   z.strictObject({
     mode: z.literal('template'),
     template_id: z.string().uuid(),
+    /**
+     * De onde sai cada variável (`{{1}}`, `{{2}}`…) de um modelo APROVADO:
+     * nome do contato ou campo do negócio, resolvido na hora do envio
+     * (`lib/channels/meta/variaveis-do-fluxo.ts`). Ausente = modelo sem variável.
+     */
+    template_values: variaveisDoModeloSchema.optional(),
+  }),
+  z.strictObject({
+    mode: z.literal('mensagem'),
+    modelo: modeloDaMensagemSchema.optional(),
+    texto: textoDaMensagemSchema.optional(),
   }),
 ]);
 
@@ -313,19 +409,45 @@ export const moveLeadConfigSchema = z.strictObject({
 
 /**
  * Nó `edit_lead_tag` (#2065) — grava tag no lead, o merge idempotente da ação
- * `add_tag` do motor de automação (`lib/automation/actions/add-tag.ts`), com os
- * MESMOS limites do schema de webhook (`lib/schemas/webhooks.ts`): até 10 tags
- * de até 60 caracteres.
+ * `add_tag` do motor de automação, com os MESMOS limites do schema de webhook:
+ * até 10 tags de até 60 caracteres.
+ *
+ * Parte 1 do motor de fluxo: `operacao` (`adicionar` | `remover`) e `destino`
+ * (`card` | `contato`), os dois OPCIONAIS e sem default — o grafo publicado sem
+ * as chaves parseia idêntico e faz o de sempre (adicionar no card; sem card, no
+ * contato — Divergência D1). No contato a etiqueta é normalizada na escrita e a
+ * maior que 40 é recusada aqui.
  *
  * Lista vazia é rascunho em construção (mesma degradação do `stage_id`); o
- * publish recusa (`tag_ausente`) — um nó que não grava nada não pode ser
- * publicado como se gravasse.
+ * publish recusa (`tag_ausente`).
  */
-export const editLeadTagConfigSchema = z.strictObject({
-  tags: z
-    .array(z.string().max(60, "Tag muito longa: máximo de 60 caracteres."))
-    .max(10, "No máximo 10 tags por caixa."),
-});
+export const editLeadTagConfigSchema = z
+  .strictObject({
+    tags: z
+      .array(z.string().max(60, "Tag muito longa: máximo de 60 caracteres."))
+      .max(10, "No máximo 10 tags por caixa."),
+    operacao: z.enum(['adicionar', 'remover']).optional(),
+    destino: z.enum(['card', 'contato']).optional(),
+  })
+  .superRefine((config, ctx) => {
+    if (config.destino === 'contato' && etiquetaLongaDoContato(config.tags) !== null) {
+      ctx.addIssue({ code: 'custom', path: ['tags'], message: MENSAGEM_ETIQUETA_LONGA_DO_CONTATO });
+    }
+  });
+
+/**
+ * Nó `gravar_campo` (Parte 1 do motor de fluxo) — grava UMA chave de campo
+ * personalizado, com as variáveis da campanha no valor. Campo/valor vazios
+ * são rascunho; o publish exige os dois (`campo_ausente`). Ponto no nome é
+ * recusado aqui (o renderizador lê `{{contato.x}}` com UM ponto).
+ */
+export const gravarCampoConfigSchema = z
+  .strictObject({
+    destino: z.enum(['card', 'contato']),
+    campo: z.string().max(60, 'Nome do campo muito longo: máximo de 60 caracteres.'),
+    valor: z.string().max(1000, 'Valor muito longo: máximo de 1000 caracteres.'),
+  })
+  .refine((c) => !c.campo.includes('.'), { message: 'O nome do campo não pode ter ponto.', path: ['campo'] });
 
 /**
  * One rule of a `condition` node. In `branching: 'per_check'` it IS a branch,
@@ -340,6 +462,9 @@ export const conditionCheckSchema = z
     field: z.enum([
       'lead_stage',
       'tag',
+      // Parte 1 do motor de fluxo: as etiquetas do CONTATO (`contacts.tags`),
+      // comparadas normalizadas. `tag` continua sendo a do card.
+      'contact_tag',
       'steps_taken',
       'last_outcome',
       // Data relativa sobre um campo personalizado do negócio — ver
@@ -447,11 +572,31 @@ export const collectConfigSchema = z
     options: z.array(z.string().min(1).max(80)).max(20).optional(),
     /** Texto sugerido da pergunta; o agente pode reescrever (checklist guiado pela IA). */
     question: z.string().max(400).optional(),
+    /**
+     * ONDE A RESPOSTA É GRAVADA (#3363): `contato` em `contacts.custom_fields`
+     * (o caminho de sempre) ou `negocio` no card aberto do contato
+     * (`crm_leads.custom_fields`) — que é o que o card da tela, os campos
+     * obrigatórios da etapa do funil e as automações por data do funil leem.
+     *
+     * A AUSÊNCIA é `contato`, e é o que todo grafo existente tem: sem `.default()`
+     * de propósito (a mesma escolha do `escopo` do #2791, com o padrão invertido
+     * — aqui o comportamento legado é o contato). Sem default, `safeParse` devolve
+     * o grafo byte a byte e editar uma pergunta não reescreve a chave à toa.
+     *
+     * Com `negocio`, a régua "já respondido não se repergunta" vale só DENTRO do
+     * negócio atual: o valor é lido do card, então um novo negócio pergunta de
+     * novo. Um contato sem card aberto não tem onde gravar — a pergunta segue
+     * pendente até o teto de tentativas.
+     */
+    destino: z.enum(['contato', 'negocio']).optional(),
   })
   .refine((c) => c.type !== 'select' || (c.options?.length ?? 0) > 0, {
     message: 'tipo "select" exige ao menos uma opção',
     path: ['options'],
   });
+
+/** O destino da gravação de UMA pergunta (#3363) — ausência no grafo = `contato`. */
+export type DestinoDaResposta = NonNullable<z.infer<typeof collectConfigSchema>['destino']>;
 
 /**
  * Skill node (`skill`) — puxa uma skill instalada em paralelo ao passo do fluxo.
@@ -628,6 +773,17 @@ export const flowNodeSchema = z.discriminatedUnion('type', [
     }),
     config: editLeadTagConfigSchema,
   }),
+  // Nó de ação (Parte 1 do motor de fluxo): grava um campo, sem mensagem
+  z.strictObject({
+    id: z.string().min(1),
+    type: z.literal('gravar_campo'),
+    label: z.string().min(1).max(60),
+    position: z.strictObject({
+      x: z.number(),
+      y: z.number(),
+    }),
+    config: gravarCampoConfigSchema,
+  }),
   // End node: terminal state
   z.strictObject({
     id: z.string().min(1),
@@ -693,9 +849,32 @@ export const flowSettingsSchema = z.strictObject({
   /**
    * Palavras/expressões que LIGAM este fluxo: quando a mensagem do cliente
    * contém uma delas, o MOTOR inicia o fluxo (entrada por gatilho, sem depender
-   * do modelo). Vazio/ausente = o fluxo só começa por `flow_start` ou roteador.
+   * do modelo). Vazio/ausente = este fluxo só começa por `etapas_do_funil`, pelo
+   * roteador ou encadeado no fim de outro — `flow_start` não existe no código,
+   * e citá-lo aqui prometia uma entrada que ninguém podia configurar.
    */
   gatilhos: z.array(z.string().min(1).max(60)).max(30).optional(),
+  /**
+   * As ETAPAS DO FUNIL que LIGAM este roteiro: quando o card do contato está
+   * numa delas, o MOTOR começa o roteiro no próximo turno daquela conversa —
+   * a entrada por etapa, irmã da palavra-gatilho, e sem depender da mensagem.
+   *
+   * ⚠️ POR QUE AQUI (no `settings` do grafo) E NÃO EM `trigger_config`. Para o
+   * follow-up, a entrada por etapa mora no gatilho (`kind: 'stage_change'`,
+   * `lib/followup/gatilho-etapa.ts`, event-driven). No roteiro de atendimento
+   * isso é impossível por construção: o CHECK
+   * `followup_flow_pointers_roteiro_so_manual` (0394) obriga
+   * `trigger_config->>'kind' = 'manual'` na superfície `atendimento`, e o
+   * publicador devolve 422 a qualquer outro kind. O `settings` é o lugar do
+   * vocabulário do roteiro (é onde já vivem `gatilhos`, `expira_em_horas` e
+   * `pode_recomecar`), é versionado junto do grafo e passa pelo schema.
+   *
+   * O id é o da ETAPA (`crm_stages.id`) — o mesmo que `crm_leads.stage_id`, que
+   * é o que o turno lê. A etapa já identifica o funil, então não há par
+   * (funil, etapa) a guardar; o nome do funil existe na tela, para distinguir
+   * etapas homônimas de funis diferentes. Vazio/ausente = nenhuma etapa liga.
+   */
+  etapas_do_funil: z.array(z.string().min(1).max(64)).max(30).optional(),
   /**
    * Em quantas horas SEM mensagem do cliente o roteiro em andamento expira
    * (0397, `fn_encerrar_roteiros_vencidos`). Ausente = 72 h. Sem prazo, um

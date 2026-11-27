@@ -49,6 +49,9 @@ const config = {
   daily_limit: 10,
   interval_minutes: 15,
   legal_basis_ref: "legítimo interesse",
+  ofertas: ["site" as const],
+  exit_offer: "first_message" as const,
+  fonte_da_abordagem: "estrategia" as const,
   // O caminho de sempre: contato, negócio e conversa nascem ao iniciar (#2105).
   funnel_entry: "on_start" as const,
 };
@@ -57,8 +60,9 @@ const { activateCampaign } = await import("@/lib/prospecting/store");
 const { RAZAO_NAO_SELECIONADA } = await import("@/lib/prospecting/schema");
 
 type Linha = Record<string, unknown>;
-function fakePool(candidatos: Linha[]) {
+function fakePool(candidatos: Linha[], configDaCampanha: unknown = null) {
   const updates: { sql: string; params: unknown[] }[] = [];
+  const campanhaAtualizada: { sql: string; params: unknown[] }[] = [];
   const responder = (sql: string): Linha[] => {
     if (sql.includes("pg_try_advisory_lock")) return [{ locked: true }];
     if (sql.includes("from ai_agents a join ai_agent_versions"))
@@ -66,7 +70,15 @@ function fakePool(candidatos: Linha[]) {
     if (sql.includes("from channel_sessions")) return [{ provider: "waha", status: "WORKING" }];
     if (sql.includes("from crm_stages")) return [{ id: STAGE_A }, { id: STAGE_B }];
     if (sql.startsWith("select * from prospecting_campaigns"))
-      return [{ id: CAMP, name: "C", status: "draft", search_status: "succeeded", config: null }];
+      return [
+        {
+          id: CAMP,
+          name: "C",
+          status: "draft",
+          search_status: "succeeded",
+          config: configDaCampanha,
+        },
+      ];
     if (sql.includes("status='running'")) return [];
     if (sql.startsWith("select * from prospecting_candidates")) return candidatos;
     // telefone já é contato do CRM: o marcado para no motivo pré-existente,
@@ -78,11 +90,16 @@ function fakePool(candidatos: Linha[]) {
   const client = {
     query: async (sql: string, params: unknown[] = []) => {
       if (sql.startsWith("update prospecting_candidates")) updates.push({ sql, params });
+      if (sql.startsWith("update prospecting_campaigns")) campanhaAtualizada.push({ sql, params });
       return { rows: responder(sql) };
     },
     release: () => {},
   };
-  return { pool: { connect: async () => client } as unknown as pg.Pool, updates };
+  return {
+    pool: { connect: async () => client } as unknown as pg.Pool,
+    updates,
+    campanhaAtualizada,
+  };
 }
 
 const candidato = (id: string, selected: boolean, phone: string | null) => ({
@@ -124,5 +141,58 @@ describe("activateCampaign respeita a seleção do operador (#1896)", () => {
     expect(motivos.some((m) => m.includes("Sem telefone brasileiro válido."))).toBe(true);
     expect(motivos.some((m) => m.includes("Contato já existe no CRM"))).toBe(true);
     expect(motivos.some((m) => m.includes(RAZAO_NAO_SELECIONADA))).toBe(false);
+  });
+
+  describe("aprovação da prévia antes do primeiro contato (opção da campanha)", () => {
+    const comAprovacao = { ...config, exigir_aprovacao_da_previa: true };
+    const previa = {
+      texto: "Prévia revisada pela pessoa.",
+      baseada_em: "sem-site@derivado",
+      gerada_em: "2026-10-20T12:00:00.000Z",
+      agente_id: AGENT,
+    };
+    const comPrevia = (id: string, p: Record<string, unknown> | null) => ({
+      ...candidato(id, true, "+5511999990003"),
+      data: { key: `place-${id}`, name: `Empresa ${id}`, website: null, previa: p },
+    });
+
+    it("ligada: não inicia se uma empresa selecionada com telefone não teve a prévia aprovada", async () => {
+      const { pool, campanhaAtualizada } = fakePool([comPrevia("pendente", previa)]);
+      await expect(
+        activateCampaign(pool, {} as SupabaseClient, ORG, CAMP, comAprovacao),
+      ).rejects.toMatchObject({ status: 409, message: expect.stringContaining("Revise e aprove a prévia") });
+      expect(campanhaAtualizada.some((u) => u.sql.includes("status='running'"))).toBe(false);
+    });
+
+    it("ligada: com a prévia aprovada por uma pessoa, inicia", async () => {
+      const aprovada = { ...previa, aprovada_por: ORG, aprovada_em: "2026-10-20T12:05:00.000Z" };
+      const { pool, campanhaAtualizada } = fakePool([comPrevia("ok", aprovada)]);
+      await expect(
+        activateCampaign(pool, {} as SupabaseClient, ORG, CAMP, comAprovacao),
+      ).resolves.toEqual({ started: true });
+      expect(campanhaAtualizada.some((u) => u.sql.includes("status='running'"))).toBe(true);
+    });
+
+    it("desligada (sem a chave): a mesma empresa sem aprovação inicia como sempre", async () => {
+      const { pool, campanhaAtualizada } = fakePool([comPrevia("pendente", previa)]);
+      await expect(activateCampaign(pool, {} as SupabaseClient, ORG, CAMP, config)).resolves.toEqual({
+        started: true,
+      });
+      expect(campanhaAtualizada.some((u) => u.sql.includes("status='running'"))).toBe(true);
+    });
+  });
+
+  it("A3: config PARCIAL salva (sem agent_id) não lança nem trava a ativação", async () => {
+    // Medido na VPS: 3 rascunhos tinham config parcial (`instruction` e
+    // `qualification`, sem `agent_id`). O `parse` cru estourava ZodError antes
+    // de qualquer comparação — a campanha ficava sem como ser iniciada.
+    const { pool, campanhaAtualizada } = fakePool([candidato("d", true, null)], {
+      instruction: config.instruction,
+      qualification: config.qualification,
+    });
+    await expect(activateCampaign(pool, {} as SupabaseClient, ORG, CAMP, config)).resolves.toEqual({
+      started: true,
+    });
+    expect(campanhaAtualizada.some((u) => u.sql.includes("status='running'"))).toBe(true);
   });
 });

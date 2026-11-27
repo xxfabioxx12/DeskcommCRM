@@ -27,8 +27,11 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { traduzir } from "@/lib/i18n/dicionario";
+import { idiomaDoAviso, preencher } from "@/lib/i18n/idioma-do-aviso";
 import { logger } from "@/lib/logger";
 import type { ActionResultDetail } from "@/lib/automation/types";
+import { envioSemNovaTentativa, motivoSemNovaTentativa } from "@/lib/agent-engine/agent/falha-do-envio";
 import { fraseDaFalhaDeCanal } from "@/lib/channels/frases-de-falha";
 
 /** O subconjunto de `messages` de que a tradução precisa. */
@@ -112,7 +115,17 @@ export async function reportarEnvio(
   const desfecho = desfechoDoEnvio(tipo, mensagem);
   desfecho.detail = { ...(desfecho.detail ?? {}), conversation_id: conversationId };
 
-  if (desfecho.status === "failed") {
+  // Barrado pelo interruptor ou 131070 (conversa com o ManyChat): esperado, não é
+  // incidente. O run já fica `failed` com a frase; a Central não ganha alerta.
+  const esperado = envioSemNovaTentativa(mensagem.error_code ?? null, mensagem.error_message ?? null);
+  if (desfecho.status === "failed" && esperado) {
+    logger.info("[automation] envio não saiu por motivo esperado — sem alerta", {
+      organization_id: ctx.organizationId,
+      conversation_id: conversationId,
+      motivo: motivoSemNovaTentativa(mensagem.error_code ?? null),
+      error_code: mensagem.error_code ?? null,
+    });
+  } else if (desfecho.status === "failed") {
     await avisarEnvioQueFalhou(ctx.admin, {
       organizationId: ctx.organizationId,
       ruleName: ctx.ruleName,
@@ -198,14 +211,21 @@ export async function avisarEnvioQueFalhou(
     return;
   }
 
+  // A Central mostra o texto como foi gravado: o aviso nasce no idioma da
+  // organização. O motivo já chega pronto (frase do canal) e entra como dado.
+  const idioma = await idiomaDoAviso(admin, entrada.organizationId);
   const { error } = await admin.from("agent_inbox_items").insert({
     organization_id: entrada.organizationId,
     kind: "message_send_stuck",
     severity: "critical",
-    title: "Uma automação não conseguiu falar com o cliente",
-    body:
-      `A automação "${entrada.ruleName}" disparou e a mensagem não chegou. ${entrada.motivo} ` +
-      `Nada foi reenviado automaticamente — reenviar sem saber a causa arrisca mandar a mesma mensagem duas vezes.`,
+    title: traduzir("Uma automação não conseguiu falar com o cliente", idioma),
+    body: preencher(
+      traduzir(
+        'A automação "{regra}" disparou e a mensagem não chegou. {motivo} Nada foi reenviado automaticamente — reenviar sem saber a causa arrisca mandar a mesma mensagem duas vezes.',
+        idioma,
+      ),
+      { regra: entrada.ruleName, motivo: traduzir(entrada.motivo, idioma) },
+    ),
     ref_kind: entrada.conversationId ? "conversation" : null,
     ref_id: entrada.conversationId ?? null,
   });

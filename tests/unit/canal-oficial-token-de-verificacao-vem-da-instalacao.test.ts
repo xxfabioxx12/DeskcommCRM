@@ -43,6 +43,7 @@ vi.mock("@/lib/auth/require-role", () => ({
   requireRole: async () => ({ ok: true, user: usuario, org: { orgId: ORG, role: "admin" } }),
 }));
 
+vi.mock("@/lib/channels/meta/sem-autorizacao", () => ({ ultimaRecusaPorAutorizacao: vi.fn(async () => null) }));
 vi.mock("@/lib/supabase/admin", () => {
   const canal = {
     id: "canal-1",

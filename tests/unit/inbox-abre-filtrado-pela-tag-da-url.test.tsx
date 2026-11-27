@@ -50,6 +50,7 @@ vi.mock("@/hooks/inbox/useClaimConversation", () => ({
 }));
 vi.mock("@/hooks/inbox/useCloseConversation", () => ({
   useCloseConversation: () => ({ mutate: vi.fn(), isPending: false }),
+  useConcluirConversa: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 /** O filtro vira sonda: ele diz em que aba e com que etiqueta a tela abriu. */

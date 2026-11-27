@@ -8,6 +8,17 @@ import type { ModelosDaConta } from './modelos-citados';
 import { recusaDeMotivoForaDoVocabulario } from '../leads/motivo-da-perda';
 import { capabilitiesOf, transportaMensagem, type ChannelProvider } from '../channels/capabilities';
 import { CUSTO_NO_MOTOR, TETO_DE_PASSOS_DO_MOTOR } from './custo-no-motor';
+import { MENSAGEM_CAMPO_INVALIDO, campoValido } from '../automation/etiquetas-e-campos';
+import {
+  FRASE_DA_RESERVA_FORA_DO_LUGAR,
+  FRASE_DO_PROBLEMA_DA_EXPRESSAO,
+  problemaNoTexto,
+  temTextoDeReserva,
+} from '../campanhas/valores-do-contexto';
+import type { LinhaDoModelo } from '../campanhas/conferir-template';
+import { problemaDasExpressoes } from '../campanhas/renderizador';
+import { chaveDoModelo, falhaDoModeloNaConta, fraseDaFalhaNoFluxo } from './mensagem-do-passo';
+import { horarioDaEsperaValido } from './espera-no-horario';
 
 /**
  * Structural publish validator for follow-up flow graphs.
@@ -54,6 +65,19 @@ export const PUBLISH_ERROR_CODES = [
   // Regra de data (item 14): sem o campo do negócio ela não tem o que comparar
   // e responderia `false` para sempre, sem dizer por quê.
   'campo_de_data_ausente',
+  // Parte 1 do motor de fluxo — nó `gravar_campo` sem campo/valor (ou com nome de
+  // campo que a escrita recusaria), e variável que sairia literal (no
+  // `gravar_campo` e no passo "Mensagem").
+  'campo_ausente',
+  'variavel_desconhecida',
+  // Parte 1 do motor de fluxo — passo "Mensagem" sem versão, ou com template
+  // que não pode sair (inexistente, parado, mudado, lacuna sem expressão).
+  'mensagem_sem_versao',
+  'modelo_da_mensagem_invalido',
+  // Espera com horário (`ate_o_horario`): início depois do fim, nenhum dia ou
+  // hora torta — o motor não teria como obedecer e terminaria a espera na
+  // duração crua, calado (`espera-no-horario.ts` falha aberta).
+  'horario_da_espera_invalido',
 ] as const;
 export type PublishErrorCode = (typeof PUBLISH_ERROR_CODES)[number];
 
@@ -117,12 +141,16 @@ export interface ContextoDoPublish {
    */
   roteiro?: RoteiroDoPublish;
   /**
-   * Alguma conexão da organização só aceita modelo APROVADO com a janela de 24 h
-   * fechada? Só aí o plano B (`fallback_template_id`) de uma mensagem por IA
-   * depois de 24 h de espera tem o que fazer — em runtime ele só sai com a janela
-   * fechada (`janelaFechada` em followup-turn.ts). Num canal sem janela, exigi-lo
-   * travaria o publish: o seletor do plano B só oferece modelos aprovados, e esse
-   * canal não os tem. Ausente = exige (o comportamento de antes).
+   * Alguma conexão da organização EXIGE modelo aprovado com a janela de 24 h
+   * fechada — canal que tem a regra da janela E tem catálogo de definições
+   * aprovadas a oferecer (`algumCanalExigeModeloForaDaJanela`, #3109)? Só aí o
+   * plano B (`fallback_template_id`) de uma mensagem por IA depois de 24 h de
+   * espera tem o que fazer — em runtime ele só sai com a janela fechada
+   * (`janelaFechada` em followup-turn.ts). Num canal sem janela, ou num canal
+   * que fecha a janela mas não tem modelo aprovado nenhum (o canal social de
+   * Instagram/Facebook), exigi-lo travaria o publish sem oferecer saída: o
+   * seletor do plano B só oferece modelos aprovados. Ausente = exige (o
+   * comportamento de antes).
    */
   exigeModeloForaDaJanela?: boolean;
   /**
@@ -135,6 +163,12 @@ export interface ContextoDoPublish {
    * existem na organização (`carregaModelosCitados`). Ausente = não confere.
    */
   modelos?: ModelosDaConta;
+  /**
+   * Parte 1 do motor de fluxo — as linhas de `meta_templates` da conta para cada
+   * template citado por um passo "Mensagem", por `chaveDoModelo(nome, idioma)`
+   * (`carregaModelosDaMensagem`). Ausente = não confere o template.
+   */
+  modelosDaMensagem?: ReadonlyMap<string, readonly LinhaDoModelo[]>;
 }
 
 /** Chave do dicionário (a rota traduz): a frase não cita id, que a pessoa não lê. */
@@ -175,14 +209,37 @@ export function avisosDoGatilho(trigger: TriggerConfig | undefined): PublishVali
 }
 
 /**
- * `true` quando algum dos providers das conexões da organização recusa texto
- * livre fora da janela. Provider que esta imagem não conhece (ou que não manda
- * mensagem) não conta: por ele não sai follow-up nenhum.
+ * `true` quando alguma conexão da organização EXIGE modelo aprovado fora da
+ * janela de 24 h — a única situação em que o plano B (`fallback_template_id`) de
+ * uma mensagem por IA depois de 24 h tem o que fazer.
+ *
+ * ─── Não basta o canal ter janela (#3109) ─────────────────────────────────
+ *
+ * A versão anterior perguntava só `!freeformOutsideWindow`. O canal social de
+ * Instagram/Facebook fecha a janela (`freeformOutsideWindow: false`, MEDIDO: a
+ * Meta recusa a ENTREGA com 131047) e mesmo assim NÃO tem catálogo de definições
+ * aprovadas (`requiresTemplates: false` — não há WABA por trás dele). Nessa conta
+ * o seletor do plano B nasce vazio: não existe modelo aprovado a escolher, e a
+ * exigência fica impossível de cumprir. Como a conta era da ORGANIZAÇÃO INTEIRA,
+ * uma conexão social reprovava o publish de um fluxo que só roda no WhatsApp por
+ * QR (canal sem janela) — e nem com plano B nem sem ele havia configuração
+ * válida para publicar.
+ *
+ * Então as duas perguntas entram juntas, e a segunda é a que faltava: o canal tem
+ * a REGRA da janela E tem DEFINIÇÕES aprovadas para oferecer? Sem catálogo, o
+ * plano B não é exigência — é impossibilidade, e recusar a publicação não
+ * destrava nenhuma configuração: quem trata o que acontece com a mensagem livre
+ * fora da janela num contato de canal social é o envio, não o publish.
+ *
+ * Provider que esta imagem não conhece (ou que não manda mensagem) não conta: por
+ * ele não sai follow-up nenhum.
  */
 export function algumCanalExigeModeloForaDaJanela(providers: readonly (string | null)[]): boolean {
-  return providers.some(
-    (p) => transportaMensagem(p) && !capabilitiesOf(p as ChannelProvider).freeformOutsideWindow
-  );
+  return providers.some((p) => {
+    if (!transportaMensagem(p)) return false;
+    const caps = capabilitiesOf(p as ChannelProvider);
+    return !caps.freeformOutsideWindow && caps.requiresTemplates;
+  });
 }
 
 export interface RoteiroDoPublish {
@@ -244,8 +301,8 @@ function cicloDoEncadeamento(
  * recusava em silêncio; a recusa aqui é o erro que a pessoa lê no editor.
  */
 export const NOS_DA_SUPERFICIE: Record<FollowupFlowSurface, readonly NodeType[]> = {
-  followup: ['trigger', 'wait', 'condition', 'ai_classify', 'match_reply', 'repeat', 'action', 'internal_task', 'move_lead', 'edit_lead_tag', 'end'],
-  crm_automation: ['trigger', 'wait', 'condition', 'ai_classify', 'match_reply', 'repeat', 'action', 'internal_task', 'move_lead', 'edit_lead_tag', 'end'],
+  followup: ['trigger', 'wait', 'condition', 'ai_classify', 'match_reply', 'repeat', 'action', 'internal_task', 'move_lead', 'edit_lead_tag', 'gravar_campo', 'end'],
+  crm_automation: ['trigger', 'wait', 'condition', 'ai_classify', 'match_reply', 'repeat', 'action', 'internal_task', 'move_lead', 'edit_lead_tag', 'gravar_campo', 'end'],
   atendimento: ['trigger', 'collect', 'skill', 'end'],
 };
 
@@ -397,6 +454,7 @@ export const CONTA_NO_TETO: Record<NodeType, boolean> = {
   internal_task: false, // lembrete para a equipe
   move_lead: false, // move o card no funil
   edit_lead_tag: false, // grava tag no lead
+  gravar_campo: false, // grava um campo
   end: false, // desfecho
 };
 
@@ -585,9 +643,10 @@ function analyzeCondensedPaths(
       if (
         node &&
         node.type === 'action' &&
-        node.config.mode === 'ai_message' &&
-        !node.config.fallback_template_id &&
-        totalWait >= LONG_WAIT_THRESHOLD_MS
+        totalWait >= LONG_WAIT_THRESHOLD_MS &&
+        ((node.config.mode === 'ai_message' && !node.config.fallback_template_id) ||
+          // Divergência D8: o passo "Mensagem" só sai fora das 24 h com o template.
+          (node.config.mode === 'mensagem' && !node.config.modelo))
       ) {
         longWaitNodeIds.add(id);
       }
@@ -880,6 +939,86 @@ function conferirTags(
 }
 
 /**
+ * Parte 1 do motor de fluxo — `gravar_campo` publicado precisa de campo e valor,
+ * com variáveis que resolvem. O nome passa pela MESMA regra da escrita
+ * (`campoValido`): `__proto__`, `constructor`, `prototype`, ponto ou mais de 60
+ * seriam recusados pelo motor a cada passagem — melhor barrar aqui.
+ */
+function conferirGravarCampo(
+  node: Extract<FlowNode, { type: 'gravar_campo' }>,
+  errors: PublishValidationError[]
+): void {
+  if (node.config.campo.trim() === '' || node.config.valor.trim() === '') {
+    errors.push({
+      node_id: node.id,
+      code: 'campo_ausente',
+      message: `A caixa "${node.label}" não tem campo e valor para gravar — preencha os dois.`,
+    });
+    return;
+  }
+  if (!campoValido(node.config.campo)) {
+    errors.push({
+      node_id: node.id,
+      code: 'campo_ausente',
+      message: `A caixa "${node.label}": ${MENSAGEM_CAMPO_INVALIDO}`,
+    });
+    return;
+  }
+  const problema = problemaNoTexto(node.config.valor);
+  if (problema) {
+    errors.push({ node_id: node.id, code: 'variavel_desconhecida', message: `A caixa "${node.label}": ${problema}` });
+  }
+}
+
+/** Parte 1 do motor de fluxo — o passo "Mensagem" publicado. */
+function conferirMensagem(
+  node: Extract<FlowNode, { type: 'action' }>,
+  contexto: ContextoDoPublish,
+  errors: PublishValidationError[]
+): void {
+  const cfg = node.config;
+  // Parte 3 — o passo antigo de texto renderiza por `renderTemplate`, que não
+  // entende o texto de reserva: sairia literal ao cliente.
+  if (cfg.mode === 'text' && temTextoDeReserva(cfg.body)) {
+    errors.push({
+      node_id: node.id,
+      code: 'variavel_desconhecida',
+      message: `A caixa "${node.label}": ${FRASE_DA_RESERVA_FORA_DO_LUGAR}`,
+    });
+  }
+  if (cfg.mode !== 'mensagem') return;
+  const texto = cfg.texto?.body.trim() ?? '';
+  if (!cfg.modelo && texto === '') {
+    errors.push({
+      node_id: node.id,
+      code: 'mensagem_sem_versao',
+      message: `A caixa "${node.label}" não tem mensagem: escolha o template do número oficial ou escreva o texto do número comum.`,
+    });
+    return;
+  }
+  const expressoes = [...(texto !== '' ? [texto] : []), ...Object.values(cfg.modelo?.slot_map ?? {})];
+  const problema = problemaDasExpressoes(expressoes);
+  if (problema) {
+    errors.push({
+      node_id: node.id,
+      code: 'variavel_desconhecida',
+      message: `A caixa "${node.label}": ${FRASE_DO_PROBLEMA_DA_EXPRESSAO[problema]}`,
+    });
+  }
+  if (cfg.modelo && contexto.modelosDaMensagem !== undefined) {
+    const linhas = contexto.modelosDaMensagem.get(chaveDoModelo(cfg.modelo.name, cfg.modelo.language)) ?? [];
+    const falha = falhaDoModeloNaConta(cfg.modelo, linhas);
+    if (falha) {
+      errors.push({
+        node_id: node.id,
+        code: 'modelo_da_mensagem_invalido',
+        message: `A caixa "${node.label}": ${fraseDaFalhaNoFluxo(falha, cfg.modelo.name, 'conta')}.`,
+      });
+    }
+  }
+}
+
+/**
  * Uma regra de condição que não pode decidir nada. O rascunho aceita todas estas
  * formas — trabalho pela metade precisa salvar —, mas publicada cada uma é uma
  * saída que nunca é tomada ou que é tomada sempre, com cara de regra pronta:
@@ -1043,7 +1182,11 @@ export function validateFlowForPublish(
       errors.push({
         node_id: id,
         code: 'long_wait_needs_template',
-        message: `Nó "${id}" acumula ≥24h de espera e precisa de fallback_template_id.`,
+        message:
+          nodesById.get(id)?.type === 'action' &&
+          (nodesById.get(id) as Extract<FlowNode, { type: 'action' }>).config.mode === 'mensagem'
+            ? `Nó "${id}" acumula ≥24h de espera e precisa da versão do número oficial (template aprovado).`
+            : `Nó "${id}" acumula ≥24h de espera e precisa de fallback_template_id.`,
       });
     }
     if (maxStepsExceeded) {
@@ -1109,6 +1252,21 @@ export function validateFlowForPublish(
     }
   }
 
+  // Espera com horário: o rascunho aceita o horário torto (o painel grava a cada
+  // clique — ver `horarioDaEsperaSchema`), a publicação não. Um horário que não
+  // dá para obedecer viraria "sem horário" no motor, e o toque sairia de
+  // madrugada com a tela dizendo o contrário.
+  for (const node of [...nodes].sort(byId)) {
+    if (node.type !== 'wait' || node.config.mode !== 'fixed') continue;
+    const horario = node.config.ate_o_horario;
+    if (horario === undefined || horarioDaEsperaValido(horario)) continue;
+    errors.push({
+      node_id: node.id,
+      code: 'horario_da_espera_invalido',
+      message: `Nó "${node.id}": o horário da espera precisa de pelo menos um dia e de um início antes do fim.`,
+    });
+  }
+
   // Cobertura por ramo — SÓ no modo 'per_check'. É deliberado que o modo
   // combinado fique de fora: hoje nenhuma regra exige aresta por resultado num
   // nó de condição, e passar a exigir reprovaria no publish fluxos v1 que estão
@@ -1130,6 +1288,8 @@ export function validateFlowForPublish(
   for (const node of [...nodes].sort(byId)) {
     if (node.type === 'move_lead') conferirEtapaDestino(node, contexto, errors);
     if (node.type === 'edit_lead_tag') conferirTags(node, errors);
+    if (node.type === 'gravar_campo') conferirGravarCampo(node, errors);
+    if (node.type === 'action') conferirMensagem(node, contexto, errors);
     if (node.type === 'action' && contexto.modelos !== undefined) {
       const { prontos, doCanal } = contexto.modelos;
       const cfg = node.config;

@@ -31,11 +31,18 @@ import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/arch
 import { CHANNEL_PROVIDER_META } from "@/lib/channels/capabilities";
 import { appDaMeta, appDaMetaDoAmbiente } from "@/lib/channels/meta/app";
 import { metaGraphBase } from "@/lib/channels/meta/credentials";
+import {
+  ORIGEM_DO_TOKEN_MANUAL,
+  ROTULOS_DA_ORIGEM,
+  lerOrigemDaConexao,
+  registrarOrigemDaConexao,
+} from "@/lib/channels/meta/origem-da-conexao";
 import { validateMetaCredentials } from "@/lib/channels/meta/validate-credentials";
 import {
   COLUNAS_DO_DESFECHO_DO_WEBHOOK,
   registrarWebhookDaSessao,
 } from "@/lib/channels/meta/webhook-da-sessao";
+import { ultimaRecusaPorAutorizacao } from "@/lib/channels/meta/sem-autorizacao";
 import { reactivateChannelSession } from "@/lib/channels/reactivate";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { metadataInicialDoCanal } from "@/lib/ai/elegibilidade/pre-go-live";
@@ -51,6 +58,9 @@ const conectarSchema = z.object({
   phone_number_id: z.string().min(5),
   waba_id: z.string().min(5),
   token: z.string().min(20),
+  // Fork 9005, opcional: a conta de mensagens que paga os envios. Vazio = nulo
+  // (a Meta escolhe pela chave, como antes). Só dígitos: é o CHECK do banco.
+  messaging_account_id: z.union([z.string().trim().regex(/^\d{5,30}$/), z.literal("")]).optional(),
 });
 
 interface DesfechoGravado {
@@ -134,7 +144,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const consultar = () =>
     admin
       .from("channel_sessions")
-      .select("id, meta_phone_number_id, meta_waba_id, meta_token_encrypted, phone_number, display_name, webhook_path_token, status")
+      .select("id, meta_phone_number_id, meta_waba_id, meta_messaging_account_id, meta_token_encrypted, phone_number, display_name, webhook_path_token, status")
       .eq("organization_id", orgId)
       .eq("provider", CHANNEL_PROVIDER_META);
   const { data } = await queryTolerantToMissingArchived(
@@ -144,19 +154,39 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   const base = basePublicaDoWebhookMeta(req);
   const desfecho = data?.id ? await lerDesfechoDoWebhook(admin, orgId, data.id) : null;
+  // Em consulta PRÓPRIA, pelo mesmo motivo do desfecho: um banco anterior à 9328
+  // recusaria o select inteiro ao ver a coluna da origem.
+  const origem = data?.id
+    ? await lerOrigemDaConexao(admin, { organizationId: orgId, channelSessionId: data.id })
+    : null;
   return ok({
     connected: Boolean(data),
     channel_session_id: data?.id ?? null,
     // `hasToken` em vez do token: uma vez gravado, a tela mostra que EXISTE, nunca
     // qual é. Devolver o segredo para preencher o campo seria vazá-lo a cada render.
     hasToken: Boolean(data?.meta_token_encrypted),
+    /**
+     * DE ONDE veio esta conexão (#4074): `embedded_signup` ou `token_manual`.
+     * `null` = coluna ausente (banco anterior à 9328) ou valor desconhecido —
+     * a tela não rotula o que ninguém registrou. `inferida` marca as linhas
+     * anteriores à coluna, que só podiam ter nascido do formulário.
+     */
+    origem: origem?.ok
+      ? { valor: origem.origem, rotulo: origem.rotulo, inferida: origem.inferida }
+      : null,
     phoneNumberId: data?.meta_phone_number_id ?? null,
     wabaId: data?.meta_waba_id ?? null,
+    /** A conta de mensagens que paga os envios (fork 9005); nulo = a Meta escolhe. */
+    contaDeMensagensId: data?.meta_messaging_account_id ?? null,
     /** Base pública da Graph API — para o operador reaproveitar em outro sistema. */
     endpoint: data ? metaGraphBase() : null,
     displayName: data?.display_name ?? null,
     phoneNumber: data?.phone_number ?? null,
     status: data?.status ?? null,
+    /** A última saída que chegou à Meta foi recusada por permissão (10/200)? */
+    semAutorizacao: data?.id
+      ? await ultimaRecusaPorAutorizacao(admin, { organizationId: orgId, channelSessionId: data.id })
+      : null,
     /** O que o operador precisa colar do NOSSO lado no dashboard da Meta. */
     webhook: data
       ? {
@@ -211,11 +241,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const parsed = conectarSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
-    return fail("invalid_request", t("phone_number_id, waba_id e token são obrigatórios"), 422, {
-      requestId,
-    });
+    const daConta = parsed.error.issues.some((i) => i.path[0] === "messaging_account_id");
+    return fail(
+      "invalid_request",
+      daConta ? t("O ID da conta de mensagens tem só números.") : t("phone_number_id, waba_id e token são obrigatórios"),
+      422,
+      { requestId },
+    );
   }
   const { phone_number_id, waba_id, token } = parsed.data;
+  // F14: sem a chave no corpo, a conta salva fica como está (reconectar não a apaga).
+  const campoDaConta =
+    parsed.data.messaging_account_id === undefined
+      ? {}
+      : { meta_messaging_account_id: parsed.data.messaging_account_id || null };
 
   // VALIDA ANTES DE GRAVAR — a rota não sabe com quem fala; ela pergunta se a
   // credencial presta e o canal responde.
@@ -272,6 +311,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     provider: CHANNEL_PROVIDER_META,
     meta_phone_number_id: phone_number_id,
     meta_waba_id: waba_id,
+    ...campoDaConta,
     meta_token_encrypted: cifrado,
     phone_number: validacao.displayPhoneNumber ? `+${validacao.displayPhoneNumber.replace(/\D/g, "")}` : null,
     // O nome do provedor só batiza a conexão; depois dela o nome é do operador
@@ -342,6 +382,24 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     });
   }
 
+  // ─── DE ONDE nasceu esta conexão (#4074) ──────────────────────────────────
+  // Esta rota é a porta do TOKEN COLADO À MÃO, e a origem dela é constante de
+  // código — nunca lida do corpo do request. Procedência que o cliente escolhe
+  // não é procedência: sem isso, a próxima porta (Embedded Signup) e esta
+  // ficariam indistinguíveis para a auditoria e para a tela.
+  //
+  // DEPOIS da gravação e best-effort: a coluna chega na migration 9328, e num
+  // banco anterior a ela o canal continua conectado (o desfecho vira
+  // `origemGravada: false`, não erro).
+  const origem =
+    idDaSessao !== null
+      ? await registrarOrigemDaConexao(admin, {
+          organizationId: orgId,
+          channelSessionId: idDaSessao,
+          origem: ORIGEM_DO_TOKEN_MANUAL,
+        })
+      : null;
+
   // ─── O webhook DESTE número, registrado pela própria instalação (fatia F1) ──
   // DEPOIS de gravar, nunca antes: o GET de verificação da Meta chega no instante
   // em que o override é registrado e procura a sessão pelo `webhook_path_token` —
@@ -368,6 +426,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     connected: true,
     displayName: linha.display_name,
     phoneNumber: linha.phone_number,
+    /** `false` não desfaz a conexão: banco anterior à 9328 não tem a coluna. */
+    origemGravada: Boolean(origem?.gravada),
+    origem: { valor: ORIGEM_DO_TOKEN_MANUAL, rotulo: ROTULOS_DA_ORIGEM[ORIGEM_DO_TOKEN_MANUAL] },
     /** `registrado: false` NÃO desfaz a conexão — o canal envia; falta a entrega. */
     webhookRegistro: webhook
       ? { registrado: webhook.registrado, url: webhook.url, erro: webhook.erro, em: webhook.em }

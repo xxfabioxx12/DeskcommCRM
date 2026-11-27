@@ -6,10 +6,11 @@ import { SourcesTab } from "./SourcesTab";
 import { RulesTab } from "./RulesTab";
 import { ActivityTab } from "./ActivityTab";
 import { CapturasTab } from "./CapturasTab";
+import { VendasTab } from "./VendasTab";
 import { useT } from "@/hooks/i18n/useT";
 
 /** As abas que um link pode abrir direto (`/app/webhooks?aba=automacoes`, a volta do designer). */
-const ABAS = { receber: "sources", leads: "capturas", automacoes: "rules", atividade: "activity" } as const;
+const ABAS = { receber: "sources", leads: "capturas", vendas: "vendas", automacoes: "rules", atividade: "activity" } as const;
 export type AbaDosWebhooks = keyof typeof ABAS;
 
 export function WebhooksClient({ abaInicial }: { abaInicial?: AbaDosWebhooks }) {
@@ -26,28 +27,36 @@ export function WebhooksClient({ abaInicial }: { abaInicial?: AbaDosWebhooks }) 
 
   if (!mounted) {
     // Mesma altura do TabsList (h-9) e largura MEDIDA da tablist — zero layout
-    // shift. 432px é a medida com QUATRO abas (`getBoundingClientRect` em
-    // 1440px, aba "Leads recebidos" incluída); eram 306px com três, e um
+    // shift. 512px é a ESTIMATIVA com CINCO abas (NÃO MEDIDO: medir com
+    // getBoundingClientRect em 1440px na prova de tela); eram 432px com quatro, e um
     // skeleton estreito demais faz a página saltar no primeiro paint.
     // Ao acrescentar ou renomear aba, MEDIR de novo — este número não se
     // estima a olho.
+    //
+    // Abaixo de `lg` a aba tem 44px (`min-h-11` do trigger) e a lista quebra
+    // linha (`flex-wrap` abaixo): uma fila = 44 + 8 do `p-1` = 52px. Abaixo de
+    // `sm` (a 390px sobram ~310px úteis) as quatro abas viram DUAS filas, 96px.
+    // Contas pelas classes, não medidas; o `max-w-full` impede que os 432px
+    // empurrem o <main> para o lado no celular.
     return (
       <div className="flex-1">
-        <Skeleton className="h-9 w-[432px]" />
+        <Skeleton className="h-24 w-[432px] max-w-full sm:h-[52px] lg:h-9" />
       </div>
     );
   }
 
   return (
     <Tabs defaultValue={abaInicial ? ABAS[abaInicial] : "sources"} className="flex-1">
-      <TabsList>
+      <TabsList className="h-auto flex-wrap justify-start">
         <TabsTrigger value="sources">{t("Receber dados")}</TabsTrigger>
         <TabsTrigger value="capturas">{t("Leads recebidos")}</TabsTrigger>
+        <TabsTrigger value="vendas">{t("Vendas")}</TabsTrigger>
         <TabsTrigger value="rules">{t("Automações")}</TabsTrigger>
         <TabsTrigger value="activity">{t("Atividade")}</TabsTrigger>
       </TabsList>
       <TabsContent value="sources"><SourcesTab /></TabsContent>
       <TabsContent value="capturas"><CapturasTab /></TabsContent>
+      <TabsContent value="vendas"><VendasTab /></TabsContent>
       <TabsContent value="rules"><RulesTab /></TabsContent>
       <TabsContent value="activity"><ActivityTab /></TabsContent>
     </Tabs>

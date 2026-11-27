@@ -6,11 +6,13 @@ import { createClient } from "@/lib/supabase/server";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { requestTurnDeps } from "@/lib/agent-engine/agent/request-deps";
 import { generateReplyDraft } from "@/lib/agent-engine/agent/reply-drafts";
+import { listarSugestoesDaConversa } from "@/lib/agent-engine/agent/sugestoes-da-conversa";
 import { motivoDaFalha } from "@/lib/agent-engine/agent/sugestao-de-resposta";
 import { logger } from "@/lib/logger";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { exigirConversaDoSetor } from "@/lib/inbox/recorte-do-setor";
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
 async function context(ctx: Ctx, requestId: string) {
@@ -18,6 +20,16 @@ async function context(ctx: Ctx, requestId: string) {
   if (!auth.ok) return { response: auth.response } as const;
   const t = (texto: string) => traduzir(texto, auth.user.idioma);
   const { id } = await ctx.params;
+  // Cópia NODZ: conversa de outro setor responde como se não existisse.
+  const foraDoSetor = await exigirConversaDoSetor({
+    organizationId: auth.org.orgId,
+    userId: auth.user.id,
+    conversationId: id,
+    requestId,
+    papel: auth.org.role,
+    idioma: auth.user.idioma,
+  });
+  if (foraDoSetor) return { response: foraDoSetor } as const;
   const db = await createClient();
   const { data: conversation } = await db
     .from("conversations")
@@ -33,11 +45,10 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
   const requestId = randomUUID(),
     c = await context(ctx, requestId);
   if ("response" in c) return c.response;
-  const { rows } = await getRequestPool().query(
-    `select id,revision::text,original_body,edited_body,approved_body,proposals,feedback,error_code,created_at,
- case when status in ('generating','pending','approved') and not fn_reply_context_current(organization_id,id) then 'stale' else status end as status
- from ai_reply_drafts where organization_id=$1 and conversation_id=$2 order by created_at desc limit 5`,
-    [c.auth.org.orgId, c.conversation.id],
+  const rows = await listarSugestoesDaConversa(
+    getRequestPool(),
+    c.auth.org.orgId,
+    c.conversation.id,
   );
   return ok({ drafts: rows }, { requestId });
 }

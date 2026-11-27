@@ -31,7 +31,9 @@ const disparos = vi.hoisted(() => ({
   recebidas: [] as unknown[],
 }));
 
-vi.mock("@/lib/channels/meta/session", () => ({
+vi.mock("@/lib/channels/meta/session", async (orig) => ({
+  // Mantém o resto do módulo real (eventoDaSessao, campoDaContaDeMensagens).
+  ...(await orig<Record<string, unknown>>()),
   metaSessionByWebhookToken: async () => SESSAO,
 }));
 

@@ -40,7 +40,7 @@ import { responderSobreOCaso } from "@/lib/agent-engine/agent/conversa-do-caso";
 import {
   montarBlocoDeDados,
   montarSystem,
-  PERSONA_NEUTRA,
+  personaNeutra,
 } from "@/lib/agent-engine/agent/conversa-do-caso/contexto";
 import {
   falasDoSnapshot,
@@ -55,7 +55,7 @@ import {
   resolverPersona,
   type PersonaDaConversa,
 } from "@/lib/agent-engine/agent/conversa-do-caso/persona";
-import { fusoDaOrganizacao } from "@/lib/agent-engine/agent/fuso-da-org";
+import { fatosDaOrganizacao } from "@/lib/agent-engine/agent/fatos-da-organizacao";
 import { loadOrgMemory, renderOrgMemory } from "@/lib/agent-engine/agent/org-memory";
 import { requestTurnDeps } from "@/lib/agent-engine/agent/request-deps";
 import {
@@ -85,6 +85,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { filtroDoSetorEstrito } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -191,7 +192,10 @@ async function contexto(ctx: Ctx, requestId: string): Promise<{ response: Respon
   const db = await createClient();
   let visiveis: string[];
   try {
-    visiveis = await conversasVisiveisDosCasos(db, authz.org.orgId, { caseId });
+    visiveis = await conversasVisiveisDosCasos(db, authz.org.orgId, {
+      caseId,
+      filtroDoSetor: await filtroDoSetorEstrito(authz.org.orgId, authz.user.id),
+    });
   } catch (erro) {
     // Falha de leitura do recorte é falha FECHADA na ação: sem saber o que a
     // pessoa pode ver, a resposta não é "mostre tudo".
@@ -525,7 +529,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   }
 
   const deps = requestTurnDeps();
-  const fuso = await fusoDaOrganizacao(pool, c.orgId, deps.log);
+  const { fuso, idioma } = await fatosDaOrganizacao(pool, c.orgId, deps.log);
   const persona = await personaDeAgora(pool, c.orgId, caso.agent_id);
   const fronteira = parseServiceBoundary(caso.context_snapshot?.service_boundary);
   const obsoleto = await casoEstaObsoleto(pool, c.orgId, caso.context_snapshot);
@@ -539,6 +543,7 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       serviceRevision: fronteira?.service_revision ?? null,
       abertoEm: caso.opened_at,
       limite: janela,
+      verImagens: persona.fonte === "agente_do_caso" ? (persona.agente.imageVisionEnabled ?? true) : true,
     }),
     lerMemoriaDoAtendimento(pool, c.orgId, contactId, caso.conversation_id),
     lerDecisoesDaEquipe(createAdminClient(), c.orgId, caso.conversation_id),
@@ -591,8 +596,9 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     depoisDaAbertura: conversa.depois,
   });
   const system = montarSystem({
-    persona: persona.fonte === "agente_do_caso" ? persona.agente.systemPrompt : PERSONA_NEUTRA,
+    persona: persona.fonte === "agente_do_caso" ? persona.agente.systemPrompt : personaNeutra(idioma),
     memoriaDaOrganizacao: renderOrgMemory(orgMemory) || null,
+    idioma,
   });
 
   let erroCodigo: string | null = null;

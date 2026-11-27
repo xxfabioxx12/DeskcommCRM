@@ -52,7 +52,11 @@ const ids = {
   jobId: "job",
 };
 
-const pool = { query: async () => ({ rows: [] }) } as never;
+const pool = {
+  query: async (sql: string) => ({
+    rows: sql.includes("fn_nodz_garantir_caso_humano") ? [{ id: "caso-confirmado" }] : [],
+  }),
+} as never;
 
 function opts(extra: Partial<AvisoDeEscalacaoOpts> = {}): AvisoDeEscalacaoOpts {
   return {
@@ -131,5 +135,24 @@ describe("aviso de escalação: qual janela a cadeia avalia", () => {
       porque: "messaging_window_closed",
       motivoCodigo: "fora_da_janela",
     });
+  });
+});
+
+describe("aviso exige Caso persistido", () => {
+  it("não promete encaminhamento se a gravação falhar", async () => {
+    const falha = {
+      query: async () => {
+        throw new Error("database unavailable");
+      },
+    } as never;
+    const res = await avisarLeadDaEscalacao(falha, ids, opts());
+    expect(res.avisado).toBe(false);
+    expect(runBeforeSend).not.toHaveBeenCalled();
+  });
+  it("não promete encaminhamento sem recibo", async () => {
+    const vazio = { query: async () => ({ rows: [] }) } as never;
+    const res = await avisarLeadDaEscalacao(vazio, ids, opts());
+    expect(res.avisado).toBe(false);
+    expect(runBeforeSend).not.toHaveBeenCalled();
   });
 });

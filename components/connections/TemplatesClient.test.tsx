@@ -9,10 +9,18 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 
 const mutateAsync = vi.fn();
 const salvos: { valores: Record<string, string> } = { valores: {} };
+// Etapa B: o servidor diz se o canal gerencia; o papel vem da sessão.
+const tela: { podeGerenciar?: boolean; papel: string; status: string; rejectedReason: string | null } = {
+  podeGerenciar: undefined,
+  papel: "admin",
+  status: "APPROVED",
+  rejectedReason: null,
+};
 
 vi.mock("@/hooks/channels/useTemplates", () => ({
   useTemplates: () => ({
@@ -20,13 +28,14 @@ vi.mock("@/hooks/channels/useTemplates", () => ({
     data: {
       data: {
         waba: "123",
+        podeGerenciar: tela.podeGerenciar,
         templates: [
           {
             name: "aviso_debriefing_adv",
             language: "pt_BR",
-            status: "APPROVED",
+            status: tela.status,
             category: "UTILITY",
-            rejectedReason: null,
+            rejectedReason: tela.rejectedReason,
             qualityScore: null,
             parameterFormat: "POSITIONAL",
             contractHash: "h",
@@ -34,6 +43,8 @@ vi.mock("@/hooks/channels/useTemplates", () => ({
             slots: [{ key: "1", expects: "image", onde: "cabeçalho", valueKey: "header:1" }],
             previews: [],
             savedValues: salvos.valores,
+            // O modelo é da conta oficial desta conexão: só assim tem Editar/Apagar.
+            daConexao: true,
           },
         ],
       },
@@ -44,13 +55,36 @@ vi.mock("@/hooks/channels/useTemplates", () => ({
 }));
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock("@/hooks/auth/AuthProvider", () => ({
+  useAuth: () => ({
+    user: { id: "eu", is_platform_admin: false, platform_admin_scope: null, support: null },
+    activeOrg: { orgId: "org-1", role: tela.papel },
+  }),
+}));
+vi.mock("@/hooks/channels/useModeloOficial", () => ({
+  useGerirModeloOficial: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
 
-import { TemplatesClient } from "./TemplatesClient";
+import { TemplatesClient as TemplatesClientSemProvider } from "./TemplatesClient";
+
+// A tela passou a usar `useQueryClient`/`useMutation` direto (criar/editar/apagar,
+// #3635): sem o provider ela nem monta. Um cliente por render, como na tela real.
+function TemplatesClient() {
+  return (
+    <QueryClientProvider client={new QueryClient()}>
+      <TemplatesClientSemProvider />
+    </QueryClientProvider>
+  );
+}
 
 describe("TemplatesClient — link da mídia salvo no modelo", () => {
   beforeEach(() => {
     mutateAsync.mockReset().mockResolvedValue({ data: { savedValues: {} } });
     salvos.valores = {};
+    tela.podeGerenciar = undefined;
+    tela.papel = "admin";
+    tela.status = "APPROVED";
+    tela.rejectedReason = null;
   });
 
   it("salva o link na chave do endereço, sem enviar nada", async () => {
@@ -102,5 +136,62 @@ describe("TemplatesClient — link da mídia salvo no modelo", () => {
     rerender(<TemplatesClient />);
     expect(screen.getByTestId("template-link-midia")).toHaveValue("https://exemplo.com/x2.jpg");
     expect(screen.getByTestId("btn-salvar-link")).toBeDisabled();
+  });
+});
+
+describe("TemplatesClient — Etapa B (criar, editar, apagar e status em português)", () => {
+  beforeEach(() => {
+    salvos.valores = {};
+    tela.podeGerenciar = undefined;
+    tela.papel = "admin";
+    tela.status = "APPROVED";
+    tela.rejectedReason = null;
+  });
+
+  it("canal que gerencia + administrador: mostra Criar template e Apagar", () => {
+    tela.podeGerenciar = true;
+    render(<TemplatesClient />);
+    expect(screen.getByTestId("btn-criar-template")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Apagar" })).toBeInTheDocument();
+  });
+
+  it("canal que gerencia, mas quem vê não é administrador: nada de criar, editar ou apagar", () => {
+    tela.podeGerenciar = true;
+    tela.papel = "agent";
+    render(<TemplatesClient />);
+    expect(screen.queryByTestId("btn-criar-template")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Apagar" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Editar" })).not.toBeInTheDocument();
+  });
+
+  it("canal que não gerencia: administrador também não vê os botões", () => {
+    tela.podeGerenciar = false;
+    render(<TemplatesClient />);
+    expect(screen.queryByTestId("btn-criar-template")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Apagar" })).not.toBeInTheDocument();
+  });
+
+  it("Criar template abre o formulário", async () => {
+    tela.podeGerenciar = true;
+    render(<TemplatesClient />);
+    await userEvent.click(screen.getByTestId("btn-criar-template"));
+    expect(screen.getByLabelText("Nome do modelo")).toBeInTheDocument();
+  });
+
+  it("status e motivo da recusa em português", () => {
+    tela.status = "REJECTED";
+    tela.rejectedReason = "INCORRECT_CATEGORY";
+    render(<TemplatesClient />);
+    expect(screen.getByText("Recusado")).toBeInTheDocument();
+    expect(screen.getByText(/Categoria errada para este texto/)).toBeInTheDocument();
+    expect(screen.queryByText("REJECTED")).not.toBeInTheDocument();
+  });
+
+  it("status e motivo desconhecidos aparecem como vieram", () => {
+    tela.status = "LIMIT_EXCEEDED";
+    tela.rejectedReason = "NEW_REASON";
+    render(<TemplatesClient />);
+    expect(screen.getByText("LIMIT_EXCEEDED")).toBeInTheDocument();
+    expect(screen.getByText(/NEW_REASON/)).toBeInTheDocument();
   });
 });

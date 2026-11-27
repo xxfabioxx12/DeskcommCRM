@@ -19,7 +19,7 @@ import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { carregaEtapasCitadas } from "@/lib/followup/etapas-citadas";
-import { carregaModelosCitados } from "@/lib/followup/modelos-citados";
+import { carregaModelosCitados, carregaModelosDaMensagem } from "@/lib/followup/modelos-citados";
 import { triggerConfigSchema, type FollowupFlowSurface } from "@/lib/followup/api-schemas";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import {
@@ -178,6 +178,10 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
   // (fluxo importado de outra conta, ou modelo apagado) — seguimento do #3056.
   const modelos = await carregaModelosCitados(admin, activeOrg.orgId, graph.nodes);
   if (!modelos.ok) return fail("internal_error", modelos.mensagem, 500, { requestId });
+  // Parte 1 do motor de fluxo — o template do passo "Mensagem" precisa existir
+  // na conta, aprovado, em dia e com as lacunas cobertas. Só lê quando há.
+  const modelosDaMensagem = await carregaModelosDaMensagem(admin, activeOrg.orgId, graph.nodes);
+  if (!modelosDaMensagem.ok) return fail("internal_error", modelosDaMensagem.mensagem, 500, { requestId });
   // Roteiro: para onde os OUTROS roteiros ativos encadeiam — para recusar a
   // publicação que fecharia um ciclo A → B → A (revisão do #1573).
   let roteiro: RoteiroDoPublish | undefined;
@@ -211,9 +215,12 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
       ),
     };
   }
-  // O plano B da mensagem por IA só existe para canal com janela de 24 h. Uma
-  // organização só com canal sem janela não tem modelo aprovado para escolher,
-  // e exigir o plano B dela travaria o publish (revisão do #1729).
+  // O plano B da mensagem por IA só existe para canal que EXIGE modelo aprovado
+  // fora da janela: precisa da regra da janela E de um catálogo aprovado para
+  // oferecer. Uma organização sem esse canal não tem modelo aprovado para
+  // escolher, e exigir o plano B dela travaria o publish (revisão do #1729). A
+  // régua inteira mora em `algumCanalExigeModeloForaDaJanela` — inclusive o
+  // #3109, em que o canal social fecha a janela mas não tem catálogo nenhum.
   const { data: conexoes, error: conexoesErr } = await admin
     .from("channel_sessions")
     .select("provider")
@@ -233,6 +240,7 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
     roteiro,
     exigeModeloForaDaJanela,
     modelos: modelos.modelos,
+    modelosDaMensagem: modelosDaMensagem.modelos,
     ...(gatilho.success ? { trigger: gatilho.data } : {}),
   });
   if (!validation.ok) {

@@ -19,7 +19,26 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
+import { STATUS_DA_CAMPANHA, type StatusDaCampanha } from "@/lib/campanhas/tipos";
+
 import type { ChannelTemplateOps } from "./types";
+
+/**
+ * Campanha que ainda pode enviar (ou voltar a enviar) o modelo: tudo menos os
+ * estados finais. Apagar o modelo de uma campanha pausada faria a retomada
+ * pausar de novo por `template_nao_aprovado` — em silêncio para quem apagou.
+ */
+const ESTADOS_FINAIS_DA_CAMPANHA: ReadonlySet<StatusDaCampanha> = new Set(["completed", "cancelled", "failed"]);
+const CAMPANHA_AINDA_USA = STATUS_DA_CAMPANHA.filter((s) => !ESTADOS_FINAIS_DA_CAMPANHA.has(s));
+
+export type TipoDeUso = "fluxo" | "agente" | "campanha";
+
+/** O rótulo (pt) de cada tipo de uso; a rota passa por `traduzir`. */
+export const ROTULO_DO_USO: Record<TipoDeUso, string> = {
+  fluxo: "Follow-up",
+  agente: "Agente",
+  campanha: "Campanha",
+};
 
 export const acaoEditarSchema = z.object({
   acao: z.literal("editar"),
@@ -42,6 +61,47 @@ export interface EscopoDaGestao {
   orgId: string;
   sessionId: string;
   sessionRef: string;
+  /**
+   * Conta oficial: as linhas do espelho são da WABA e não têm conexão
+   * (`channel_session_id IS NULL`, ver `meta/template-sync.ts`). Ausente = canal
+   * intermediado, linhas da conexão (como sempre foi).
+   */
+  wabaDoOficial?: string | null;
+}
+
+/** O mínimo do construtor do PostgREST que o filtro do espelho usa. */
+interface FiltroDoEspelho {
+  eq(coluna: string, valor: unknown): FiltroDoEspelho;
+  is(coluna: string, valor: null): FiltroDoEspelho;
+}
+
+/** As linhas do espelho DESTA conexão (ou desta conta oficial). */
+function daConexao<T>(consulta: T, escopo: EscopoDaGestao): T {
+  const q = consulta as unknown as FiltroDoEspelho;
+  const filtrada = escopo.wabaDoOficial
+    ? q.is("channel_session_id", null).eq("waba_id", escopo.wabaDoOficial)
+    : q.eq("channel_session_id", escopo.sessionId);
+  return filtrada as unknown as T;
+}
+
+/**
+ * As linhas do espelho deste modelo NESTA conexão. É a mesma régua que decide se
+ * a conexão pode editar/apagar o modelo: o espelho é da organização inteira, e o
+ * homônimo de outra conexão é de outra conta.
+ */
+export async function linhasDoModeloNaConexao(
+  admin: SupabaseClient,
+  escopo: EscopoDaGestao,
+  alvo: { name: string; language: string },
+): Promise<string[]> {
+  const { data, error } = await daConexao(
+    admin.from("meta_templates").select("id").eq("organization_id", escopo.orgId),
+    escopo,
+  )
+    .eq("name", alvo.name)
+    .eq("language", alvo.language);
+  if (error) throw new Error(`modelo_espelho: ${error.message}`);
+  return ((data ?? []) as { id: string }[]).map((l) => l.id);
 }
 
 /**
@@ -52,9 +112,9 @@ export interface EscopoDaGestao {
 export async function usosDoModelo(
   admin: SupabaseClient,
   orgId: string,
-  alvo: { name: string; ids: string[] },
-): Promise<{ tipo: "fluxo" | "agente"; nome: string }[]> {
-  const usos: { tipo: "fluxo" | "agente"; nome: string }[] = [];
+  alvo: { name: string; language: string; ids: string[] },
+): Promise<{ tipo: TipoDeUso; nome: string }[]> {
+  const usos: { tipo: TipoDeUso; nome: string }[] = [];
 
   if (alvo.ids.length > 0) {
     const { data: ponteiros, error } = await admin
@@ -99,12 +159,24 @@ export async function usosDoModelo(
       if ((prompt.get(a.published_version_id) ?? "").includes(alvo.name)) usos.push({ tipo: "agente", nome: a.name });
     }
   }
+
+  // Campanha com template guarda NOME e IDIOMA (`campaigns.template_name`/`template_language`).
+  const { data: campanhas, error: ec } = await admin
+    .from("campaigns")
+    .select("name")
+    .eq("organization_id", orgId)
+    .eq("message_mode", "template")
+    .eq("template_name", alvo.name)
+    .eq("template_language", alvo.language)
+    .in("status", CAMPANHA_AINDA_USA);
+  if (ec) throw new Error(`usos_campanhas: ${ec.message}`);
+  for (const c of (campanhas ?? []) as { name: string }[]) usos.push({ tipo: "campanha", nome: c.name });
   return usos;
 }
 
 export type ResultadoDaGestao =
   | { ok: true; acao: "editar" | "apagar" }
-  | { ok: false; codigo: "em_uso"; usos: { tipo: "fluxo" | "agente"; nome: string }[] };
+  | { ok: false; codigo: "em_uso"; usos: { tipo: TipoDeUso; nome: string }[] };
 
 /**
  * Executa a edição ou o apagamento. Erro da plataforma SOBE com o texto dela —
@@ -128,18 +200,10 @@ export async function executarGestao(
     return { ok: true, acao: "editar" };
   }
 
-  const { data: linhas, error } = await admin
-    .from("meta_templates")
-    .select("id")
-    .eq("organization_id", escopo.orgId)
-    .eq("channel_session_id", escopo.sessionId)
-    .eq("name", corpo.name)
-    .eq("language", corpo.language);
-  if (error) throw new Error(`modelo_espelho: ${error.message}`);
-  const ids = ((linhas ?? []) as { id: string }[]).map((l) => l.id);
+  const ids = await linhasDoModeloNaConexao(admin, escopo, corpo);
 
   if (!corpo.confirmado) {
-    const usos = await usosDoModelo(admin, escopo.orgId, { name: corpo.name, ids });
+    const usos = await usosDoModelo(admin, escopo.orgId, { name: corpo.name, language: corpo.language, ids });
     if (usos.length > 0) return { ok: false, codigo: "em_uso", usos };
   }
 
@@ -152,11 +216,10 @@ export async function executarGestao(
   // O sincronizar só ACRESCENTA modelos desta conta (ausência na lista pode ser
   // erro transitório); o apagado sai do espelho aqui, porque aqui sabemos que
   // ele deixou de existir.
-  const { error: ed } = await admin
-    .from("meta_templates")
-    .delete()
-    .eq("organization_id", escopo.orgId)
-    .eq("channel_session_id", escopo.sessionId)
+  const { error: ed } = await daConexao(
+    admin.from("meta_templates").delete().eq("organization_id", escopo.orgId),
+    escopo,
+  )
     .eq("name", corpo.name)
     .eq("language", corpo.language);
   if (ed) throw new Error(`modelo_espelho_apagar: ${ed.message}`);

@@ -194,7 +194,7 @@ test.describe("condição com várias regras — uma bolinha por regra", () => {
       // (`oferecido: false`), por ser duplicata de `eq` para etiqueta. O que o
       // usuário escolhe é "tem a etiqueta".
       await bloco.getByRole("combobox", { name: "Campo" }).click();
-      await page.getByRole("option", { name: "Etiqueta do contato", exact: true }).click();
+      await page.getByRole("option", { name: "Etiqueta do card", exact: true }).click();
       await bloco.getByRole("combobox", { name: "Operador" }).click();
       await page.getByRole("option", { name: "tem a etiqueta", exact: true }).click();
       await bloco.getByLabel("Valor").fill(valor);

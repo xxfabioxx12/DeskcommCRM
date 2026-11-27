@@ -158,7 +158,7 @@ test.describe("Inbox: as abas perguntam quem manda", () => {
     // `tab`, não `button`: as abas são `TabsTrigger` do shadcn. E o nome vem por
     // REGEX porque o contador entra no nome acessível ("Fila 36") — `exact` aqui
     // nunca casaria. Mesmo idioma da spec irmã `inbox-quem-manda.spec.ts`.
-    await page.getByRole("tab", { name: /Fila/i }).first().click();
+    await page.getByRole("tab", { name: /Aguardando atendente/i }).first().click();
     // A escalada está na Fila nos DOIS casos — é o que não depende do fato.
     await expect(page.getByText(ESPERANDO).first()).toBeVisible({ timeout: 15_000 });
     if (temAutomatico) {
@@ -177,7 +177,7 @@ test.describe("Inbox: as abas perguntam quem manda", () => {
     // ESTA é a asserção que não depende de nada: a aba do automático pede
     // exatamente `comando=automatico` nos dois casos, então a separação aqui vale
     // sempre — e é ela que impede um "conserto" que simplesmente esvazie a Fila.
-    await page.getByRole("tab", { name: /Autom/i }).first().click();
+    await page.getByRole("tab", { name: /IA atendendo/i }).first().click();
     await expect(page.getByText(ROBO).first()).toBeVisible({ timeout: 15_000 });
     await expect(
       page.getByText(ESPERANDO),

@@ -4,10 +4,13 @@ import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
  * `engine.ts` owns the tick/DB orchestration; this file only decides "given
  * this node + these facts, what happens next" so it's testable without Postgres.
  */
+import { normalizarTag } from "@/lib/contacts/tag-normalizada";
+
 import { NO_REPLY_BRANCH_ID, REPEAT_BODY_BRANCH_ID, REPEAT_DONE_BRANCH_ID, nodeBranches } from "./graph-schema";
 import type { FlowEdge, FlowNode, ReplySaveTo } from "./graph-schema";
 import { avaliarDataRelativa, ehOpDeData, type OpDeData } from "./condicao-por-data";
 import { parseReplyCount } from "./parse-count";
+import { janelaDaEspera, primeiroInstanteNoHorario } from "./espera-no-horario";
 import { clampEspera, esperaPlanejadaDe, type EsperaAdaptativa } from "./timing-plan";
 import { fraseDeConfirmacao } from "./vocabulario";
 
@@ -87,12 +90,25 @@ export interface EnrollmentRow {
 export interface LeadFacts {
   /**
    * Fuso da ORGANIZAÇÃO, para a condição por data comparar dia de calendário —
-   * ver `condicao-por-data.ts`. Ausente cai no padrão do produto; o motor só o
-   * resolve quando o grafo tem regra de data.
+   * ver `condicao-por-data.ts` — e para a espera com horário (`ate_o_horario`,
+   * `espera-no-horario.ts`). Ausente cai no padrão do produto; o motor só o
+   * resolve quando o grafo tem regra de data ou espera com horário.
    */
   fuso?: string | null;
   lead_stage: string | null;
+  /**
+   * As etiquetas do lead — as DUAS caixas, unidas (`etiquetas-do-lead.ts`, #4586):
+   * `crm_leads.tags` (negócio) e `contacts.tags` (pessoa). A condição `tag`
+   * compara pertinência aqui, então marcar o contato — que é o que a campanha
+   * de prospecção faz com o nicho — vale tanto quanto marcar o card.
+   */
   tags: string[];
+  /**
+   * Etiquetas do CONTATO (`contacts.tags`, já normalizadas na escrita) —
+   * condição `contact_tag`. Ausente = o adaptador não as leu: a regra não é
+   * verdadeira (nem a negação), como `last_outcome` nulo.
+   */
+  contact_tags?: string[];
   steps_taken: number;
   /**
    * Desfecho do passo anterior — a classe que o último `ai_classify` escolheu,
@@ -478,7 +494,7 @@ export function ultimoDesfechoDe(events: EnrollmentEventRef[]): string | null {
 
 function evaluateCheck(
   check: {
-    field: "lead_stage" | "tag" | "steps_taken" | "last_outcome" | "lead_date";
+    field: "lead_stage" | "tag" | "contact_tag" | "steps_taken" | "last_outcome" | "lead_date";
     op: "eq" | "neq" | "gte" | "lte" | "contains" | OpDeData;
     value: string | number;
     key?: string;
@@ -502,6 +518,18 @@ function evaluateCheck(
   // Operador de data em campo que não é de data: o schema recusa no publish, e
   // aqui responde `false` em vez de cair num `switch` que não o conhece.
   if (ehOpDeData(check.op)) return false;
+
+  // Etiqueta do CONTATO: pertinência, normalizada dos dois lados ("VIP " casa
+  // com "vip"). Sem a lista carregada, nada é verdadeiro — nem a negação.
+  if (check.field === "contact_tag") {
+    if (lead.contact_tags === undefined) return false;
+    const alvo = normalizarTag(String(check.value));
+    if (alvo === "") return false;
+    const tem = lead.contact_tags.some((t) => normalizarTag(t) === alvo);
+    if (check.op === "eq" || check.op === "contains") return tem;
+    if (check.op === "neq") return !tem;
+    return false;
+  }
 
   const actual: string | number | null | string[] =
     check.field === "lead_stage" ? lead.lead_stage
@@ -658,12 +686,16 @@ export function processNode(input: {
 
     case "wait": {
       // Resposta do lead corta a espera: o timer é teto (ninguém respondeu),
-      // não um atraso obrigatório depois de cada envio.
+      // não um atraso obrigatório depois de cada envio. Vale também com horário
+      // (`ate_o_horario`): ele segura o toque PROATIVO, não a resposta a quem
+      // acabou de escrever.
       if (wokeEarly) {
         const edge = selectEdge(edges, node.id, { type: "always" });
         if (!edge) return { kind: "fail", error: `wait node "${node.id}" has no outbound edge after elapsing` };
         return { kind: "advance", next_node_id: edge.target, next_eval_at: clock() };
       }
+      const janelaDoNo =
+        node.config.mode === "fixed" ? janelaDaEspera(node.config.ate_o_horario, lead.fuso) : null;
       if (!waitElapsed) {
         // Adaptativo: o instante vem do plano decidido no acionamento. Sem plano
         // legível para ESTE nó (enrollment anterior à feature, fluxo v1, jsonb
@@ -687,11 +719,24 @@ export function processNode(input: {
         // slot único anti-spam enquanto ela espera. Quem a acorda continua sendo
         // o `next_eval_at` abaixo, pelo mesmo claim — não há segundo agendador.
         const imune = node.config.mode === "fixed" && node.config.immune_to_reply === true;
+        // Horário da espera (`ate_o_horario`): o fim que cai de noite ou num dia
+        // fechado vai para a próxima abertura JÁ AQUI, na entrada — a fila mostra
+        // o instante verdadeiro do próximo passo, não as 24 h cruas.
         return {
           kind: "wait",
-          next_eval_at: new Date(clock().getTime() + durationMs),
+          next_eval_at: primeiroInstanteNoHorario(new Date(clock().getTime() + durationMs), janelaDoNo),
           ...(imune ? { wake_status: "dormente" as const } : {}),
         };
+      }
+      // E é conferido de novo na SAÍDA. O fim calculado na entrada não é a única
+      // origem do relógio: retomar uma pausa devolve o restante, e adiar grava a
+      // hora que a pessoa escolheu — os dois podem cair fora do horário. Fora
+      // dele, a espera continua até a abertura (custa um tick, como um recheck).
+      const agora = clock();
+      const abertura = primeiroInstanteNoHorario(agora, janelaDoNo);
+      if (abertura.getTime() > agora.getTime()) {
+        const imune = node.config.mode === "fixed" && node.config.immune_to_reply === true;
+        return { kind: "wait", next_eval_at: abertura, ...(imune ? { wake_status: "dormente" as const } : {}) };
       }
       const edge = selectEdge(edges, node.id, { type: "always" });
       if (!edge) return { kind: "fail", error: `wait node "${node.id}" has no outbound edge after elapsing` };
@@ -946,6 +991,14 @@ export function processNode(input: {
       // este nó não está em `NOS_QUE_ENVIAM`).
       const edge = selectEdge(edges, node.id, { type: "always" });
       if (!edge) return { kind: "fail", error: `edit_lead_tag node "${node.id}" has no outbound edge` };
+      return { kind: "advance", next_node_id: edge.target, next_eval_at: clock() };
+    }
+
+    case "gravar_campo": {
+      // Parte 1 do motor de fluxo — mesma passagem do `edit_lead_tag`: quem
+      // grava é o motor ao aplicar o `advance`, guardado pelo evento do passo.
+      const edge = selectEdge(edges, node.id, { type: "always" });
+      if (!edge) return { kind: "fail", error: `gravar_campo node "${node.id}" has no outbound edge` };
       return { kind: "advance", next_node_id: edge.target, next_eval_at: clock() };
     }
 

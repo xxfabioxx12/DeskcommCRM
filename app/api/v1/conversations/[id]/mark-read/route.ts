@@ -14,6 +14,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 
 import { markConversationReadHandler } from "../../_handler";
+import { exigirConversaDoSetor } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,16 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
 
   const authz = await requireRole("agent", { requestId, resource: "conversations" });
   if (!authz.ok) return authz.response;
+  // Cópia NODZ: conversa de outro setor responde como se não existisse.
+  const foraDoSetor = await exigirConversaDoSetor({
+    organizationId: authz.org.orgId,
+    userId: authz.user.id,
+    conversationId: id,
+    requestId,
+    papel: authz.org.role,
+    idioma: authz.user.idioma,
+  });
+  if (foraDoSetor) return foraDoSetor;
 
   try {
     const conv = await markConversationReadHandler(

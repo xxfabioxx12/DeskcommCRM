@@ -151,6 +151,18 @@ function jev(r: RespostasDoJev): typeof fetch {
 
 const CHAVE = { buscarChave: () => Promise.resolve("chave-teste") };
 
+/**
+ * O funil da imobiliária fictícia, com os QUATRO campos que os exemplos
+ * escrevem. Declarar todos é condição desde a #4667: a chave que o funil não
+ * declara é recusada antes do Jev, e estes casos medem o Jev, não a chave.
+ */
+const CAMPOS_DA_IMOBILIARIA = [
+  { key: "quartos", label: "Quartos", type: "number" },
+  { key: "bairro", label: "Bairro", type: "text" },
+  { key: "orcamento_max", label: "Orçamento máximo", type: "currency" },
+  { key: "tipo_imovel", label: "Tipo de imóvel", type: "text" },
+];
+
 async function turno(
   mensagens: string[],
   campos: Record<string, unknown>,
@@ -167,7 +179,7 @@ async function turno(
       body,
       created_at: `2026-09-01T10:0${i}:00.000Z`,
     })),
-    pipelineSettings: { fields: [{ key: "quartos", label: "Quartos", type: "number" }] },
+    pipelineSettings: { fields: CAMPOS_DA_IMOBILIARIA },
   };
   const resultado = await conferirCamposPersonalizados(ctxDoAgente(bancoFalso(f)), { leadId: LEAD }, campos, {
     ...CHAVE,
@@ -295,7 +307,14 @@ describe("fail-open — tarefa desligada, sem credencial ou provedor fora grava 
     // Sem conferência não há campo removido: a escrita recebe o pedido intacto.
     expect(resultado.custom_fields).toBeUndefined();
     expect(resultado.estado).toBe("desligada");
-    expect(f.lidas).toEqual(["organizations"]);
+    // O DEGRAU 0 (o `padrao` do campo, #2730) lê o funil ANTES de saber que a
+    // tarefa está desligada — é de propósito: o padrão é determinístico e vale
+    // no estado PADRÃO do produto, onde a conferência está desligada. O que este
+    // teste quer provar continua provado: a conversa não é lida e o Jev não é
+    // chamado.
+    expect(f.lidas).toEqual(["organizations", "crm_leads", "crm_pipelines"]);
+    expect(f.lidas).not.toContain("conversations");
+    expect(f.lidas).not.toContain("messages");
     expect(r.chamadas).toHaveLength(0);
   });
 

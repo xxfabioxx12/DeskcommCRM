@@ -22,7 +22,9 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { metaContactsPayload } from "@/lib/channels/meta/contact-card";
 import { graphBaseUrl } from "@/lib/channels/meta/graph-base";
-import { resolveMetaCreds } from "../meta/credentials";
+import { campoDaContaDeMensagens, resolveMetaCreds } from "../meta/credentials";
+import { metaCloudTemplateOps } from "../meta/template-ops";
+import { textoDoErroDaGraph, type ErroDaGraph } from "../meta/erro-da-graph";
 import type {
   ChannelAdapter,
   ChannelHealth,
@@ -86,6 +88,26 @@ export function mediaPayload(env: OutboundEnvelope): Record<string, unknown> | n
         },
       };
   }
+}
+
+/**
+ * Citação → objeto `context` da Cloud API (#4880).
+ *
+ * O valor que chega em `replyToExternalId` JÁ é o identificador deste canal: é
+ * o `wamid` que a Graph devolveu no envio e que o handler gravou na linha. Não
+ * há prefixo a montar nem formato a corrigir — `idCompletoDaMensagem` existe no
+ * outro canal porque lá o id é curto e precisa do destinatário para virar
+ * endereço; aqui, reformatar quebraria a citação.
+ *
+ * Devolve `null` quando o campo falta, é `null` ou chega em branco. O `send` é
+ * que decide não pôr a chave: `context: {}` não é "sem citação", é corpo
+ * inválido — a Meta recusa `context` sem `message_id` (#100).
+ */
+export function contextPayload(env: OutboundEnvelope): { message_id: string } | null {
+  // `trim` só para o caso de espaço sobrando virar citação de um id que não
+  // existe; um `wamid` não tem espaço dentro, então nada de real é tocado.
+  const citado = env.replyToExternalId?.trim();
+  return citado ? { message_id: citado } : null;
 }
 
 export const metaCloudAdapter: ChannelAdapter = {
@@ -188,6 +210,9 @@ export const metaCloudAdapter: ChannelAdapter = {
     sendFailed: "meta_error",
     unknownError: "meta_unknown",
   },
+
+  /** Gestão das definições aprovadas pela Cloud API (`canManageTemplates`). */
+  templates: metaCloudTemplateOps,
 
   async fetchInboundMedia(input): Promise<{ buffer: Buffer; mime: string }> {
     const creds = await resolveMetaCreds(createAdminClient(), {
@@ -299,6 +324,7 @@ export const metaCloudAdapter: ChannelAdapter = {
       },
       body: JSON.stringify({
         messaging_product: "whatsapp",
+        ...campoDaContaDeMensagens(creds.messagingAccountId),
         status: "read",
         message_id: input.inboundExternalId,
         typing_indicator: { type: "text" },
@@ -309,12 +335,24 @@ export const metaCloudAdapter: ChannelAdapter = {
       // do indicador, que é decoração.
       signal: AbortSignal.timeout(5_000),
     });
-    const body = (await res.json().catch(() => ({}))) as {
-      error?: { code?: number; message?: string };
-    };
+    const body = (await res.json().catch(() => ({}))) as { error?: ErroDaGraph };
     if (!res.ok || body.error) {
-      throw new Error(`meta_${body.error?.code ?? res.status}: ${body.error?.message ?? `http_${res.status}`}`);
+      throw new Error(`meta_${body.error?.code ?? res.status}: ${textoDoErroDaGraph(body.error, res.status)}`);
     }
+  },
+
+  async sendReaction(input: ChannelTenantScope & { sessionRef: string; recipient: string | null; externalId: string; emoji: string }): Promise<{ externalId: string | null }> {
+    if (!input.recipient) throw new Error("recipient_unavailable");
+    const creds = await resolveMetaCreds(createAdminClient(), { organizationId: input.organizationId, phoneNumberId: input.sessionRef });
+    if (!creds) throw new Error("meta_not_configured");
+    const res = await fetch(`${graphBaseUrl()}/${creds.phoneNumberId}/messages`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${creds.token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ messaging_product: "whatsapp", recipient_type: "individual", to: input.recipient, type: "reaction", reaction: { message_id: input.externalId, emoji: input.emoji } }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { messages?: { id?: string }[]; error?: { code?: number; message?: string } };
+    if (!res.ok || body.error) throw new Error(`meta_${body.error?.code ?? res.status}: ${body.error?.message ?? `http_${res.status}`}`);
+    return { externalId: body.messages?.[0]?.id ?? null };
   },
 
   async send(envelope: OutboundEnvelope): Promise<{ externalId: string | null }> {
@@ -340,7 +378,11 @@ export const metaCloudAdapter: ChannelAdapter = {
       mediaPayload(envelope) ??
       { type: "text", text: { body: envelope.body ?? "" } };
 
+    // Depois do `beforeSend` e antes do fetch: `beforeSend` é o último ponto que
+    // pode RECUSAR o envio, e resolver a citação para uma mensagem que não sai
+    // seria trabalho à toa. Uma leitura só, não uma por ramo de conteúdo.
     await envelope.beforeSend?.();
+    const contexto = contextPayload(envelope);
     const res = await fetch(
       `${graphBaseUrl()}/${creds.phoneNumberId}/messages`,
       {
@@ -351,23 +393,29 @@ export const metaCloudAdapter: ChannelAdapter = {
         },
         body: JSON.stringify({
           messaging_product: "whatsapp",
+          ...campoDaContaDeMensagens(creds.messagingAccountId),
           recipient_type: "individual",
           to: envelope.to,
           ...corpo,
+          // Citação (#4880): `context` mora no nível de `messaging_product`/`to`,
+          // irmão de `type` — dentro de `text`/`image` a Meta ignora e o cliente
+          // recebe a mensagem solta, que é o defeito que a issue relata. Sem
+          // citação a chave não existe; nem vazia, porque `context: {}` é corpo
+          // inválido para a Graph.
+          ...(contexto ? { context: contexto } : {}),
         }),
       },
     );
 
     const body = (await res.json().catch(() => ({}))) as {
       messages?: { id?: string }[];
-      error?: { code?: number; message?: string; error_data?: { details?: string } };
+      error?: ErroDaGraph;
     };
 
     if (!res.ok || body.error) {
-      // `details` é o campo que diz QUAL parâmetro divergiu; sem ele o operador lê
-      // "Parameter format does not match" e não tem pista nenhuma.
-      const detalhe = body.error?.error_data?.details ?? body.error?.message ?? `http_${res.status}`;
-      throw new Error(`meta_${body.error?.code ?? res.status}: ${detalhe}`);
+      // `details` diz QUAL parâmetro divergiu; subcódigo e fbtrace são o que o
+      // suporte da Meta pede (ver erro-da-graph.ts).
+      throw new Error(`meta_${body.error?.code ?? res.status}: ${textoDoErroDaGraph(body.error, res.status)}`);
     }
 
     return { externalId: body.messages?.[0]?.id ?? null };

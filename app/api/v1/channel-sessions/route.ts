@@ -1,11 +1,12 @@
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
- * GET  /api/v1/channel-sessions — lista os canais WhatsApp da org (do DB).
+ * GET  /api/v1/channel-sessions - lista os canais WhatsApp da org (do DB).
  *   Acessível a qualquer membro (usado pelo seletor do inbox e pela sidebar).
- * POST /api/v1/channel-sessions — conecta um NOVO número (cria a sessão com
+ * POST /api/v1/channel-sessions - conecta um NOVO número (cria a sessão com
  *   nome único e inicia no WAHA). Admin only.
  *
- * organization_id resolvido da sessão (cookie) — nunca do body.
+ * organization_id resolvido da sessão (cookie) ou da linha do token — nunca
+ * do body.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
@@ -16,6 +17,8 @@ import { mfaEmDivida } from "@/lib/auth/server";
 import { ok, fail } from "@/lib/api/wrappers";
 import { loadAuthUser } from "@/lib/auth/server";
 import { orgAtivaDaApi, requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { extractBearer } from "@/lib/mcp/auth";
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/archived";
 import { PROVIDERS_DE_MENSAGEM } from "@/lib/channels/capabilities";
 import { createChannelSchema } from "@/lib/schemas/channels";
@@ -23,14 +26,33 @@ import { createClient } from "@/lib/supabase/server";
 import { getWahaClient } from "@/lib/waha/client";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { traduzirLimiteDoPlano } from "@/lib/cobranca/limites";
+import { bloqueadosDaTela, ehAdminDaInstalacao, nomeDoNumeroNovoDoAtendente, numerosDasConversasDe } from "@/lib/inbox/recorte-do-setor";
 
 export const dynamic = "force-dynamic";
 
 export const CHANNEL_COLUMNS =
   "id, provider, waha_session_name, display_name, phone_number, status, status_reason, last_health_check_at, last_status_change_at, daily_message_limit, is_warmup_complete, created_at, metadata";
 
-export async function GET(): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
+
+  // DOIS PORTÕES, UM CORPO (Spec 33, R3). O token `dsk_…` (escopo `mcp:read`,
+  // papel membro) entra por `resolveAuthDual`; a sessão segue por
+  // `loadAuthUser` + `orgAtivaDaApi` de sempre. A organização vem da linha do
+  // token ou da sessão, nunca do path.
+  if (extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "channel_sessions",
+      role: "viewer",
+      scope: "mcp:read",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "channel_sessions", requestId);
+    if (teto) return teto;
+    return listarCanais(authz.supabase, authz.organizationId, requestId);
+  }
+
   const user = await loadAuthUser();
   if (!user) return fail("unauthenticated", "Auth required.", 401, { requestId });
   const ativa = await orgAtivaDaApi(user, requestId);
@@ -39,11 +61,21 @@ export async function GET(): Promise<Response> {
   if (!activeOrg) return fail("forbidden_tenant", "Nenhuma organização ativa.", 403, { requestId });
 
   const supabase = await createClient();
+  return listarCanais(supabase, activeOrg.orgId, requestId, user.id);
+}
+
+async function listarCanais(
+  db: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  requestId: string,
+  // Cópia NODZ: só a sessão tem recorte do setor; o token é da organização inteira.
+  usuarioDaSessao?: string,
+): Promise<Response> {
   const base = () =>
-    supabase
+    db
       .from("channel_sessions")
       .select(CHANNEL_COLUMNS)
-      .eq("organization_id", activeOrg.orgId)
+      .eq("organization_id", organizationId)
       // Só canal de MENSAGEM. A linha de chamada de voz (spec 18) mora na mesma
       // tabela, tem card próprio em Conexões e não tem `waha_session_name` nem
       // telefone: entrando aqui, ela vira um número a mais no seletor do inbox e
@@ -63,7 +95,17 @@ export async function GET(): Promise<Response> {
   );
   if (error) return fail("internal_error", error.message, 500, { requestId });
 
-  return ok((data ?? []).map(semConfiguracaoInterna), {
+  // Cópia NODZ: o atendente só enxerga os números do setor dele. O número de conversa
+  // de que ele é dono vem marcado: dá rótulo e aviso de queda, mas não entra no menu.
+  const bloqueados = usuarioDaSessao ? await bloqueadosDaTela(organizationId, usuarioDaSessao) : [];
+  const donoDe = usuarioDaSessao
+    ? await numerosDasConversasDe(organizationId, usuarioDaSessao, bloqueados)
+    : new Set<string>();
+  const doSetor = ((data ?? []) as Array<{ id: string }>)
+    .filter((c) => !bloqueados.includes(c.id) || donoDe.has(c.id))
+    .map((c) => (bloqueados.includes(c.id) ? { ...c, fora_do_setor: true } : c));
+
+  return ok((doSetor as NonNullable<typeof data>).map(semConfiguracaoInterna), {
     requestId,
     ...(schemaOutdated ? { meta: { schema_outdated: true } } : {}),
   });
@@ -86,7 +128,8 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("admin", {
+  // Cópia NODZ: o atendente do setor padrão também conecta número novo (decisão do Fabio, 01/11).
+  const authz = await requireRole("agent", {
     requestId,
     resource: "channel_sessions",
     allowPlatformAdmin: true,
@@ -94,6 +137,16 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user, org: activeOrg } = authz;
+  const ehAdmin = activeOrg.role === "admin" || ehAdminDaInstalacao(user);
+  let nomeDoNumeroNovo: string | null = null;
+  if (!ehAdmin) {
+    try {
+      nomeDoNumeroNovo = await nomeDoNumeroNovoDoAtendente(createAdminClient(), activeOrg.orgId, user.id);
+    } catch {
+      return fail("internal_error", t("Não foi possível conferir o setor deste número."), 503, { requestId });
+    }
+    if (!nomeDoNumeroNovo) return fail("forbidden_role", t("Sem permissão para conectar número novo."), 403, { requestId });
+  }
   if (await mfaEmDivida()) return fail("mfa_required", t("Confirme a verificação em duas etapas."), 403, { requestId });
 
   const waha = getWahaClient();
@@ -123,7 +176,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   try {
     const result = await connectWahaChannel(await createClient(), createAdminClient(), waha, {
       organizationId: activeOrg.orgId, idempotencyKey: req.headers.get("Idempotency-Key") ?? "",
-      userId: user.id, requestId, displayName: parsed.data.display_name,
+      userId: user.id, requestId, displayName: nomeDoNumeroNovo ?? parsed.data.display_name,
     });
     return ok(result.channel, { requestId, status: result.replay ? 200 : 201 });
   } catch (error) {
