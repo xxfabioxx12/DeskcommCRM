@@ -42,6 +42,37 @@ const ESTADO_DO_STATUS = {
   answered: "respondidos",
 } as const;
 
+/** Última resposta de pessoa da equipe (CRM ou celular, nunca IA/automação) depois de o Caso abrir. */
+async function respostasHumanas(
+  admin: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  chamados: ReadonlyArray<{ conversation_id: string; opened_at: string; status: string }>,
+): Promise<Map<string, string>> {
+  const esperando = chamados.filter((c) => c.status === "awaiting_human");
+  const resultado = new Map<string, string>();
+  if (esperando.length === 0) return resultado;
+  const maisAntigo = esperando.map((c) => c.opened_at).sort()[0] as string;
+  // shortcut: lê até 5000 respostas desde o Caso mais antigo; se a fila crescer muito, mover para SQL agregado.
+  const { data, error } = await admin
+    .from("messages")
+    .select("conversation_id, sent_at")
+    .eq("organization_id", organizationId)
+    .in("conversation_id", [...new Set(esperando.map((c) => c.conversation_id))])
+    .eq("direction", "outbound")
+    .in("sent_via", ["user", "external_device"])
+    .gte("sent_at", maisAntigo)
+    .order("sent_at", { ascending: false })
+    .limit(5000);
+  if (error) throw error;
+  const abertoEm = new Map(esperando.map((c) => [c.conversation_id, c.opened_at]));
+  for (const m of (data ?? []) as Array<{ conversation_id: string; sent_at: string }>) {
+    if (resultado.has(m.conversation_id)) continue;
+    const desde = abertoEm.get(m.conversation_id);
+    if (desde && new Date(m.sent_at) > new Date(desde)) resultado.set(m.conversation_id, m.sent_at);
+  }
+  return resultado;
+}
+
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   // Sessão OU token (Spec 33, R1): o token precisa de config:read e papel admin.
@@ -90,14 +121,32 @@ export async function GET(req: NextRequest): Promise<Response> {
             filtroDoSetor: await filtroDoSetorPara(org.orgId, authz.actor.id),
             canais,
           });
-    const { chamados, abertos, aguardando } = await listarChamados(createAdminClient(), org.orgId, {
+    const admin = createAdminClient();
+    const { chamados, abertos, aguardando } = await listarChamados(admin, org.orgId, {
       estado: ESTADO_DO_STATUS[parsed.data.status],
       visiveisPara,
       contatoSeparado: authz.via === "token",
     });
+    // Cópia NODZ: resposta da equipe pelo celular não tira o Caso de awaiting_human;
+    // o Painel do setor usa este campo para não deixar o cliente respondido em Aguardando.
+    let humanoRespondeuEm = new Map<string, string>();
+    if (authz.via !== "token") {
+      try {
+        humanoRespondeuEm = await respostasHumanas(admin, org.orgId, chamados);
+      } catch (erro) {
+        // Só informativo: sem ele o painel volta à regra antiga, a lista de casos não cai.
+        logger.warn("[ai/cases] falha ao ler respostas humanas", {
+          requestId,
+          erro: erro instanceof Error ? erro.message : String(erro),
+        });
+      }
+    }
     return ok(
       {
-        cases: chamados,
+        cases: chamados.map((c) => ({
+          ...c,
+          humano_respondeu_em: humanoRespondeuEm.get(c.conversation_id) ?? null,
+        })),
         open_count: abertos,
         waiting_count: aguardando,
         answered_count: abertos - aguardando,

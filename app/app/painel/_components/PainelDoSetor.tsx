@@ -191,6 +191,7 @@ export function PainelDoSetor() {
             contact_name: string | null;
             contact_phone: string | null;
             summary: string;
+            humano_respondeu_em?: string | null;
           }>;
         };
       }>(`/api/v1/ai/cases?status=open${recorte}`),
@@ -204,6 +205,8 @@ export function PainelDoSetor() {
     );
     for (const caso of casos.data?.data?.cases ?? []) {
       if (caso.status !== "awaiting_human") continue;
+      // A equipe já respondeu depois do Caso abrir (pelo CRM ou pelo celular): vale a última mensagem.
+      if (caso.humano_respondeu_em) continue;
       const conversa = porConversa.get(caso.conversation_id);
       const desde = conversa?.caso_aguardando_desde;
       porConversa.set(caso.conversation_id, {
