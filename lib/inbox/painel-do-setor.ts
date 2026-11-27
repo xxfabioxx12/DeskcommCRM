@@ -70,11 +70,12 @@ export function montarColunas<C extends ConversaDoPainel>(
     if (c.caso_aguardando_desde) {
       aguardando.push({ ...c, esperandoDesde: c.caso_aguardando_desde });
     } else if (ABERTAS.has(c.status)) {
-      if (c.status === "pending")
+      // `pending` sem nenhuma entrada do cliente (conversa nossa) segue Aguardando;
+      // com entrada, quem manda é a última mensagem: se a equipe respondeu, sai.
+      if (c.status === "pending" && !c.last_inbound_at)
         aguardando.push({
           ...c,
-          esperandoDesde:
-            c.awaiting_since ?? c.last_inbound_at ?? c.last_message_at ?? agora.toISOString(),
+          esperandoDesde: c.awaiting_since ?? c.last_message_at ?? agora.toISOString(),
         });
       else if (clienteFalouPorUltimo(c))
         aguardando.push({ ...c, esperandoDesde: esperandoDesde(c) });

@@ -40,6 +40,30 @@ describe("painel do setor", () => {
     expect(emAtendimento.map((c) => c.id)).toEqual(["respondido"]);
   });
 
+  it("pending já respondido pela equipe sai de Aguardando; cliente que volta entra com o tempo novo", () => {
+    const { aguardando, emAtendimento } = montarColunas(
+      [
+        conv("respondido", {
+          status: "pending",
+          last_inbound_at: "2026-10-22T18:00:00Z",
+          last_outbound_at: "2026-10-23T20:00:00Z",
+          awaiting_since: "2026-10-22T18:00:00Z",
+        }),
+        conv("voltou", {
+          status: "pending",
+          last_inbound_at: "2026-10-23T20:30:00Z",
+          last_outbound_at: "2026-10-23T20:00:00Z",
+          awaiting_since: "2026-10-22T18:00:00Z",
+        }),
+      ],
+      agora,
+    );
+    expect(emAtendimento.map((c) => c.id)).toEqual(["respondido"]);
+    expect(aguardando.map((c) => [c.id, c.esperandoDesde])).toEqual([
+      ["voltou", "2026-10-23T20:30:00Z"],
+    ]);
+  });
+
   it("resposta da IA conta como atendimento", () => {
     const { aguardando, emAtendimento } = montarColunas(
       [
